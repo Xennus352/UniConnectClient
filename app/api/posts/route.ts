@@ -10,33 +10,52 @@ export async function POST(request: Request) {
   const identity = await getSessionIdentity();
   if (!identity) return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
 
-  const body = (await request.json().catch(() => null)) as { author_email: string; content: string; image?: string; tags?: any[]; author_name: string; author_initials: string; author_role: string } | null;
-  if (!body?.author_email || !body.content) {
-    return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
+  const body = (await request.json().catch(() => null)) as {
+    content?: string;
+    image?: string | null;
+    tags?: unknown;
+    item_status?: unknown;
+    item_location?: unknown;
+  } | null;
+  const content = (body?.content ?? '').trim();
+  if (!body || (!content && !body.image)) {
+    return NextResponse.json({ message: 'Write something or add a photo first' }, { status: 400 });
   }
-  if (body.author_email !== identity.email) {
-    return NextResponse.json({ message: 'Email does not match session' }, { status: 403 });
-  }
+
+  const item_status = body.item_status === 'lost' || body.item_status === 'found' ? body.item_status : null;
+  const item_location =
+    typeof body.item_location === 'string' && body.item_location.trim()
+      ? body.item_location.trim().slice(0, 60)
+      : null;
 
   const supabase = createServerSupabase() as unknown as SupabaseClient;
   const now = Date.now();
 
-  const moderate = await moderateContent(body.content, body.image ?? null);
-
-  const status = moderate.safe ? 'pending_review' : 'rejected';
-  const ai_flags = moderate.safe ? null : 'ai_filtered';
-  const moderation_note = moderate.safe ? null : moderate.reason;
+  // AI content filter runs BEFORE the post is stored (filter before upload).
+  // Flagged content is never uploaded to the feed.
+  const moderate = await moderateContent(content, body.image ?? null);
+  if (!moderate.safe) {
+    return NextResponse.json(
+      { message: `Your post was flagged by the AI content filter${moderate.reason ? `: ${moderate.reason}` : ''}` },
+      { status: 422 }
+    );
+  }
 
   const { data: post, error } = await supabase
     .from('posts')
     .insert({
-      ...body,
-      content: body.content,
+      author_email: identity.email,
+      author_name: identity.name,
+      author_initials: identity.initials,
+      author_role: identity.role,
+      content,
       image: body.image ?? null,
-      tags: body.tags ?? [],
-      status,
-      ai_flags,
-      moderation_note,
+      tags: Array.isArray(body.tags) ? body.tags : [],
+      item_status,
+      item_location,
+      status: 'pending_review',
+      ai_flags: null,
+      moderation_note: null,
       created_at: now,
     })
     .select()
@@ -48,11 +67,12 @@ export async function POST(request: Request) {
   await supabase.from('notifications').insert({
     recipient_role: 'admin',
     type: 'moderation',
-    message: `New post by ${body.author_name} is awaiting moderation`,
+    message: `New post by ${identity.name} is awaiting moderation`,
+    post_id: post.id,
     created_at: now,
   });
 
-  return NextResponse.json({ post, status, ai_flags, moderation_note }, { status: 201 });
+  return NextResponse.json({ post, status: 'pending_review' }, { status: 201 });
 }
 
 export async function GET() {

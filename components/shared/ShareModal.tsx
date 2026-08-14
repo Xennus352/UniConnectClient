@@ -33,8 +33,11 @@ export default function ShareModal({ open, onClose, onShare }: ShareModalProps) 
   }, [onClose]);
 
   const users = allUsers ?? [];
+  const query = search.trim().toLowerCase();
   const filtered = users.filter(u =>
-    u.name.toLowerCase().includes(search.toLowerCase())
+    !query ||
+    u.name.toLowerCase().includes(query) ||
+    u.email.toLowerCase().includes(query)
   );
 
   const isSelected = useCallback((email: string) => selected.some((s) => s.email === email), [selected]);
@@ -82,7 +85,7 @@ export default function ShareModal({ open, onClose, onShare }: ShareModalProps) 
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search people..."
+            placeholder="Search by name or email..."
             className="bg-transparent outline-none w-full"
             style={{ fontSize: 13, color: 'var(--text)', border: 'none' }}
           />
@@ -113,7 +116,7 @@ export default function ShareModal({ open, onClose, onShare }: ShareModalProps) 
               className="flex items-center gap-3 w-full cursor-pointer border-none text-left"
               style={{
                 padding: '10px 24px',
-                background: active ? 'rgba(58,139,194,0.1)' : 'transparent',
+                background: active ? 'rgba(14, 165, 233,0.1)' : 'transparent',
                 transition: 'background 0.15s',
               }}
               onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--surface-soft)'; }}

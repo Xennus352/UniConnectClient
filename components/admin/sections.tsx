@@ -25,7 +25,7 @@ import {
   ClipboardCheck, CalendarDays,
   Coins, Search, Settings, MessageSquare, Newspaper,
   Mail, Upload, Filter, Plus, Download,
-  Check, X, Eye, BookOpen, Bell, MessageCircle, User,
+  Check, X, Eye, BookOpen, Bell, MessageCircle, User, Ban,
 } from 'lucide-react';
 import type {
   StudentData, LecturerData,
@@ -33,6 +33,8 @@ import type {
 } from '@/components/shared/types';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { default as LostFoundSection } from '@/components/shared/LostFoundSection';
+import BlockedSection from '@/components/shared/BlockedSection';
 
 const initialsOf = (name: string) =>
   name.trim().split(/\s+/).slice(0, 2).map((w) => (w[0] || '').toUpperCase()).join('');
@@ -930,7 +932,7 @@ export function FinanceSection() {
 
 export function SettingsSection() {
   const [settingsTab, setSettingsTab] = useState('Profile');
-  const settingsTabs = ['Profile', 'Notifications', 'Security', 'Appearance'];
+  const settingsTabs = ['Profile', 'Notifications', 'Security', 'Appearance', 'Blocked'];
   const [notifPrefs, setNotifPrefs] = useState({ push: true, emailDigest: false, messageAlerts: true, eventReminders: true });
 
   const notifToggles = [
@@ -953,7 +955,7 @@ export function SettingsSection() {
               </div>
               <div style={{ padding: '16px 22px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, #CBDDE9, #a8cce0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>AD</div>
+                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, #bae6fd, #bae6fd)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>AD</div>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>Admin User</div>
                     <div style={{ fontSize: 12, color: 'var(--text-light)' }}>System Administrator • Management Portal</div>
@@ -1011,15 +1013,26 @@ export function SettingsSection() {
           {settingsTab === 'Appearance' && (
             <ThemeSwitcher />
           )}
+          {settingsTab === 'Blocked' && (
+            <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}><Ban size={16} /> Blocked Users</div>
+              </div>
+              <div style={{ padding: '16px 22px' }}>
+                <BlockedSection bare />
+              </div>
+            </div>
+          )}
         </div>
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', maxHeight: 'fit-content' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0' }}>
             {settingsTabs.map((t) => (
-              <button key={t} onClick={() => setSettingsTab(t)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13, fontWeight: settingsTab === t ? 700 : 500, color: settingsTab === t ? 'var(--primary)' : 'var(--text)', background: settingsTab === t ? 'linear-gradient(90deg, rgba(58,139,194,0.15), transparent)' : 'transparent', border: 'none', borderLeft: settingsTab === t ? '3px solid var(--primary)' : '3px solid transparent', textAlign: 'left' }}>
+              <button key={t} onClick={() => setSettingsTab(t)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13, fontWeight: settingsTab === t ? 700 : 500, color: settingsTab === t ? 'var(--primary)' : 'var(--text)', background: settingsTab === t ? 'linear-gradient(90deg, rgba(14, 165, 233,0.15), transparent)' : 'transparent', border: 'none', borderLeft: settingsTab === t ? '3px solid var(--primary)' : '3px solid transparent', textAlign: 'left' }}>
                 {t === 'Profile' && <User size={16} />}
                 {t === 'Notifications' && <Bell size={16} />}
                 {t === 'Security' && <Shield size={16} />}
                 {t === 'Appearance' && <Eye size={16} />}
+                {t === 'Blocked' && <Ban size={16} />}
                 {t === 'Language' && <Globe size={16} />}
                 {t === 'Help & Support' && <MessageCircle size={16} />}
                 {t}

@@ -20,6 +20,7 @@ export interface Database {
           initials?: string;
           major?: string | null;
         };
+        Relationships: [];
       };
       posts: {
         Row: {
@@ -39,6 +40,8 @@ export interface Database {
           likes_count: number;
           comments_count: number;
           shares_count: number;
+          item_status: string | null;
+          item_location: string | null;
         };
         Insert: Pick<
           {
@@ -49,7 +52,7 @@ export interface Database {
           },
           'author_email' | 'author_name' | 'author_initials' | 'author_role'
         > &
-          Partial<{ image: string; tags: Json; status: string; shares_count?: number } & Pick<{ content: string }, 'content'>>;
+          Partial<{ image: string; tags: Json; status: string; shares_count?: number; item_status?: string | null; item_location?: string | null } & Pick<{ content: string }, 'content'>>;
         Update: {
           content?: string;
           image?: string | null;
@@ -61,11 +64,16 @@ export interface Database {
           likes_count?: number;
           comments_count?: number;
           shares_count?: number;
+          item_status?: string | null;
+          item_location?: string | null;
         };
+        Relationships: [];
       };
       post_likes: {
         Row: { id: string; post_id: string; user_email: string; created_at: number };
         Insert: { post_id: string; user_email: string };
+        Update: { post_id?: string; user_email?: string; created_at?: number | null };
+        Relationships: [];
       };
       post_shares: {
         Row: {
@@ -84,6 +92,7 @@ export interface Database {
           created_at?: number | null;
         };
         Update: { recipients?: Json | null };
+        Relationships: [];
       };
       post_comments: {
         Row: {
@@ -108,6 +117,7 @@ export interface Database {
         > &
           Pick<{ content: string }, 'content'>;
         Update: { content?: string; updated_at?: number; deleted_at?: number | null };
+        Relationships: [];
       };
       conversations: {
         Row: {
@@ -120,6 +130,7 @@ export interface Database {
           created_at: number;
           last_message_at: number;
           preview: string | null;
+          unread_map: Json | null;
         };
         Insert: {
           participant_ids: string[];
@@ -130,6 +141,7 @@ export interface Database {
           created_at?: number | null;
           last_message_at?: number | null;
           preview?: string | null;
+          unread_map?: Json | null;
         };
         Update: {
           status?: string | null;
@@ -138,7 +150,9 @@ export interface Database {
           last_message_at?: number | null;
           participant_meta?: Json | null;
           preview?: string | null;
+          unread_map?: Json | null;
         };
+        Relationships: [];
       };
       chat_messages: {
         Row: {
@@ -161,6 +175,7 @@ export interface Database {
           is_read?: boolean | null;
         };
         Update: { is_read?: boolean | null; attachments?: Json | null };
+        Relationships: [];
       };
       notifications: {
         Row: {
@@ -171,6 +186,10 @@ export interface Database {
           message: string;
           read: boolean;
           created_at: number;
+          post_id: string | null;
+          conversation_id: string | null;
+          actor_email: string | null;
+          actor_name: string | null;
         };
         Insert: {
           recipient_email?: string | null;
@@ -179,8 +198,13 @@ export interface Database {
           message: string;
           created_at?: number | null;
           read?: boolean | null;
+          post_id?: string | null;
+          conversation_id?: string | null;
+          actor_email?: string | null;
+          actor_name?: string | null;
         };
         Update: { read?: boolean | null };
+        Relationships: [];
       };
     };
     Views: Record<string, never>;

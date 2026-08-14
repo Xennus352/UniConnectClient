@@ -7,6 +7,7 @@ import { useSupabase } from '@/utils/supabase/client';
 import { useSession } from './session';
 import { toast } from 'sonner';
 import ShareModal from './ShareModal';
+import PostTag from './PostTag';
 import { usePostLikes, useComments, usePostShares } from '@/lib/supabase/hooks';
 import type { UniversityPerson } from './useUniversityPeople';
 import type { Database } from '@/utils/supabase/types';
@@ -286,17 +287,41 @@ export default function FeedPost({ post }: FeedPostProps) {
         )}
         {post.image && (
           <div
-            className="mt-3 overflow-hidden"
+            className="mt-3 overflow-hidden flex justify-center"
             style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}
           >
-            <img src={post.image} alt="" className="w-full object-cover" style={{ aspectRatio: '16/9', maxHeight: 400 }} />
+            <img src={post.image} alt="" className="max-w-full h-auto" style={{ maxHeight: 480, objectFit: 'contain' }} />
           </div>
         )}
         <div className="flex gap-[6px] mt-[10px] flex-wrap">
-          {(post.tags as { label: string; color: string; emoji?: string }[] | null)?.map((tag, i) => (
-            <span key={i} className={`badge badge-sm ${tag.color} gap-1`}>
-              {tag.emoji} {tag.label}
+          {(post.item_status === 'lost' || post.item_status === 'found') && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-bold"
+              style={{
+                background: post.item_status === 'lost' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(34, 197, 94, 0.14)',
+                color: post.item_status === 'lost' ? '#dc2626' : '#15803d',
+                border: `1px solid ${post.item_status === 'lost' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {post.item_status === 'lost' ? '🔍 Lost' : '✓ Found'}
             </span>
+          )}
+          {post.item_location && (
+            <span
+              className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-bold"
+              style={{
+                background: 'rgba(14, 165, 233, 0.12)',
+                color: '#0369a1',
+                border: '1px solid rgba(14, 165, 233, 0.4)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              📍 {post.item_location}
+            </span>
+          )}
+          {(post.tags as { label: string; emoji?: string }[] | null)?.map((tag, i) => (
+            <PostTag key={i} label={tag.label} emoji={tag.emoji} />
           ))}
         </div>
         <div
@@ -308,10 +333,10 @@ export default function FeedPost({ post }: FeedPostProps) {
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{
               color: isLiked ? 'var(--primary)' : 'var(--text-light)',
-              backgroundColor: isLiked ? 'rgba(58,139,194,0.12)' : 'transparent',
+              backgroundColor: isLiked ? 'rgba(14, 165, 233,0.12)' : 'transparent',
             }}
             onMouseEnter={(e) => {
-              if (!isLiked) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(58,139,194,0.12)'; }
+              if (!isLiked) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }
             }}
             onMouseLeave={(e) => {
               if (!isLiked) { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }
@@ -323,7 +348,7 @@ export default function FeedPost({ post }: FeedPostProps) {
             onClick={() => { setShowComments(prev => !prev); setTimeout(() => commentInputRef.current?.focus(), 50); }}
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{ color: showComments ? 'var(--primary)' : 'var(--text-light)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(58,139,194,0.12)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
           >
             <MessageCircle size={14} /> {comments?.length ?? post.comments_count ?? 0}
@@ -332,7 +357,7 @@ export default function FeedPost({ post }: FeedPostProps) {
             onClick={() => setShowShareModal(true)}
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{ color: 'var(--text-light)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(58,139,194,0.12)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
           >
             <Share2 size={14} /> {shares ?? 0} Share
@@ -340,7 +365,7 @@ export default function FeedPost({ post }: FeedPostProps) {
         </div>
 
         {shareMsg && (
-          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(58,139,194,0.1)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}>
+          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(14, 165, 233,0.1)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}>
             {shareMsg}
           </div>
         )}

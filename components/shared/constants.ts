@@ -99,9 +99,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
     {
       section: 'Academic',
       items: [
-        { icon: 'GraduationCap', label: 'Students', id: 'students' },
-        { icon: 'Presentation', label: 'Lecturers', id: 'lecturers' },
-        { icon: 'Users', label: 'Staff', id: 'staff' },
         { icon: 'FileText', label: 'Exam Results', id: 'exam-results' },
         { icon: 'ClipboardCheck', label: 'Roll Call', id: 'roll-call' },
         { icon: 'CalendarDays', label: 'Timetable', id: 'timetable' },
@@ -111,6 +108,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       section: 'University',
       items: [
         { icon: 'CalendarCheck', label: 'Events', id: 'events' },
+        { icon: 'Search', label: 'Lost & Found', id: 'lost-found' },
         { icon: 'Coins', label: 'Finance', id: 'finance' },
       ],
     },

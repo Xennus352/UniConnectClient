@@ -6,11 +6,10 @@ import { toast } from 'sonner';
 import { useSession } from './session';
 
 const TAG_OPTIONS = [
-  { label: 'Academic', color: 'badge-secondary', emoji: '🎓' },
-  { label: 'Official', color: 'badge-info', emoji: '📢' },
   { label: 'Event', color: 'badge-success', emoji: '🎉' },
-  { label: 'Finance', color: 'badge-warning', emoji: '💰' },
   { label: 'General', color: 'badge-ghost', emoji: '💬' },
+  { label: 'Lost & Found', color: 'badge-warning', emoji: '🔍' },
+  { label: 'Announcement', color: 'badge-info', emoji: '📢' },
 ];
 
 interface FeedComposerProps {
@@ -79,7 +78,7 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
       setSelectedTag(null);
       const ta = textareaRef.current;
       if (ta) ta.style.height = 'auto';
-      toast.info('Post submitted — the AI content filter is reviewing it');
+      toast.info('Post submitted — the AI filter approved it and it awaits approval before appearing in the feed');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Failed to submit post. Please try again.');
     } finally {
@@ -94,8 +93,8 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
         <div
           className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold"
           style={{
-            background: 'linear-gradient(to bottom right, #CBDDE9, #a8cce0)',
-            color: '#2872A1',
+            background: 'linear-gradient(to bottom right, #bae6fd, #bae6fd)',
+            color: '#0369a1',
             fontSize: 14,
           }}
         >
@@ -142,7 +141,7 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
                   onClick={() => toggleTag(tag.label)}
                   className="px-2.5 py-1 text-xs font-medium rounded-full cursor-pointer transition-all border-none"
                   style={{
-                    backgroundColor: active ? 'rgba(58,139,194,0.15)' : 'var(--divider)',
+                    backgroundColor: active ? 'rgba(14, 165, 233,0.15)' : 'var(--divider)',
                     color: active ? 'var(--primary)' : 'var(--text-light)',
                   }}
                 >
@@ -178,7 +177,7 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
                 background: 'linear-gradient(var(--primary), var(--primary-dark))',
                 color: '#fff',
                 fontSize: 13,
-                boxShadow: '0 2px 8px rgba(58,139,194,0.25)',
+                boxShadow: '0 2px 8px rgba(14, 165, 233,0.25)',
               }}
             >
               <Send size={14} /> {submitting ? 'Posting...' : 'Post'}

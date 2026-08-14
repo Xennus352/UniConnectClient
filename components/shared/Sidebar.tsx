@@ -134,7 +134,7 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
         className="relative z-10 flex items-center gap-3 px-5 py-5 border-b"
         style={{ borderColor: 'var(--sidebar-border)' }}
       >
-        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-[#CBDDE9] to-[#a8cce0] text-[#2872A1] font-extrabold text-xl shadow-[0_4px_12px_rgba(0,0,0,0.15)]">
+        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-[#bae6fd] to-[#bae6fd] text-[#0369a1] font-extrabold text-xl shadow-[0_4px_12px_rgba(0,0,0,0.15)]">
           U
         </div>
         <div>
@@ -191,7 +191,7 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
           href={`${basePath}/profile`}
           className="flex items-center gap-2.5 flex-1 min-w-0"
         >
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#CBDDE9] to-[#8abbd4] flex items-center justify-center text-[#2872A1] font-bold text-xs">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#bae6fd] to-[#7dd3fc] flex items-center justify-center text-[#0369a1] font-bold text-xs">
             {session?.initials || 'U'}
           </div>
           <div className="flex-1 min-w-0">

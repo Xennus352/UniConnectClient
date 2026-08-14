@@ -39,16 +39,16 @@ export default function EventItem({ day, month, title, description, action }: Ev
           color: '#fff',
           fontSize: 12,
           fontWeight: 600,
-          boxShadow: '0 2px 8px rgba(40,114,161,0.25)',
+          boxShadow: '0 2px 8px rgba(2, 132, 199,0.25)',
           transition: 'all 0.2s',
         }}
         onMouseEnter={(e) => {
           e.currentTarget.style.transform = 'translateY(-1px)';
-          e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.35)';
+          e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.35)';
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = '0 2px 8px rgba(40,114,161,0.25)';
+          e.currentTarget.style.boxShadow = '0 2px 8px rgba(2, 132, 199,0.25)';
         }}
       >
         {action}

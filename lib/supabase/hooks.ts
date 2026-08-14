@@ -1,7 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { SupabaseClient } from '@supabase/supabase-js';
+import { useCallback, useEffect, useState } from 'react';
 import type { TypedSupabaseClient } from '@/utils/supabase/client';
 import type { Database } from '@/utils/supabase/types';
 
@@ -30,6 +29,7 @@ interface ConvMeta {
   blockedBy: string;
   lastMessageAt: number;
   preview: string;
+  unread: number;
   other: { email: string; name: string; initials: string };
 }
 interface ChatMeta {
@@ -42,23 +42,20 @@ interface ChatMeta {
 
 const FEED_PAGE_SIZE = 10;
 
-export function useFeedPosts(supabase: TypedSupabaseClient, me?: string) {
+export function useFeedPosts(supabase: TypedSupabaseClient) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const meRef = useRef(me);
-  meRef.current = me;
 
   useEffect(() => {
     const load = async () => {
-      let query = supabase
+      const query = supabase
         .from('posts')
         .select('*')
+        .eq('status', 'approved')
         .order('created_at', { ascending: false })
         .limit(FEED_PAGE_SIZE);
-      if (me) query = query.or(`status.eq.approved,author_email.eq.${me}`);
-      else query = query.eq('status', 'approved');
       const { data, error } = await query;
       if (error) { console.error(error); setPosts([]); setHasMore(false); }
       else { setPosts(data ?? []); setHasMore((data?.length ?? 0) === FEED_PAGE_SIZE); }
@@ -66,16 +63,23 @@ export function useFeedPosts(supabase: TypedSupabaseClient, me?: string) {
     };
     load();
 
-    const qualifies = (row: Post) => row.status === 'approved' || (meRef.current && row.author_email === meRef.current);
+    const qualifies = (row: Post) => row.status === 'approved';
     const channel = supabase
       .channel(uniqueChannelName('public:posts:feed'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
         setPosts((prev) => {
           if (!prev) return prev;
-          if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-            const row = payload.new as Post;
-            if (!qualifies(row)) return prev.filter((p) => p.id !== row.id);
-            return [row, ...prev.filter((p) => p.id !== row.id)];
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as Partial<Post>;
+            if (!row.id || row.status !== 'approved') return prev;
+            if (prev.some((p) => p.id === row.id)) return prev;
+            return [row as Post, ...prev];
+          }
+          if (payload.eventType === 'UPDATE') {
+            const row = payload.new as Partial<Post>;
+            return prev
+              .map((p) => (p.id === row.id ? { ...p, ...row } : p))
+              .filter((p) => qualifies(p));
           }
           if (payload.eventType === 'DELETE') {
             return prev.filter((p) => p.id !== (payload.old as Post).id);
@@ -86,20 +90,19 @@ export function useFeedPosts(supabase: TypedSupabaseClient, me?: string) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [supabase, me]);
+  }, [supabase]);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore || !posts || posts.length === 0) return;
     setLoadingMore(true);
     const last = posts[posts.length - 1];
-    let query = supabase
+    const query = supabase
       .from('posts')
       .select('*')
+      .eq('status', 'approved')
       .order('created_at', { ascending: false })
       .lt('created_at', last.created_at)
       .limit(FEED_PAGE_SIZE);
-    if (meRef.current) query = query.or(`status.eq.approved,author_email.eq.${meRef.current}`);
-    else query = query.eq('status', 'approved');
     const { data, error } = await query;
     if (!error && data) {
       setPosts((prev) => {
@@ -114,27 +117,76 @@ export function useFeedPosts(supabase: TypedSupabaseClient, me?: string) {
   return { posts, loading, loadingMore, hasMore, loadMore };
 }
 
-export function usePostShares(supabase: TypedSupabaseClient, postId: string) {
-  const [shares, setShares] = useState<number | null>(null);
+export function useLostFoundPosts(supabase: TypedSupabaseClient) {
+  const [posts, setPosts] = useState<Post[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .eq('status', 'approved')
+        .contains('tags', [{ label: 'Lost & Found' }] as never)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) { console.error(error); setPosts([]); }
+      else { setPosts(data ?? []); }
+      setLoading(false);
+    };
+    load();
+
+    const qualifies = (row: Post) => {
+      const tags = (row.tags ?? []) as { label?: string }[];
+      return row.status === 'approved' && tags.some((t) => t.label === 'Lost & Found');
+    };
+    const channel = supabase
+      .channel(uniqueChannelName('public:posts:lostfound'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
+        setPosts((prev) => {
+          if (!prev) return prev;
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as Partial<Post>;
+            if (!row.id || !qualifies(row as Post)) return prev;
+            if (prev.some((p) => p.id === row.id)) return prev;
+            return [row as Post, ...prev];
+          }
+          if (payload.eventType === 'UPDATE') {
+            const row = payload.new as Partial<Post>;
+            return prev
+              .map((p) => (p.id === row.id ? { ...p, ...row } : p))
+              .filter((p) => qualifies(p));
+          }
+          if (payload.eventType === 'DELETE') {
+            return prev.filter((p) => p.id !== (payload.old as Post).id);
+          }
+          return prev;
+        });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase]);
+
+  return { posts, loading };
+}
+
+export function usePostShares(supabase: TypedSupabaseClient, postId: string) {  const [shares, setShares] = useState<number | null>(null);
   useEffect(() => {
     let cancelled = false;
     supabase
-      .from('post_shares')
-      .select('id')
-      .eq('post_id', postId)
+      .from('posts')
+      .select('shares_count')
+      .eq('id', postId)
+      .single()
       .then(({ data, error }) => {
         if (cancelled || error) return;
-        setShares(data?.length ?? 0);
+        setShares((data?.shares_count as number) ?? 0);
       });
     const channel = supabase
-      .channel(uniqueChannelName(`public:post_shares:post:${postId}`))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'post_shares', filter: `post_id=eq.${postId}` }, (payload) => {
-        setShares((prev) => {
-          if (prev === null) return prev;
-          if (payload.eventType === 'INSERT') return prev + 1;
-          if (payload.eventType === 'DELETE') return Math.max(prev - 1, 0);
-          return prev;
-        });
+      .channel(uniqueChannelName(`public:posts:shares:${postId}`))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'posts', filter: `id=eq.${postId}` }, (payload) => {
+        setShares((payload.new as Post)?.shares_count ?? 0);
       })
       .subscribe();
     return () => { supabase.removeChannel(channel); cancelled = true; };
@@ -276,6 +328,7 @@ function enrichConvs(rows: any[], me: string): ConvMeta[] {
       const meta: ParticipantMeta[] = Array.isArray(conv.participant_meta) ? conv.participant_meta : [];
       const otherEmail = (conv.participant_ids as string[]).find((p) => p !== me) || '';
       const other = meta.find((m) => m.email === otherEmail) || { email: otherEmail, name: otherEmail.split('@')[0], initials: otherEmail.slice(0, 2).toUpperCase() };
+      const unreadMap = (conv.unread_map ?? {}) as Record<string, number>;
       return {
         id: conv.id,
         status: conv.status || 'active',
@@ -283,6 +336,7 @@ function enrichConvs(rows: any[], me: string): ConvMeta[] {
         blockedBy: conv.blocked_by || '',
         lastMessageAt: conv.last_message_at,
         preview: conv?.preview ?? 'No messages yet',
+        unread: unreadMap[me] ?? 0,
         other,
       };
     })
@@ -363,7 +417,7 @@ function mapConv(row: any, me: string): ChatMeta {
   const otherEmail = (row.participant_ids as string[]).find((p) => p !== me) || '';
   const other = meta.find((m) => m.email === otherEmail) || { email: otherEmail, name: otherEmail.split('@')[0], initials: otherEmail.slice(0, 2).toUpperCase() };
   return {
-    _id: row.id,
+    id: row.id,
     status: row.status || 'active',
     requestedBy: row.requested_by || '',
     blockedBy: row.blocked_by || '',

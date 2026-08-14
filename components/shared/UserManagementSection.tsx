@@ -1,8 +1,9 @@
 'use client';
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   GraduationCap, Presentation, ShieldCheck, UserCog, Plus, Search, Power, Mail,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiFetch, type UserRecord, type StudentRecord, type StaffRecord, type MajorRecord, type OrganizationalUnitRecord } from './api';
@@ -29,6 +30,22 @@ interface Row {
   isActive: boolean;
 }
 
+const PAGE_SIZE = 10;
+
+function pageNumbers(total: number, current: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set<number>([1, total, current - 1, current, current + 1]);
+  const sorted = Array.from(set).filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+  const out: (number | '…')[] = [];
+  let prev = 0;
+  for (const n of sorted) {
+    if (n - prev > 1) out.push('…');
+    out.push(n);
+    prev = n;
+  }
+  return out;
+}
+
 export default function UserManagementSection({ target }: { target: UserTarget }) {
   const meta = TARGET_META[target];
 
@@ -47,8 +64,13 @@ export default function UserManagementSection({ target }: { target: UserTarget }
   );
 
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -105,6 +127,29 @@ export default function UserManagementSection({ target }: { target: UserTarget }
         r.staffNo.toLowerCase().includes(q)
     );
   }, [data?.users, staffByUser, studentsByUser, meta.roleName, target, search]);
+
+  const totalPages = Math.max(1, Math.ceil(rows.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const pageRows = rows.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+  const startRow = rows.length === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const endRow = Math.min(safePage * PAGE_SIZE, rows.length);
+
+  const pageBtnStyle: React.CSSProperties = {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 8,
+    border: '1.5px solid var(--surface-border)',
+    background: 'transparent',
+    color: 'var(--text-light)',
+    fontSize: 12.5,
+    fontWeight: 600,
+    cursor: 'pointer',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '0 6px',
+    transition: 'all 0.15s',
+  };
 
   const handleCreate = async () => {
     if (!email || !password || password.length < 8) {
@@ -217,7 +262,7 @@ export default function UserManagementSection({ target }: { target: UserTarget }
             No {meta.title.toLowerCase()} found
           </div>
         )}
-        {rows.map((row) => (
+        {pageRows.map((row) => (
           <div key={row.userId} className="flex items-center gap-4 px-5 py-3.5" style={{ borderBottom: '1px solid var(--surface)' }}>
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold shrink-0 bg-gradient-to-br from-primary to-secondary"
@@ -251,6 +296,53 @@ export default function UserManagementSection({ target }: { target: UserTarget }
             </button>
           </div>
         ))}
+
+        {rows.length > PAGE_SIZE && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '12px 18px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12.5, color: 'var(--text-lighter)' }}>
+              Showing {startRow}–{endRow} of {rows.length}
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
+              <button
+                disabled={safePage <= 1}
+                onClick={() => setPage(safePage - 1)}
+                className="cursor-pointer border-none"
+                style={{ ...pageBtnStyle, opacity: safePage <= 1 ? 0.4 : 1, cursor: safePage <= 1 ? 'default' : 'pointer' }}
+                aria-label="Previous page"
+              >
+                <ChevronLeft size={15} />
+              </button>
+              {pageNumbers(totalPages, safePage).map((n, i) =>
+                n === '…' ? (
+                  <span key={`ellipsis-${i}`} style={{ minWidth: 24, textAlign: 'center', fontSize: 12.5, color: 'var(--text-lighter)' }}>…</span>
+                ) : (
+                  <button
+                    key={n}
+                    onClick={() => setPage(n)}
+                    className="cursor-pointer border-none"
+                    style={{
+                      ...pageBtnStyle,
+                      background: n === safePage ? 'linear-gradient(var(--primary), var(--primary-dark))' : 'transparent',
+                      color: n === safePage ? '#fff' : 'var(--text-light)',
+                      borderColor: n === safePage ? 'var(--primary)' : 'var(--surface-border)',
+                    }}
+                  >
+                    {n}
+                  </button>
+                )
+              )}
+              <button
+                disabled={safePage >= totalPages}
+                onClick={() => setPage(safePage + 1)}
+                className="cursor-pointer border-none"
+                style={{ ...pageBtnStyle, opacity: safePage >= totalPages ? 0.4 : 1, cursor: safePage >= totalPages ? 'default' : 'pointer' }}
+                aria-label="Next page"
+              >
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {showCreate && (

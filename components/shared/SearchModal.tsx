@@ -6,6 +6,7 @@ import { Search, X, Hash, Users, Newspaper, TrendingUp } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import { useFeedPosts } from '@/lib/supabase/hooks';
 import { useUniversityPeople } from './useUniversityPeople';
+import { useSession } from './session';
 
 type Tab = 'posts' | 'people' | 'hashtags';
 
@@ -74,6 +75,24 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
     setQuery('');
   }, [onClose]);
 
+  const { user: session } = useSession();
+  const basePath = `/${session?.role ?? 'student'}`;
+
+  const openPost = useCallback((postId: string) => {
+    handleSelect();
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent('uniconnect-focus-post', { detail: postId }));
+      }, 120);
+    }
+    router.push(`${basePath}/feed?post=${postId}`);
+  }, [handleSelect, router, basePath]);
+
+  const openHashtag = useCallback((tag: string) => {
+    handleSelect();
+    router.push(`${basePath}/feed?hashtag=${encodeURIComponent(tag)}`);
+  }, [handleSelect, router, basePath]);
+
   const openProfile = useCallback((email: string) => {
     handleSelect();
     router.push(`/people/${encodeURIComponent(email)}`);
@@ -126,7 +145,7 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
               onClick={() => setTab(t)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full cursor-pointer border-none transition-all capitalize"
               style={{
-                background: tab === t ? 'rgba(58,139,194,0.15)' : 'transparent',
+                background: tab === t ? 'rgba(14, 165, 233,0.15)' : 'transparent',
                 color: tab === t ? 'var(--primary)' : 'var(--text-light)',
               }}
             >
@@ -155,7 +174,7 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
             filteredPosts.map((p) => (
               <button
                 key={p.id}
-                onClick={handleSelect}
+                onClick={() => openPost(p.id)}
                 className="flex items-start gap-3 w-full text-left cursor-pointer border-none"
                 style={{ padding: '10px 22px', transition: 'background 0.15s' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-soft)'; }}
@@ -169,6 +188,7 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
                   </div>
                   <div style={{ fontSize: 12.5, color: 'var(--text)', marginTop: 2, lineHeight: 1.4, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{p.content}</div>
                 </div>
+                <span className="ml-auto text-xs shrink-0" style={{ color: 'var(--primary)' }}>Open post →</span>
               </button>
             ))
           )
@@ -202,19 +222,20 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
             filteredHashtags.map((h) => (
               <button
                 key={h.tag}
-                onClick={handleSelect}
+                onClick={() => openHashtag(h.tag)}
                 className="flex items-center gap-3 w-full text-left cursor-pointer border-none"
                 style={{ padding: '10px 22px', transition: 'background 0.15s' }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-soft)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(58,139,194,0.1)', color: 'var(--primary)' }}>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(14, 165, 233,0.1)', color: 'var(--primary)' }}>
                   <Hash size={16} />
                 </div>
                 <div>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--primary)' }}>#{h.tag}</div>
                   <div style={{ fontSize: 11.5, color: 'var(--text-lighter)' }}>{h.posts} posts</div>
                 </div>
+                <span className="ml-auto text-xs shrink-0" style={{ color: 'var(--primary)' }}>View posts →</span>
               </button>
             ))
           )

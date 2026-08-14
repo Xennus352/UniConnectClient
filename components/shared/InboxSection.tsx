@@ -15,6 +15,7 @@ interface ConvItem {
   blockedBy: string;
   lastMessageAt: number;
   preview: string;
+  unread: number;
   other: { email: string; name: string; initials: string };
 }
 
@@ -120,7 +121,9 @@ export default function InboxSection() {
             No conversations yet
           </div>
         )}
-        {chats.map((conv) => (
+        {chats.map((conv) => {
+          const hasUnread = (conv.unread ?? 0) > 0;
+          return (
             <Link
             key={conv.id}
             href={`/${session?.role ?? ''}/messages`}
@@ -132,8 +135,16 @@ export default function InboxSection() {
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between gap-2">
-                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)' }}>{conv.other.name}</div>
-                <div className="flex items-center gap-2">
+                <div style={{ fontSize: 14, fontWeight: hasUnread ? 700 : 600, color: 'var(--accent)' }}>{conv.other.name}</div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {hasUnread && (
+                    <span
+                      className="flex items-center justify-center rounded-full text-white font-bold"
+                      style={{ minWidth: 18, height: 18, padding: '0 5px', fontSize: 10.5, background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+                    >
+                      {conv.unread}
+                    </span>
+                  )}
                   {conv.status === 'blocked' && (
                     <span className="badge badge-sm gap-1" style={{ background: 'rgba(248,113,113,0.15)', color: '#dc2626', border: 'none' }}>
                       <Ban size={10} /> Blocked
@@ -141,10 +152,16 @@ export default function InboxSection() {
                   )}
                 </div>
               </div>
-              <div className="text-xs mt-0.5 truncate" style={{ color: 'var(--text-lighter)' }}>{conv.preview}</div>
+              <div
+                className="text-xs mt-0.5 truncate"
+                style={{ color: hasUnread ? 'var(--text)' : 'var(--text-lighter)', fontWeight: hasUnread ? 600 : 400 }}
+              >
+                {conv.preview}
+              </div>
             </div>
           </Link>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

@@ -102,6 +102,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         recipient_email: conv.requested_by,
         type: 'message',
         message: `${identity.name} accepted your message request`,
+        conversation_id: id,
+        actor_email: identity.email,
+        actor_name: identity.name,
         created_at: now,
       });
     }

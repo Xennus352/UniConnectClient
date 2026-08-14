@@ -24,8 +24,8 @@ export default function ThemeSwitcher({ bare = false }: ThemeSwitcherProps) {
   };
 
   const options = [
-    { value: 'light' as const, label: 'Light', desc: 'Soft sky blue & white', Icon: Sun },
-    { value: 'dark' as const, label: 'Dark', desc: 'Deep navy night mode', Icon: Moon },
+    { value: 'light' as const, label: 'Light', desc: 'Sky blue & grey', Icon: Sun },
+    { value: 'dark' as const, label: 'Dark', desc: 'Dark blue & sky blue', Icon: Moon },
   ];
 
   const content = (
@@ -51,8 +51,8 @@ export default function ThemeSwitcher({ bare = false }: ThemeSwitcherProps) {
                   padding: '16px 18px',
                   borderRadius: 'var(--radius-md)',
                   border: `1.5px solid ${isActive ? 'var(--primary)' : 'var(--secondary)'}`,
-                  background: isActive ? 'rgba(58,139,194,0.08)' : 'var(--secondary-lighter)',
-                  boxShadow: isActive ? '0 4px 14px rgba(40,114,161,0.15)' : 'none',
+                  background: isActive ? 'rgba(14,165,233,0.08)' : 'var(--secondary-lighter)',
+                  boxShadow: isActive ? '0 4px 14px rgba(14,165,233,0.15)' : 'none',
                   textAlign: 'left',
                 }}
                 onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.borderColor = 'var(--primary)'; } }}
