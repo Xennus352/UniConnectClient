@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Inbox, UserCheck, UserX, MessageSquare, Clock, Ban } from 'lucide-react';
+import { Inbox, UserCheck, UserX, MessageSquare, Clock, Ban, GraduationCap, FileText } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import { useConversations } from '@/lib/supabase/hooks';
 import { toast } from 'sonner';
 import { useSession } from './session';
+import { apiFetch, type StudentRecord, type ResultDocumentRecord } from './api';
 
 interface ConvItem {
   id: string;
@@ -23,8 +24,54 @@ export default function InboxSection() {
   const supabase = useSupabase();
   const { user: session } = useSession();
   const me = session?.email ?? '';
+  const role = session?.role ?? '';
 
   const { conversations, loading } = useConversations(supabase, me);
+
+  const [results, setResults] = useState<ResultDocumentRecord[] | null>(null);
+  const [resultsLoading, setResultsLoading] = useState(false);
+
+  const isStudent = role === 'student';
+
+  useEffect(() => {
+    if (!me || !isStudent) return;
+    let cancelled = false;
+    setResultsLoading(true);
+    (async () => {
+      try {
+        const students = await apiFetch<StudentRecord[]>('/api/students');
+        const self = students.find((s) => s.email.toLowerCase() === me.toLowerCase());
+        if (!self) {
+          if (!cancelled) { setResults([]); setResultsLoading(false); }
+          return;
+        }
+        const res = await apiFetch<ResultDocumentRecord[]>(`/api/students/${self.studentId}/results`);
+        if (!cancelled) setResults(res ?? []);
+      } catch {
+        if (!cancelled) setResults([]);
+      } finally {
+        if (!cancelled) setResultsLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [me, isStudent]);
+
+  const releasedResults = useMemo(
+    () => (results ?? []).filter((r) => r.releaseStatus === 'RELEASED'),
+    [results]
+  );
+
+  const releasedKey = releasedResults.map((r) => r.resultDocumentId).join('|');
+
+  useEffect(() => {
+    if (!me || !isStudent || releasedResults.length === 0) return;
+    const payload = releasedResults.map((r) => ({ id: r.resultDocumentId, examType: r.examTypeName }));
+    fetch('/api/exam-results/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ results: payload }),
+    }).catch(() => {});
+  }, [me, isStudent, releasedKey, releasedResults.length]);
 
   const items = (conversations as ConvItem[] | null) ?? [];
   const requests = useMemo(
@@ -69,6 +116,52 @@ export default function InboxSection() {
           </p>
         </div>
       </div>
+
+      {isStudent && (
+        <div className="bg-base-100 backdrop-blur-xl mb-5" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--surface)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <GraduationCap size={16} style={{ color: 'var(--primary)' }} />
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)' }}>Exam Results</div>
+              {releasedResults.length > 0 && (
+                <span className="badge badge-sm" style={{ background: 'rgba(52,211,153,0.15)', color: '#16a34a', border: 'none' }}>
+                  {releasedResults.length} released
+                </span>
+              )}
+            </div>
+            <Link href={`/${role}/exam-results`} style={{ fontSize: 12, fontWeight: 600, color: 'var(--primary)' }}>
+              View all →
+            </Link>
+          </div>
+          {resultsLoading && (
+            <div className="text-center py-8 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading results...</div>
+          )}
+          {!resultsLoading && releasedResults.length === 0 && (
+            <div className="text-center py-8 text-sm" style={{ color: 'var(--text-lighter)' }}>No exam results published yet</div>
+          )}
+          {releasedResults.map((r) => (
+            <Link
+              key={r.resultDocumentId}
+              href={`/${role}/exam-results`}
+              className="flex items-center gap-4 px-5 py-4 transition-colors hover:bg-(--surface-soft)"
+              style={{ borderBottom: '1px solid var(--surface)' }}
+            >
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)' }}>
+                <FileText size={18} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--accent)' }}>{r.examTypeName} — {r.pdfFileName}</div>
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-lighter)' }}>
+                  Roll No {r.rollNo} • Your result is ready to view
+                </div>
+              </div>
+              <span className="badge badge-sm shrink-0" style={{ background: 'rgba(52,211,153,0.15)', color: '#16a34a', border: 'none' }}>
+                Released
+              </span>
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="bg-base-100 backdrop-blur-xl mb-5" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 20px', borderBottom: '1px solid var(--surface)' }}>

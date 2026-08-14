@@ -134,9 +134,12 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
         className="relative z-10 flex items-center gap-3 px-5 py-5 border-b"
         style={{ borderColor: 'var(--sidebar-border)' }}
       >
-        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-[#bae6fd] to-[#bae6fd] text-[#0369a1] font-extrabold text-xl shadow-[0_4px_12px_rgba(0,0,0,0.15)]">
-          U
-        </div>
+        <img
+          src="/icon.png"
+          alt="University logo"
+          className="w-10 h-10 rounded-xl object-cover shrink-0"
+          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+        />
         <div>
           <div className="text-lg font-bold" style={{ color: 'var(--sidebar-content)' }}>UniConnect</div>
           <div className="text-[10px] font-medium" style={{ color: 'var(--sidebar-content)', opacity: 0.6 }}>University Network</div>

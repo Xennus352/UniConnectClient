@@ -109,7 +109,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       items: [
         { icon: 'CalendarCheck', label: 'Events', id: 'events' },
         { icon: 'Search', label: 'Lost & Found', id: 'lost-found' },
-        { icon: 'Coins', label: 'Finance', id: 'finance' },
       ],
     },
     {

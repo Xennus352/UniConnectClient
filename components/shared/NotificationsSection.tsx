@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Bell, Heart, MessageSquare, Share2, UserPlus, CalendarCheck, ShieldCheck, CheckCheck } from 'lucide-react';
+import { Bell, Heart, MessageSquare, Share2, UserPlus, CalendarCheck, ShieldCheck, CheckCheck, FileText } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useSupabase } from '@/utils/supabase/client';
 import { useNotifications } from '@/lib/supabase/hooks';
@@ -16,6 +16,7 @@ const TYPE_META: Record<string, { icon: React.ReactNode; bg: string; color: stri
   moderation: { icon: <ShieldCheck size={15} />, bg: 'rgba(167,139,250,0.14)', color: '#a78bfa' },
   event: { icon: <CalendarCheck size={15} />, bg: 'rgba(251,191,36,0.14)', color: '#fbbf24' },
   follow: { icon: <UserPlus size={15} />, bg: 'rgba(52,211,153,0.12)', color: '#34d399' },
+  'exam-result': { icon: <FileText size={15} />, bg: 'rgba(251,191,36,0.14)', color: '#fbbf24' },
 };
 
 function timeAgo(ts: number): string {
@@ -105,6 +106,10 @@ export default function NotificationsSection() {
     }
     if (n.type === 'event') {
       router.push(`${base}/events`);
+      return;
+    }
+    if (n.type === 'exam-result') {
+      router.push(`${base}/inbox`);
     }
   };
 

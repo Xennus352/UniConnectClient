@@ -332,45 +332,7 @@ export function RollCallSection() {
   );
 }
 
-export function EventsSection() {
-  return (
-    <div>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Events</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>University events and academic calendar</p>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-base-100 backdrop-blur-xl" style={cardStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CalendarCheck size={16} /> Upcoming Events
-            </h3>
-            <span style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}>View All</span>
-          </div>
-          <div style={{ padding: '18px 22px', fontSize: 12, color: 'var(--text-lighter)' }}>No events yet</div>
-        </div>
-        <div className="bg-base-100 backdrop-blur-xl" style={cardStyle}>
-          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CalendarDays size={16} /> Quick Actions
-            </h3>
-          </div>
-          <div style={{ padding: '18px 22px' }}>
-            <p style={{ fontSize: 12, color: 'var(--text-lighter)', margin: '0 0 16px 0' }}>Manage your event registrations and reminders</p>
-            <button
-              style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)'; }}
-            ><Plus size={14} /> Register for Event</button>
-            <button
-              style={{ width: '100%', background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--secondary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--secondary-light)'; }}
-            ><CalendarDays size={14} /> View Calendar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+export { default as EventsSection } from '@/components/shared/EventsSection';
 
 export function LostFoundSection() {
   return <LostFoundPage />;

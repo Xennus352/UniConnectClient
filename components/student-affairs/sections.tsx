@@ -300,39 +300,7 @@ export function StudentsSection() {
   );
 }
 
-export function EventsSection() {
-  const [eventFilter, setEventFilter] = useState('All Events');
-  const filters = ['All Events', 'Sports', 'Academic', 'Cultural', 'My Registrations'];
-
-  return (
-    <div>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Events</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>University events, sports, and activities</p>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-        {filters.map((f) => (
-          <button key={f} onClick={() => setEventFilter(f)}
-            style={{
-              background: f === eventFilter ? 'linear-gradient(var(--primary), var(--primary-dark))' : 'var(--secondary-light)',
-              color: f === eventFilter ? '#fff' : 'var(--primary)',
-              border: f === eventFilter ? 'none' : '1.5px solid var(--secondary)',
-              borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-              boxShadow: f === eventFilter ? '0 4px 14px rgba(2, 132, 199,0.3)' : 'none',
-            }}
-            onMouseEnter={(e) => { if (f !== eventFilter) { e.currentTarget.style.background = 'var(--secondary)' } }}
-            onMouseLeave={(e) => { if (f !== eventFilter) { e.currentTarget.style.background = 'var(--secondary-light)' } }}
-          >
-            {f}
-          </button>
-        ))}
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-base-100 backdrop-blur-xl lg:col-span-2" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ padding: 56, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>No events yet</div>
-        </div>
-      </div>
-    </div>
-  );
-}
+export { default as EventsSection } from '@/components/shared/EventsSection';
 
 export function LostFoundSection() {
   return <LostFoundPage />;

@@ -218,3 +218,32 @@ body {
   border-radius: var(--radius-lg);
   animation: notif-blink 0.55s ease-in-out 3;
 }
+
+/* Native dropdown lists must match the active theme (inline-styled <select>
+   elements inherit color-scheme from the root, but <option> popups need an
+   explicit background/color or the text is unreadable in some browsers). */
+select {
+  color-scheme: inherit;
+}
+
+select option {
+  background-color: var(--surface);
+  color: var(--text);
+}
+
+/* Bell shake while there are unread notifications. */
+@keyframes bell-shake {
+  0%, 100% { transform: rotate(0deg); }
+  10% { transform: rotate(14deg); }
+  20% { transform: rotate(-14deg); }
+  30% { transform: rotate(10deg); }
+  40% { transform: rotate(-10deg); }
+  50% { transform: rotate(6deg); }
+  60% { transform: rotate(-6deg); }
+  70% { transform: rotate(3deg); }
+  80% { transform: rotate(-3deg); }
+}
+.bell-shake {
+  animation: bell-shake 1.1s ease-in-out infinite;
+  transform-origin: center;
+}

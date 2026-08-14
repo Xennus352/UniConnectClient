@@ -127,11 +127,15 @@ export function useLostFoundPosts(supabase: TypedSupabaseClient) {
         .from('posts')
         .select('*')
         .eq('status', 'approved')
-        .contains('tags', [{ label: 'Lost & Found' }] as never)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) { console.error(error); setPosts([]); }
-      else { setPosts(data ?? []); }
+      else {
+        setPosts((data ?? []).filter((p) => {
+          const tags = (p.tags ?? []) as { label?: string }[];
+          return tags.some((t) => t.label === 'Lost & Found');
+        }));
+      }
       setLoading(false);
     };
     load();
@@ -459,3 +463,124 @@ export function useNotifications(supabase: TypedSupabaseClient, recipientEmail: 
 }
 
 export type { Post, Comment, Conversation, ChatMessage, Notification, ConvMeta, ChatMeta, ParticipantMeta };
+
+type EventRow = Database['public']['Tables']['events']['Row'];
+type EventRegistration = Database['public']['Tables']['event_registrations']['Row'];
+
+export function useEvents(supabase: TypedSupabaseClient) {
+  const [events, setEvents] = useState<EventRow[] | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .order('event_date', { ascending: true })
+        .limit(100);
+      if (error) {
+        setEvents([]);
+      }
+      else setEvents(data ?? []);
+      setLoading(false);
+    };
+    load();
+
+    const channel = supabase
+      .channel(uniqueChannelName('public:events'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'events' }, (payload) => {
+        setEvents((prev) => {
+          if (!prev) return prev;
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as Partial<EventRow>;
+            if (!row.id || prev.some((e) => e.id === row.id)) return prev;
+            return [...prev, row as EventRow].sort((a, b) => a.event_date - b.event_date);
+          }
+          if (payload.eventType === 'UPDATE') {
+            const row = payload.new as Partial<EventRow>;
+            return prev
+              .map((e) => (e.id === row.id ? { ...e, ...row } : e))
+              .sort((a, b) => a.event_date - b.event_date);
+          }
+          if (payload.eventType === 'DELETE') {
+            return prev.filter((e) => e.id !== (payload.old as EventRow).id);
+          }
+          return prev;
+        });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase]);
+
+  return { events, loading };
+}
+
+export function useEventRegistrations(supabase: TypedSupabaseClient, eventIds: string[], me: string) {
+  const [regs, setRegs] = useState<Record<string, { count: number; registered: boolean }> | null>(null);
+  const idsKey = eventIds.join('|');
+
+  useEffect(() => {
+    if (idsKey === '') { setRegs({}); return; }
+    const ids = idsKey === '' ? [] : idsKey.split('|');
+    let cancelled = false;
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('event_registrations')
+        .select('event_id, user_email')
+        .in('event_id', ids);
+      if (error) { console.error(error); if (!cancelled) setRegs({}); return; }
+      if (cancelled) return;
+      const map: Record<string, { count: number; registered: boolean }> = {};
+      for (const id of ids) map[id] = { count: 0, registered: false };
+      for (const r of data ?? []) {
+        const m = map[r.event_id];
+        if (m) {
+          m.count += 1;
+          if (r.user_email.toLowerCase() === me.toLowerCase()) m.registered = true;
+        }
+      }
+      setRegs(map);
+    };
+    load();
+
+    const channel = supabase
+      .channel(uniqueChannelName('public:event_registrations'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'event_registrations' }, (payload) => {
+        setRegs((prev) => {
+          if (!prev) return prev;
+          const eventId =
+            (payload.new as Partial<EventRegistration>)?.event_id ??
+            (payload.old as Partial<EventRegistration>)?.event_id;
+          const m = eventId ? prev[eventId] : undefined;
+          if (!eventId || !m) return prev;
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as Partial<EventRegistration>;
+            return {
+              ...prev,
+              [eventId]: {
+                count: m.count + 1,
+                registered: m.registered || (row.user_email ?? '').toLowerCase() === me.toLowerCase(),
+              },
+            };
+          }
+          if (payload.eventType === 'DELETE') {
+            const row = payload.old as Partial<EventRegistration>;
+            return {
+              ...prev,
+              [eventId]: {
+                count: Math.max(0, m.count - 1),
+                registered: m.registered && (row.user_email ?? '').toLowerCase() !== me.toLowerCase(),
+              },
+            };
+          }
+          return prev;
+        });
+      })
+      .subscribe();
+
+    return () => { cancelled = true; supabase.removeChannel(channel); };
+  }, [supabase, idsKey, me]);
+
+  return { registrations: regs };
+}

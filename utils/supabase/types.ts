@@ -206,6 +206,50 @@ export interface Database {
         Update: { read?: boolean | null };
         Relationships: [];
       };
+      events: {
+        Row: {
+          id: string;
+          title: string;
+          description: string | null;
+          location: string | null;
+          event_date: number;
+          category: string;
+          max_attendees: number | null;
+          created_by: string;
+          created_by_name: string;
+          created_at: number;
+        };
+        Insert: {
+          title: string;
+          description?: string | null;
+          location?: string | null;
+          event_date: number;
+          category?: string;
+          max_attendees?: number | null;
+          created_by: string;
+          created_by_name: string;
+          created_at?: number;
+        };
+        Update: Partial<{ title: string; description: string | null; location: string | null; event_date: number; category: string; max_attendees: number | null }>;
+        Relationships: [];
+      };
+      event_registrations: {
+        Row: {
+          id: string;
+          event_id: string;
+          user_email: string;
+          user_name: string;
+          created_at: number;
+        };
+        Insert: {
+          event_id: string;
+          user_email: string;
+          user_name: string;
+          created_at?: number;
+        };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: Record<string, never>;
