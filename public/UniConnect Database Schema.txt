@@ -1,0 +1,408 @@
+# Database Schema
+
+================================================================================
+## 1. Authentication Module
+================================================================================
+
+### USERS
+user_id PK
+email
+password_hash
+role_id FK => roles.role_id
+is_active
+failed_login_attempts
+account_locked_until
+registration_status
+last_login
+created_at
+updated_at
+
+### ROLES
+role_id PK
+role_name
+description
+
+### REFRESH_TOKENS
+token_id PK
+user_id FK => users.user_id
+token_hash
+device_name
+ip_address
+expires_at
+revoked
+created_at
+
+
+================================================================================
+## 2. Organization Module
+================================================================================
+
+### ORGANIZATIONAL_UNITS
+unit_id PK
+unit_name
+unit_code UNIQUE
+unit_type
+description
+
+### POSITIONS
+position_id PK
+position_name
+description
+
+### STAFF
+staff_id PK
+user_id FK => users.user_id
+staff_no UNIQUE
+staff_name
+phone_no
+batch_year
+address
+unit_id FK => organizational_units.unit_id
+joined_at
+left_date
+created_at
+updated_at
+
+### STAFF_POSITION_ASSIGNMENTS
+position_assignment_id PK
+staff_id FK => staff.staff_id
+position_id FK => positions.position_id
+start_date
+end_date
+assigned_by_staff_id FK => staff.staff_id
+
+
+================================================================================
+## 3. Academic Module
+================================================================================
+
+### MAJORS
+major_id PK
+unit_id FK => organizational_units.unit_id
+major_code
+major_name
+
+### SEMESTERS
+semester_id PK
+semester_no
+
+### SECTIONS
+section_id PK
+section_name
+
+### STUDENTS
+student_id PK
+user_id FK => users.user_id
+major_id FK => majors.major_id
+semester_id FK => semesters.semester_id
+section_id FK => sections.section_id
+term_id FK => academic_terms.term_id
+roll_no UNIQUE
+student_name
+phone_no
+address
+birth_year
+created_at
+updated_at
+
+### ACADEMIC_TERMS
+term_id PK
+academic_year
+start_date
+end_date
+status
+
+
+================================================================================
+## 4. Teaching Module
+================================================================================
+
+### COURSES
+course_id PK
+unit_id FK => organizational_units.unit_id
+course_code
+course_name
+credit_unit
+major_id FK => majors.major_id
+semester_id FK => semesters.semester_id
+is_required
+display_order
+
+### TEACHING_ASSIGNMENTS
+assignment_id PK
+course_id FK => courses.course_id
+staff_id FK => staff.staff_id
+section_id FK => sections.section_id
+term_id FK => academic_terms.term_id
+assignment_status
+assigned_at
+assigned_by_staff_id FK => staff.staff_id
+
+
+================================================================================
+## 6. Timetable Module
+================================================================================
+
+### TIME_SLOTS
+slot_id PK
+period_no
+start_time
+end_time
+display_order
+slot_type (CLASS/LAB/EXAM)
+
+### COURSE_MEETING_REQUIREMENTS
+requirement_id PK
+course_id FK => courses.course_id
+meeting_type (LECTURE/LAB)
+sessions_per_week
+periods_per_session
+
+### GENERATION_SESSIONS
+generation_id PK
+term_id FK => academic_terms.term_id
+generated_by_staff_id FK => staff.staff_id
+status
+started_at
+published_at
+finished_at
+created_at
+
+### CLASS_SCHEDULES
+schedule_id PK
+generation_id FK => generation_sessions.generation_id
+teaching_assignment_id FK => teaching_assignments.assignment_id
+day_of_week
+start_slot_id FK => time_slots.slot_id
+end_slot_id FK => time_slots.slot_id
+schedule_status
+created_at
+
+
+================================================================================
+## 7. Attendance Module
+================================================================================
+
+### CLASS_SESSIONS
+session_id PK
+schedule_id FK => class_schedules.schedule_id
+session_date
+session_status
+started_at
+ended_at
+
+### ATTENDANCE
+attendance_id PK
+session_id FK => class_sessions.session_id
+student_id FK => students.student_id
+attendance_status (PRESENT/ABSENT)
+remark
+marked_at
+marked_by_staff_id FK => staff.staff_id
+
+
+================================================================================
+## 8. Examinations Module
+================================================================================
+
+### EXAM_TYPES
+exam_type_id PK
+exam_type_name
+
+### RESULT_BATCHES
+batch_id PK
+term_id FK => academic_terms.term_id
+exam_type_id FK => exam_types.exam_type_id
+semester_id FK => semesters.semester_id
+uploaded_by_staff_id FK => staff.staff_id
+uploaded_type
+source_file_name
+total_files
+matched_files
+failed_files
+status
+uploaded_at
+published_at
+
+### EXAM_RESULT_DOCUMENTS
+result_document_id PK
+batch_id FK => result_batches.batch_id
+student_id FK => students.student_id
+pdf_file_name
+storage_object_path
+release_status
+blocked_reason
+viewed_at
+downloaded_at
+created_at
+
+
+================================================================================
+## 9. Inbox Module (Convex)
+================================================================================
+
+### INBOX_MESSAGES
+message_id Convex ID PK
+thread_id 
+sender_id (PostgreSQL user_id)
+recipient_id
+subject
+body
+message_type (NORMAL, EXAM_RESULT, ANNOUNCEMENT)
+parent_message_id (Convex ID / null)
+attachment_url
+attachment_name
+attachment_type
+attachment_size
+is_read
+read_at
+is_deleted
+created_at
+
+
+================================================================================
+## 10. Chat / Conversation Module (Convex)
+================================================================================
+
+### CONVERSATIONS
+conversation_id Convex ID PK
+conversation_type (DIRECT, GROUP)
+created_by (PostgreSQL user_id)
+created_at
+
+### CONVERSATION_MEMBERS
+member_id Convex ID PK
+conversation_id FK => conversations.conversation_id
+user_id (PostgreSQL user_id)
+member_role (OWNER, ADMIN, MEMBER)
+joined_at
+left_at
+
+### CHAT_MESSAGES
+message_id Convex ID PK
+conversation_id FK => conversations.conversation_id
+sender_id (PostgreSQL user_id)
+content
+message_type (TEXT, IMAGE, FILE, VIDEO)
+reply_to_message_id (Convex ID / null)
+attachment_url
+attachment_name
+attachment_type
+attachment_size
+created_at
+edited_at
+deleted_at
+
+
+================================================================================
+## 11. Message Requests & Blocking Module (Convex)
+================================================================================
+
+### MESSAGE_REQUESTS
+request_id Convex ID PK
+sender_id (PostgreSQL user_id)
+receiver_id (PostgreSQL user_id)
+conversation_id FK => conversations.conversation_id
+status (PENDING, ACCEPTED, DECLINED)
+created_at
+responded_at
+
+### USER_BLOCKS
+block_id Convex ID PK
+blocker_id (PostgreSQL user_id)
+blocked_user_id (PostgreSQL user_id)
+created_at
+
+
+================================================================================
+## 12. Posts / University Feed Module (Convex)
+================================================================================
+
+### POSTS
+post_id Convex ID PK
+author_id (PostgreSQL user_id)
+content
+post_category (GENERAL, LOST_FOUND, ANNOUNCEMENT, ACTIVITY)
+visibility (PUBLIC, UNIVERSITY)
+status (PENDING_AI, PENDING_REVIEW, APPROVED, REJECTED)
+rejection_reason
+attachment_url
+attachment_name
+attachment_type
+attachment_size
+created_at
+updated_at
+
+### POST_COMMENTS
+comment_id Convex ID PK
+post_id FK => posts.post_id
+user_id (PostgreSQL user_id)
+parent_comment_id (Convex ID / null)
+content
+created_at
+updated_at
+
+### POST_LIKES
+like_id Convex ID PK
+post_id FK => posts.post_id
+user_id (PostgreSQL user_id)
+created_at
+
+
+================================================================================
+## 13. Events & Activities Module (Convex)
+================================================================================
+
+### EVENTS
+event_id Convex ID PK
+created_by (PostgreSQL user_id)
+title
+description
+location
+start_at
+end_at
+visibility
+status (DRAFT, PUBLISHED, CANCELLED)
+attachment_url
+attachment_name
+attachment_type
+attachment_size
+created_at
+updated_at
+
+
+================================================================================
+## 14. Notifications Module (Convex)
+================================================================================
+
+### NOTIFICATIONS
+notification_id Convex ID PK
+user_id (PostgreSQL user_id)
+notification_type (INBOX, CHAT, MESSAGE_REQUEST, POST, POST_REJECTED, EVENT, EXAM_RESULT)
+title
+message
+reference_type
+reference_id
+is_read
+created_at
+read_at
+
+
+================================================================================
+## Appendix: System Architecture
+================================================================================
+
+### Final Database Layer
+-----------------------------------------------------------------
+PostgreSQL    | Core university data (Users, Students, Staff, 
+              | Courses, Classes, Timetables, Attendance, Exams).
+-----------------------------------------------------------------
+Convex        | Realtime & community data (Inbox, Chat, Posts, 
+              | Events, Notifications).
+-----------------------------------------------------------------
+Supabase      | File storage (Inbox, Chat, Post, Event attachments).
+Storage       |
+-----------------------------------------------------------------
+
+### Data Flow
+PostgreSQL ---> (user_id references) ---> Convex ---> (storage_path) ---> Supabase Storage

@@ -1,26 +1,180 @@
 @import "tailwindcss";
+@plugin "daisyui" {
+  themes: light --default, dark;
+}
 
+/* ---------- daisyUI light theme (blue & white) ---------- */
+@plugin "daisyui/theme" {
+  name: "light";
+  default: true;
+  color-scheme: light;
+
+  --color-base-100: oklch(99% 0.004 240);
+  --color-base-200: oklch(95.5% 0.012 240);
+  --color-base-300: oklch(91% 0.02 240);
+  --color-base-content: oklch(32% 0.04 240);
+  --color-primary: oklch(55% 0.16 245);
+  --color-primary-content: white;
+  --color-secondary: oklch(65% 0.11 245);
+  --color-secondary-content: white;
+  --color-accent: oklch(72% 0.09 220);
+  --color-accent-content: oklch(24% 0.03 240);
+  --color-neutral: oklch(38% 0.04 240);
+  --color-neutral-content: white;
+  --color-info: oklch(60% 0.15 240);
+  --color-info-content: white;
+  --color-success: oklch(65% 0.17 150);
+  --color-success-content: white;
+  --color-warning: oklch(80% 0.15 85);
+  --color-warning-content: oklch(25% 0.05 85);
+  --color-error: oklch(58% 0.22 25);
+  --color-error-content: white;
+
+  --radius-selector: 0.75rem;
+  --radius-field: 0.75rem;
+  --radius-box: 0.75rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/* ---------- daisyUI dark theme ---------- */
+@plugin "daisyui/theme" {
+  name: "dark";
+  color-scheme: dark;
+
+  --color-base-100: oklch(0.14 0.03 260);
+  --color-base-200: oklch(0.11 0.03 260);
+  --color-base-300: oklch(0.09 0.03 260);
+  --color-base-content: oklch(0.85 0.02 260);
+  --color-primary: oklch(0.50 0.13 260);
+  --color-primary-content: oklch(0.98 0.01 260);
+  --color-secondary: oklch(0.30 0.06 260);
+  --color-secondary-content: oklch(0.85 0.02 260);
+  --color-accent: oklch(0.58 0.12 265);
+  --color-accent-content: oklch(0.98 0.01 260);
+  --color-neutral: oklch(0.18 0.04 260);
+  --color-neutral-content: oklch(0.85 0.02 260);
+  --color-info: oklch(0.50 0.13 260);
+  --color-info-content: oklch(0.98 0.01 260);
+  --color-success: oklch(0.62 0.20 145);
+  --color-success-content: oklch(0.98 0.01 260);
+  --color-warning: oklch(0.75 0.15 80);
+  --color-warning-content: oklch(0.20 0.05 80);
+  --color-error: oklch(0.60 0.25 30);
+  --color-error-content: oklch(0.98 0.01 260);
+
+  --radius-selector: 0.75rem;
+  --radius-field: 0.75rem;
+  --radius-box: 0.75rem;
+  --border: 1px;
+  --depth: 1;
+  --noise: 0;
+}
+
+/* ---------- theme-independent brand tokens ---------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --primary: #3a8bc2;
+  --primary-dark: #2a7aaa;
+  --primary-darker: #1a5a8a;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --error: #ef4444;
+  --info: #3b82f6;
+  --radius-sm: 12px;
+  --radius-md: 16px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ---------- light theme (blue & white) ---------- */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --secondary: #dce9f5;
+  --secondary-light: #e9f2fa;
+  --secondary-lighter: #f4f9fd;
+  --accent: #16324f;
+  --text: #2f4156;
+  --text-light: #5b7086;
+  --text-lighter: #8ba1b5;
+  --white: #ffffff;
+  --shadow-sm: 0 4px 20px rgba(45, 110, 160, 0.08);
+  --shadow-md: 0 8px 32px rgba(45, 110, 160, 0.12);
+  --shadow-lg: 0 16px 48px rgba(45, 110, 160, 0.16);
+  --surface: #ffffff;
+  --surface-soft: #f7fafd;
+  --surface-strong: #dce9f5;
+  --surface-border: #d9e6f2;
+  --surface-hover: #f0f6fb;
+  --divider: #eef4fa;
+  --divider-soft: #f4f9fd;
+  --modal-bg: #ffffff;
+  --nav-bg: rgba(255, 255, 255, 0.9);
+  --login-panel: linear-gradient(160deg, #b9def2 0%, #d8eefb 50%, #a9d5ee 100%);
+  --login-panel-content: #16324f;
+  --sidebar-bg: linear-gradient(180deg, #c9e7f7 0%, #e4f3fc 40%, #bfe0f4 100%);
+  --sidebar-border: rgba(58, 139, 194, 0.25);
+  --sidebar-content: #16324f;
+  --sidebar-hover: rgba(255, 255, 255, 0.4);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.6);
+  --sidebar-active-text: #16324f;
+  --sidebar-active-accent: #3a8bc2;
+  --sidebar-card-bg: rgba(255, 255, 255, 0.5);
+  --sidebar-card-border: rgba(255, 255, 255, 0.7);
+  --app-bg: linear-gradient(160deg, #eaf3fb 0%, #f2f8fd 30%, #e8f0fa 60%, #eef6fc 100%);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ---------- dark theme (current design) ---------- */
+[data-theme="dark"] {
+  color-scheme: dark;
+  --secondary: rgba(255, 255, 255, 0.08);
+  --secondary-light: rgba(255, 255, 255, 0.12);
+  --secondary-lighter: rgba(255, 255, 255, 0.04);
+  --accent: #c8d8e8;
+  --text: #d0dce8;
+  --text-light: #8a9aaa;
+  --text-lighter: #6a7a8a;
+  --white: rgba(255, 255, 255, 0.06);
+  --shadow-sm: 0 4px 20px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-soft: rgba(255, 255, 255, 0.03);
+  --surface-strong: rgba(255, 255, 255, 0.12);
+  --surface-border: rgba(255, 255, 255, 0.08);
+  --surface-hover: rgba(255, 255, 255, 0.15);
+  --divider: rgba(255, 255, 255, 0.04);
+  --divider-soft: rgba(255, 255, 255, 0.02);
+  --modal-bg: #0f1a2e;
+  --nav-bg: rgba(10, 20, 40, 0.85);
+  --login-panel: linear-gradient(160deg, var(--primary), var(--primary-darker));
+  --login-panel-content: #f0f7fc;
+  --sidebar-bg: linear-gradient(180deg, #0d1a30 0%, #10203a 50%, #0d1a30 100%);
+  --sidebar-border: rgba(255, 255, 255, 0.1);
+  --sidebar-content: #f0f6fc;
+  --sidebar-hover: rgba(255, 255, 255, 0.08);
+  --sidebar-active-bg: rgba(203, 221, 233, 0.14);
+  --sidebar-active-text: #ffffff;
+  --sidebar-active-accent: #cbdde9;
+  --sidebar-card-bg: rgba(255, 255, 255, 0.08);
+  --sidebar-card-border: rgba(255, 255, 255, 0.12);
+  --app-bg: linear-gradient(160deg, #0a1628 0%, #0f2040 30%, #152545 60%, #0a1628 100%);
+}
+
+html {
+  background: var(--app-bg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--app-bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-size: 14px;
 }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--secondary-light); }

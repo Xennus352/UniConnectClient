@@ -1,0 +1,113 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+const BASE = process.env.NEXT_PUBLIC_API_URL || 'https://uniconnectserver-production.up.railway.app';
+
+const COOKIE_OPTS = {
+  path: '/',
+  maxAge: 60 * 60 * 24 * 30,
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: process.env.NODE_ENV === 'production',
+};
+
+async function callSpring(path: string, init: RequestInit): Promise<Response> {
+  return fetch(`${BASE}${path}`, init);
+}
+
+async function refreshTokens(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  const res = await fetch(`${BASE}/api/auth/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (!res.ok) throw new Error('Refresh failed');
+  const data = await res.json();
+  return { accessToken: data.accessToken, refreshToken: data.refreshToken };
+}
+
+// The university server rotates the refresh token on every refresh call, so
+// concurrent requests that all hit an expired access token must share a single
+// refresh to avoid racing each other. Keep one in-flight refresh per process.
+let pendingRefresh: Promise<{ accessToken: string; refreshToken: string }> | null = null;
+
+function refreshOnce(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  if (!pendingRefresh) {
+    pendingRefresh = refreshTokens(refreshToken).finally(() => {
+      pendingRefresh = null;
+    });
+  }
+  return pendingRefresh;
+}
+
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return handle(request, { params });
+}
+
+export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return handle(request, { params });
+}
+
+export async function PUT(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return handle(request, { params });
+}
+
+export async function PATCH(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return handle(request, { params });
+}
+
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  return handle(request, { params });
+}
+
+async function handle(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params;
+  const pathname = `/${path.join('/')}`;
+  const tokensRaw = request.cookies.get('uniconnect_backend')?.value;
+  const responseHeaders: Record<string, string> = {};
+
+  const buildInit = async (token: string): Promise<RequestInit> => ({
+    method: request.method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': request.headers.get('content-type') || 'application/json',
+    },
+    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.text(),
+  });
+
+  const execute = async (token: string) => {
+    const res = await callSpring(pathname, await buildInit(token));
+    // The university server reports an expired/invalid access token as 403
+    // (Spring's default entry point), so refresh on both 401 and 403.
+    if ((res.status === 401 || res.status === 403) && tokensRaw) {
+      const tokens = JSON.parse(tokensRaw);
+      if (tokens?.refreshToken) {
+        const refreshed = await refreshOnce(tokens.refreshToken).catch(() => null);
+        if (refreshed) {
+          responseHeaders['set-cookie'] = JSON.stringify({ ...tokens, ...refreshed });
+          return callSpring(pathname, await buildInit(refreshed.accessToken));
+        }
+      }
+    }
+    return res;
+  };
+
+  if (!tokensRaw) {
+    return NextResponse.json({ message: 'Not authenticated with university server' }, { status: 401 });
+  }
+
+  try {
+    const tokens = JSON.parse(tokensRaw);
+    const res = await execute(tokens.accessToken);
+
+    const body = await res.text();
+    const response = new NextResponse(body, { status: res.status, headers: { 'content-type': res.headers.get('content-type') || 'application/json' } });
+
+    if (responseHeaders['set-cookie']) {
+      const nextTokens = JSON.parse(responseHeaders['set-cookie']);
+      response.cookies.set('uniconnect_backend', JSON.stringify(nextTokens), COOKIE_OPTS);
+    }
+    return response;
+  } catch (e) {
+    return NextResponse.json({ message: e instanceof Error ? e.message : 'Backend proxy error' }, { status: 502 });
+  }
+}

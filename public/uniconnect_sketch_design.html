@@ -1,0 +1,1657 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UniConnect - University Communication Platform</title>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    :root {
+      --primary: #2872A1; --primary-dark: #1e5a82; --primary-darker: #154a6e;
+      --secondary: #CBDDE9; --secondary-light: #e8f2f7; --secondary-lighter: #f5f9fc;
+      --accent: #1a3a52; --text: #2d4a5e; --text-light: #6b8fa3; --text-lighter: #8abbd4;
+      --success: #22c55e; --warning: #f59e0b; --danger: #ef4444; --white: #ffffff;
+      --shadow-sm: 0 2px 8px rgba(40,114,161,0.06); --shadow-md: 0 4px 16px rgba(40,114,161,0.08);
+      --shadow-lg: 0 12px 40px rgba(40,114,161,0.15); --radius-sm: 10px; --radius-md: 14px;
+      --radius-lg: 18px; --radius-xl: 20px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background: linear-gradient(135deg, #f0f5f9 0%, #e8f0f7 50%, #f5f9fc 100%); min-height: 100vh; color: var(--text); }
+    .app { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar { width: 260px; min-width: 260px; background: linear-gradient(180deg, #1a3a52 0%, #2872A1 60%, #1e5a82 100%); color: #fff; display: flex; flex-direction: column; padding: 20px 0; box-shadow: 4px 0 24px rgba(40,114,161,0.15); position: relative; z-index: 100; transition: transform 0.3s ease; }
+    .sidebar::before { content: ''; position: absolute; inset: 0; background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E"); opacity: 0.4; pointer-events: none; }
+    .logo { display: flex; align-items: center; gap: 12px; padding: 0 20px 20px; border-bottom: 1px solid rgba(255,255,255,0.1); position: relative; }
+    .logo-icon { width: 40px; height: 40px; background: linear-gradient(135deg, #CBDDE9 0%, #a8cce0 100%); border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 20px; font-weight: 800; color: var(--primary); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+    .logo-text { font-size: 18px; font-weight: 700; }
+    .logo-sub { font-size: 10px; color: rgba(203,221,233,0.7); margin-top: 2px; font-weight: 500; }
+    .nav-section { padding: 16px 12px 6px; position: relative; }
+    .nav-label { font-size: 9px; text-transform: uppercase; color: rgba(203,221,233,0.55); letter-spacing: 1.5px; font-weight: 700; padding: 0 12px; margin-bottom: 6px; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; margin: 2px 8px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; font-size: 13px; color: rgba(255,255,255,0.75); font-weight: 500; position: relative; }
+    .nav-item:hover { background: rgba(255,255,255,0.1); color: #fff; transform: translateX(2px); }
+    .nav-item.active { background: linear-gradient(90deg, rgba(203,221,233,0.2), rgba(203,221,233,0.05)); color: #fff; font-weight: 600; box-shadow: inset 3px 0 0 var(--secondary); }
+    .nav-item i { width: 20px; text-align: center; font-size: 15px; }
+    .nav-badge { margin-left: auto; background: var(--danger); color: #fff; font-size: 9px; padding: 2px 7px; border-radius: 20px; font-weight: 700; }
+    .user-card { margin-top: auto; padding: 14px; margin: 16px 14px 0; background: rgba(255,255,255,0.08); backdrop-filter: blur(10px); border-radius: var(--radius-md); display: flex; align-items: center; gap: 10px; border: 1px solid rgba(255,255,255,0.08); position: relative; }
+    .user-avatar { width: 36px; height: 36px; border-radius: 50%; background: linear-gradient(135deg, #CBDDE9, #8abbd4); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: var(--primary); }
+    .user-name { font-size: 12px; font-weight: 600; }
+    .user-role { font-size: 10px; color: rgba(203,221,233,0.7); }
+    .user-status { width: 8px; height: 8px; background: var(--success); border-radius: 50%; box-shadow: 0 0 6px var(--success); margin-left: auto; }
+    .main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+    .header { height: 64px; background: rgba(255,255,255,0.9); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(203,221,233,0.5); display: flex; align-items: center; justify-content: space-between; padding: 0 28px; position: relative; z-index: 50; }
+    .search-box { display: flex; align-items: center; gap: 10px; background: linear-gradient(135deg, #f8fbfd, #eef4f8); padding: 9px 16px; border-radius: var(--radius-md); width: 380px; border: 1.5px solid var(--secondary); transition: all 0.2s; }
+    .search-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 4px rgba(40,114,161,0.08); }
+    .search-box input { border: none; background: none; outline: none; font-size: 13px; width: 100%; color: var(--text); font-weight: 500; }
+    .search-box input::placeholder { color: var(--text-lighter); }
+    .search-box i { color: var(--text-lighter); font-size: 14px; }
+    .header-actions { display: flex; align-items: center; gap: 12px; }
+    .icon-btn { width: 38px; height: 38px; border-radius: var(--radius-sm); background: linear-gradient(135deg, #f5f9fc, #e8f2f7); border: 1.5px solid var(--secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 15px; position: relative; transition: all 0.2s; color: var(--primary); }
+    .icon-btn:hover { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; border-color: var(--primary); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(40,114,161,0.25); }
+    .notif-dot { position: absolute; top: 7px; right: 7px; width: 8px; height: 8px; background: var(--danger); border-radius: 50%; border: 2px solid #fff; }
+    .mobile-menu-btn { display: none; width: 38px; height: 38px; border-radius: var(--radius-sm); background: var(--secondary-light); border: 1.5px solid var(--secondary); align-items: center; justify-content: center; cursor: pointer; color: var(--primary); font-size: 16px; }
+    .content { flex: 1; overflow-y: auto; padding: 24px 28px; }
+    .content-inner { max-width: 1280px; margin: 0 auto; }
+    .page-title { font-size: 24px; font-weight: 700; color: var(--accent); margin-bottom: 4px; }
+    .page-subtitle { font-size: 13px; color: var(--text-light); margin-bottom: 20px; }
+    .card { background: var(--white); border-radius: var(--radius-lg); border: 1px solid rgba(203,221,233,0.4); box-shadow: var(--shadow-sm); overflow: hidden; transition: all 0.3s ease; }
+    .card:hover { box-shadow: var(--shadow-md); }
+    .card-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 22px; border-bottom: 1px solid rgba(203,221,233,0.3); }
+    .card-title { font-size: 14px; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+    .card-action { font-size: 12px; color: var(--primary); cursor: pointer; font-weight: 600; padding: 6px 14px; border-radius: var(--radius-sm); transition: all 0.2s; }
+    .card-action:hover { background: rgba(40,114,161,0.08); }
+    .card-body { padding: 16px 22px; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 20px; border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+    .btn-primary { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; box-shadow: 0 4px 14px rgba(40,114,161,0.3); }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(40,114,161,0.4); }
+    .btn-secondary { background: var(--secondary-light); color: var(--primary); border: 1.5px solid var(--secondary); }
+    .btn-secondary:hover { background: var(--secondary); }
+    .btn-ghost { background: transparent; color: var(--text-light); }
+    .btn-ghost:hover { background: rgba(203,221,233,0.3); color: var(--primary); }
+    .btn-sm { padding: 6px 14px; font-size: 12px; }
+    .btn-danger { background: linear-gradient(135deg, #ef4444, #dc2626); color: #fff; }
+    .btn-success { background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 3px 10px; border-radius: 20px; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
+    .badge-blue { background: linear-gradient(135deg, #dbeafe, #bfdbfe); color: #1e40af; }
+    .badge-green { background: linear-gradient(135deg, #dcfce7, #bbf7d0); color: #166534; }
+    .badge-purple { background: linear-gradient(135deg, #f3e8ff, #e9d5ff); color: #6b21a8; }
+    .badge-orange { background: linear-gradient(135deg, #fef3c7, #fde68a); color: #92400e; }
+    .badge-red { background: linear-gradient(135deg, #fee2e2, #fecaca); color: #991b1b; }
+    .badge-teal { background: linear-gradient(135deg, #e0f2f1, #b2dfdb); color: #00695c; }
+    .tabs { display: flex; gap: 4px; padding: 0 22px; border-bottom: 1px solid rgba(203,221,233,0.3); }
+    .tab { padding: 12px 16px; font-size: 12.5px; font-weight: 600; color: var(--text-light); cursor: pointer; border-bottom: 2.5px solid transparent; transition: all 0.2s; margin-bottom: -1px; background: none; border-top: none; border-left: none; border-right: none; }
+    .tab:hover { color: var(--primary); }
+    .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .form-group { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+    .form-input, .form-select, .form-textarea { width: 100%; padding: 10px 14px; border-radius: var(--radius-sm); border: 1.5px solid var(--secondary); background: var(--secondary-lighter); font-size: 13px; color: var(--text); font-family: inherit; transition: all 0.2s; }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(40,114,161,0.08); }
+    .form-textarea { resize: vertical; min-height: 80px; }
+    .empty-state { text-align: center; padding: 60px 20px; }
+    .empty-state-icon { font-size: 48px; margin-bottom: 16px; opacity: 0.3; }
+    .empty-state h3 { font-size: 16px; color: var(--accent); margin-bottom: 6px; }
+    .empty-state p { font-size: 13px; color: var(--text-light); }
+    .welcome-bar { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 50%, var(--primary-darker) 100%); border-radius: var(--radius-xl); padding: 26px 32px; color: #fff; margin-bottom: 22px; display: flex; align-items: center; justify-content: space-between; box-shadow: var(--shadow-lg); position: relative; overflow: hidden; }
+    .welcome-bar::after { content: ''; position: absolute; top: -50%; right: -10%; width: 300px; height: 300px; background: radial-gradient(circle, rgba(203,221,233,0.12) 0%, transparent 70%); border-radius: 50%; }
+    .welcome-text { position: relative; z-index: 1; }
+    .welcome-text h1 { margin: 0; font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+    .welcome-text p { margin: 6px 0 0; opacity: 0.85; font-size: 13.5px; font-weight: 400; }
+    .welcome-date { text-align: right; position: relative; z-index: 1; }
+    .welcome-date .day { font-size: 34px; font-weight: 800; line-height: 1; }
+    .welcome-date .month { font-size: 12px; opacity: 0.8; font-weight: 500; margin-top: 4px; }
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px; }
+    .stat-card { background: var(--white); border-radius: var(--radius-lg); padding: 20px; border: 1px solid rgba(203,221,233,0.5); box-shadow: var(--shadow-sm); transition: all 0.3s ease; cursor: pointer; }
+    .stat-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--secondary); }
+    .stat-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .stat-icon { width: 44px; height: 44px; border-radius: var(--radius-md); display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+    .stat-icon.blue { background: linear-gradient(135deg, #e8f4fc, #d0e8f5); }
+    .stat-icon.green { background: linear-gradient(135deg, #e8f8f0, #d0f0e0); }
+    .stat-icon.purple { background: linear-gradient(135deg, #f0e8f8, #e0d0f0); }
+    .stat-icon.orange { background: linear-gradient(135deg, #fff0e0, #ffe0c0); }
+    .stat-icon.teal { background: linear-gradient(135deg, #e0f2f1, #b2dfdb); }
+    .stat-value { font-size: 26px; font-weight: 800; color: var(--accent); letter-spacing: -0.5px; }
+    .stat-label { font-size: 12px; color: var(--text-light); margin-top: 3px; font-weight: 500; }
+    .stat-trend { font-size: 10px; color: var(--success); font-weight: 700; background: #dcfce7; padding: 2px 8px; border-radius: 20px; }
+    .grid-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 18px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+    .compose-box { background: var(--white); border-radius: var(--radius-lg); border: 1.5px solid rgba(203,221,233,0.5); box-shadow: var(--shadow-sm); padding: 18px; margin-bottom: 18px; }
+    .compose-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .compose-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #CBDDE9, #a8cce0); display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; color: var(--primary); flex-shrink: 0; }
+    .compose-input { flex: 1; border: none; background: var(--secondary-lighter); border-radius: var(--radius-md); padding: 12px 16px; font-size: 13.5px; outline: none; resize: none; height: 48px; color: var(--text); font-family: inherit; transition: all 0.2s; }
+    .compose-input:focus { background: var(--secondary-light); box-shadow: inset 0 0 0 2px var(--secondary); }
+    .compose-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(203,221,233,0.3); }
+    .compose-tools { display: flex; gap: 8px; }
+    .tool-btn { padding: 7px 13px; border-radius: var(--radius-sm); background: var(--secondary-lighter); border: 1.5px solid var(--secondary); font-size: 12px; color: var(--text-light); cursor: pointer; font-weight: 500; transition: all 0.2s; display: flex; align-items: center; gap: 5px; }
+    .tool-btn:hover { background: var(--secondary-light); border-color: var(--primary); color: var(--primary); }
+    .feed-list { padding: 6px 0; }
+    .feed-item { display: flex; gap: 14px; padding: 18px 22px; border-bottom: 1px solid rgba(203,221,233,0.25); transition: all 0.2s; cursor: pointer; }
+    .feed-item:last-child { border-bottom: none; }
+    .feed-item:hover { background: linear-gradient(90deg, rgba(203,221,233,0.06), transparent); }
+    .feed-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; flex-shrink: 0; box-shadow: 0 3px 10px rgba(0,0,0,0.08); }
+    .feed-content { flex: 1; }
+    .feed-header-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+    .feed-author { font-size: 13.5px; font-weight: 700; color: var(--accent); }
+    .feed-verified { color: var(--primary); font-size: 12px; }
+    .feed-meta { font-size: 11.5px; color: var(--text-lighter); font-weight: 500; }
+    .feed-text { font-size: 13px; color: var(--text); margin-top: 5px; line-height: 1.6; }
+    .feed-image { margin-top: 12px; border-radius: var(--radius-md); overflow: hidden; border: 1px solid rgba(203,221,233,0.4); box-shadow: 0 4px 16px rgba(0,0,0,0.04); }
+    .feed-image img { width: 100%; height: 220px; object-fit: cover; display: block; }
+    .feed-tags { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .feed-actions { display: flex; align-items: center; gap: 18px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(203,221,233,0.2); }
+    .feed-action { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-light); font-weight: 600; cursor: pointer; transition: all 0.2s; padding: 4px 8px; border-radius: 8px; }
+    .feed-action:hover { color: var(--primary); background: rgba(40,114,161,0.06); }
+    .feed-action.active { color: var(--primary); }
+    .events-list { padding: 6px 0; }
+    .event-item { display: flex; align-items: center; gap: 14px; padding: 14px 22px; border-bottom: 1px solid rgba(203,221,233,0.2); transition: all 0.2s; cursor: pointer; }
+    .event-item:last-child { border-bottom: none; }
+    .event-item:hover { background: rgba(203,221,233,0.06); }
+    .event-date { width: 48px; height: 48px; background: linear-gradient(135deg, #f5f9fc, #e8f2f7); border-radius: var(--radius-md); display: flex; flex-direction: column; align-items: center; justify-content: center; border: 1.5px solid var(--secondary); flex-shrink: 0; box-shadow: 0 2px 8px rgba(40,114,161,0.06); }
+    .event-date .day { font-size: 17px; font-weight: 800; color: var(--primary); line-height: 1; }
+    .event-date .month { font-size: 9px; color: var(--text-light); text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px; margin-top: 2px; }
+    .event-info { flex: 1; min-width: 0; }
+    .event-info h4 { font-size: 13px; font-weight: 700; color: var(--accent); margin: 0; }
+    .event-info p { font-size: 11.5px; color: var(--text-light); margin: 3px 0 0; font-weight: 500; }
+    .event-join { padding: 6px 14px; border-radius: var(--radius-sm); background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; font-size: 11px; font-weight: 600; border: none; cursor: pointer; box-shadow: 0 2px 8px rgba(40,114,161,0.25); transition: all 0.2s; }
+    .event-join:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(40,114,161,0.35); }
+    .msg-item { display: flex; align-items: center; gap: 12px; padding: 12px 22px; border-bottom: 1px solid rgba(203,221,233,0.15); cursor: pointer; transition: all 0.2s; }
+    .msg-item:hover { background: rgba(203,221,233,0.05); }
+    .msg-avatar { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; flex-shrink: 0; }
+    .msg-content { flex: 1; min-width: 0; }
+    .msg-name { font-size: 13px; font-weight: 700; color: var(--accent); display: flex; align-items: center; justify-content: space-between; }
+    .msg-time { font-size: 10.5px; color: var(--text-lighter); font-weight: 500; }
+    .msg-preview { font-size: 12px; color: var(--text-light); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .msg-unread { width: 8px; height: 8px; background: var(--primary); border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 6px rgba(40,114,161,0.3); }
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th { text-align: left; padding: 12px 16px; font-size: 10.5px; text-transform: uppercase; color: var(--text-light); font-weight: 700; letter-spacing: 0.5px; border-bottom: 1.5px solid var(--secondary); background: var(--secondary-lighter); }
+    .data-table td { padding: 14px 16px; font-size: 13px; color: var(--text); border-bottom: 1px solid rgba(203,221,233,0.2); }
+    .data-table tr:hover td { background: rgba(203,221,233,0.04); }
+    .data-table tr:last-child td { border-bottom: none; }
+    .table-avatar { width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 12px; margin-right: 10px; vertical-align: middle; }
+    .table-name { font-weight: 700; color: var(--accent); }
+    .table-meta { font-size: 11.5px; color: var(--text-light); }
+    .filter-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+    .filter-bar .search-box { width: 300px; }
+    .filter-select { padding: 9px 14px; border-radius: var(--radius-sm); border: 1.5px solid var(--secondary); background: var(--white); font-size: 13px; color: var(--text); font-weight: 500; cursor: pointer; min-width: 140px; }
+    .explore-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .explore-card { background: var(--white); border-radius: var(--radius-lg); border: 1px solid rgba(203,221,233,0.4); box-shadow: var(--shadow-sm); padding: 20px; transition: all 0.3s ease; cursor: pointer; }
+    .explore-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--secondary); }
+    .explore-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 10px; }
+    .explore-title { font-size: 15px; font-weight: 700; color: var(--accent); }
+    .explore-meta { font-size: 11px; color: var(--text-lighter); font-weight: 600; }
+    .explore-desc { font-size: 12.5px; color: var(--text-light); line-height: 1.5; margin-bottom: 12px; }
+    .explore-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+    .inbox-item { display: flex; align-items: flex-start; gap: 14px; padding: 16px 22px; border-bottom: 1px solid rgba(203,221,233,0.2); cursor: pointer; transition: all 0.2s; }
+    .inbox-item:hover { background: rgba(203,221,233,0.05); }
+    .inbox-item.unread { background: linear-gradient(90deg, rgba(40,114,161,0.04), transparent); }
+    .inbox-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+    .inbox-content { flex: 1; min-width: 0; }
+    .inbox-sender { font-size: 13.5px; font-weight: 700; color: var(--accent); display: flex; align-items: center; justify-content: space-between; }
+    .inbox-subject { font-size: 13px; font-weight: 600; color: var(--text); margin-top: 2px; }
+    .inbox-preview { font-size: 12px; color: var(--text-light); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .inbox-time { font-size: 11px; color: var(--text-lighter); font-weight: 500; }
+    .inbox-actions { display: flex; gap: 8px; opacity: 0; transition: opacity 0.2s; }
+    .inbox-item:hover .inbox-actions { opacity: 1; }
+    .inbox-action { width: 28px; height: 28px; border-radius: 6px; background: var(--secondary-lighter); border: 1px solid var(--secondary); display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-light); font-size: 12px; transition: all 0.2s; }
+    .inbox-action:hover { background: var(--secondary); color: var(--primary); }
+    .roll-layout { display: grid; grid-template-columns: 280px 1fr; gap: 18px; }
+    .roll-panel { background: var(--white); border-radius: var(--radius-lg); border: 1px solid rgba(203,221,233,0.4); box-shadow: var(--shadow-sm); padding: 20px; }
+    .roll-panel h3 { font-size: 14px; font-weight: 700; color: var(--accent); margin-bottom: 16px; }
+    .roll-stat-row { display: flex; gap: 12px; margin: 16px 0; }
+    .roll-stat { text-align: center; flex: 1; padding: 12px; background: var(--secondary-lighter); border-radius: var(--radius-md); }
+    .roll-stat .num { font-size: 22px; font-weight: 800; color: var(--accent); }
+    .roll-stat .lbl { font-size: 10px; color: var(--text-light); text-transform: uppercase; font-weight: 700; margin-top: 2px; }
+    .roll-stat .num.absent { color: var(--danger); }
+    .status-toggle { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; font-size: 11px; font-weight: 700; cursor: pointer; border: none; transition: all 0.2s; }
+    .status-toggle.present { background: #dcfce7; color: #166534; }
+    .status-toggle.absent { background: #fee2e2; color: #991b1b; }
+    .year-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .year-pill { padding: 6px 14px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1.5px solid var(--secondary); background: var(--white); color: var(--text-light); transition: all 0.2s; }
+    .year-pill:hover { border-color: var(--primary); color: var(--primary); }
+    .year-pill.active { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; border-color: var(--primary); box-shadow: 0 2px 8px rgba(40,114,161,0.25); }
+    .upload-zone { border: 2px dashed var(--secondary); border-radius: var(--radius-lg); padding: 48px 24px; text-align: center; background: var(--secondary-lighter); transition: all 0.2s; cursor: pointer; }
+    .upload-zone:hover { border-color: var(--primary); background: var(--secondary-light); }
+    .upload-zone i { font-size: 40px; color: var(--text-lighter); margin-bottom: 12px; }
+    .upload-zone h4 { font-size: 15px; color: var(--accent); margin-bottom: 6px; }
+    .upload-zone p { font-size: 12.5px; color: var(--text-light); }
+    .timetable-grid { display: grid; grid-template-columns: 80px repeat(5, 1fr); gap: 1px; background: var(--secondary); border-radius: var(--radius-lg); overflow: hidden; border: 1px solid var(--secondary); }
+    .timetable-cell { background: var(--white); padding: 12px 8px; font-size: 11.5px; text-align: center; min-height: 70px; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .timetable-cell.header { background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; font-weight: 700; font-size: 12px; }
+    .timetable-cell.time { background: var(--secondary-lighter); font-weight: 700; color: var(--accent); font-size: 11px; }
+    .timetable-cell.class { background: linear-gradient(135deg, #e8f4fc, #d0e8f5); border-radius: 6px; margin: 2px; }
+    .timetable-cell.class .subj { font-weight: 700; color: var(--primary); font-size: 11px; }
+    .timetable-cell.class .room { font-size: 10px; color: var(--text-light); margin-top: 2px; }
+    .settings-nav { display: flex; flex-direction: column; gap: 4px; padding: 8px 0; }
+    .settings-item { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--radius-sm); cursor: pointer; transition: all 0.2s; font-size: 13px; color: var(--text); font-weight: 500; }
+    .settings-item:hover { background: var(--secondary-lighter); }
+    .settings-item.active { background: linear-gradient(90deg, rgba(40,114,161,0.08), transparent); color: var(--primary); font-weight: 700; border-left: 3px solid var(--primary); }
+    .settings-item i { width: 20px; text-align: center; color: var(--text-lighter); }
+    .settings-item.active i { color: var(--primary); }
+    .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .quick-item { padding: 14px; background: linear-gradient(135deg, #f0f7fb, #e0eff7); border-radius: var(--radius-md); text-align: center; cursor: pointer; transition: all 0.2s; border: 1px solid rgba(203,221,233,0.5); }
+    .quick-item:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(40,114,161,0.1); border-color: var(--secondary); }
+    .quick-item i { font-size: 20px; margin-bottom: 6px; color: var(--primary); }
+    .quick-item span { display: block; font-size: 11px; font-weight: 700; color: var(--accent); }
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #a8cce0; }
+    .fab { position: fixed; bottom: 24px; right: 24px; width: 54px; height: 54px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), var(--primary-dark)); color: #fff; border: none; font-size: 20px; cursor: pointer; box-shadow: 0 6px 24px rgba(40,114,161,0.35); display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; z-index: 200; }
+    .fab:hover { transform: scale(1.08) rotate(5deg); box-shadow: 0 8px 32px rgba(40,114,161,0.45); }
+    .page { display: none; animation: fadeIn 0.3s ease; }
+    .page.active { display: block; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @media (max-width: 1024px) {
+      .grid-2 { grid-template-columns: 1fr; }
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .explore-grid { grid-template-columns: 1fr; }
+      .roll-layout { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 768px) {
+      .sidebar { position: fixed; left: 0; top: 0; height: 100vh; transform: translateX(-100%); }
+      .sidebar.open { transform: translateX(0); }
+      .mobile-menu-btn { display: flex; }
+      .search-box { width: auto; flex: 1; margin-right: 12px; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+      .grid-3 { grid-template-columns: 1fr; }
+      .grid-4 { grid-template-columns: 1fr; }
+      .header { padding: 0 16px; }
+      .content { padding: 16px; }
+      .welcome-bar { flex-direction: column; text-align: center; gap: 12px; }
+      .welcome-date { text-align: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="logo">
+        <div class="logo-icon">U</div>
+        <div>
+          <div class="logo-text">UniConnect</div>
+          <div class="logo-sub">University Network</div>
+        </div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">Main Menu</div>
+        <div class="nav-item active" data-page="dashboard"><i class="fas fa-home"></i> Dashboard</div>
+        <div class="nav-item" data-page="feed"><i class="fas fa-newspaper"></i> Feed</div>
+        <div class="nav-item" data-page="explore"><i class="fas fa-compass"></i> Explore</div>
+        <div class="nav-item" data-page="inbox"><i class="fas fa-envelope"></i> Inbox <span class="nav-badge">5</span></div>
+        <div class="nav-item" data-page="messages"><i class="fas fa-comment-dots"></i> Messages <span class="nav-badge">3</span></div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">Academic</div>
+        <div class="nav-item" data-page="students"><i class="fas fa-user-graduate"></i> Students</div>
+        <div class="nav-item" data-page="lecturers"><i class="fas fa-chalkboard-user"></i> Lecturers</div>
+        <div class="nav-item" data-page="staff"><i class="fas fa-users"></i> Staff</div>
+        <div class="nav-item" data-page="exam-results"><i class="fas fa-file-lines"></i> Exam Results</div>
+        <div class="nav-item" data-page="roll-call"><i class="fas fa-clipboard-check"></i> Roll Call</div>
+        <div class="nav-item" data-page="timetable"><i class="fas fa-calendar-days"></i> Timetable</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">University</div>
+        <div class="nav-item" data-page="announcements"><i class="fas fa-bullhorn"></i> Announcements</div>
+        <div class="nav-item" data-page="events"><i class="fas fa-calendar-star"></i> Events</div>
+        <div class="nav-item" data-page="finance"><i class="fas fa-coins"></i> Finance</div>
+        <div class="nav-item" data-page="lost-found"><i class="fas fa-magnifying-glass"></i> Lost & Found</div>
+      </div>
+      <div class="nav-section">
+        <div class="nav-label">System</div>
+        <div class="nav-item" data-page="settings"><i class="fas fa-gear"></i> Settings</div>
+      </div>
+      <div class="user-card">
+        <div class="user-avatar">MK</div>
+        <div style="flex:1;">
+          <div class="user-name">Mg Kyaw</div>
+          <div class="user-role">Student • CS Dept</div>
+        </div>
+        <div class="user-status"></div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <div class="header">
+        <div style="display:flex;align-items:center;gap:12px;flex:1;">
+          <div class="mobile-menu-btn" id="mobileMenuBtn"><i class="fas fa-bars"></i></div>
+          <div class="search-box">
+            <i class="fas fa-magnifying-glass"></i>
+            <input type="text" placeholder="Search announcements, people, courses...">
+          </div>
+        </div>
+        <div class="header-actions">
+          <div class="icon-btn"><i class="fas fa-bell"></i><span class="notif-dot"></span></div>
+          <div class="icon-btn"><i class="fas fa-gear"></i></div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="content-inner">
+
+          <!-- ==================== DASHBOARD ==================== -->
+          <div class="page active" id="page-dashboard">
+            <div class="welcome-bar">
+              <div class="welcome-text">
+                <h1>Welcome back, Mg Kyaw! 👋</h1>
+                <p>You have <strong>3 new announcements</strong> and <strong>2 upcoming events</strong> this week.</p>
+              </div>
+              <div class="welcome-date">
+                <div class="day">29</div>
+                <div class="month">July 2026</div>
+              </div>
+            </div>
+
+            <div class="stats-row">
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon blue"><i class="fas fa-book"></i></div>
+                  <span class="stat-trend">+2 this sem</span>
+                </div>
+                <div class="stat-value">6</div>
+                <div class="stat-label">Active Courses</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon green"><i class="fas fa-check-circle"></i></div>
+                  <span class="stat-trend">Due soon</span>
+                </div>
+                <div class="stat-value">12</div>
+                <div class="stat-label">Assignments</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon purple"><i class="fas fa-bullhorn"></i></div>
+                  <span class="stat-trend">3 unread</span>
+                </div>
+                <div class="stat-value">8</div>
+                <div class="stat-label">Announcements</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon orange"><i class="fas fa-calendar-star"></i></div>
+                  <span class="stat-trend">This week</span>
+                </div>
+                <div class="stat-value">3</div>
+                <div class="stat-label">Upcoming Events</div>
+              </div>
+            </div>
+
+            <div class="grid-2">
+              <div>
+                <div class="compose-box">
+                  <div class="compose-header">
+                    <div class="compose-avatar">MK</div>
+                    <textarea class="compose-input" placeholder="Share an update with your university..."></textarea>
+                  </div>
+                  <div class="compose-actions">
+                    <div class="compose-tools">
+                      <button class="tool-btn"><i class="fas fa-paperclip"></i> Attach</button>
+                      <button class="tool-btn"><i class="fas fa-image"></i> Photo</button>
+                      <button class="tool-btn"><i class="fas fa-tag"></i> Tag</button>
+                    </div>
+                    <button class="btn btn-primary btn-sm">Post Update</button>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="card-header">
+                    <div class="card-title"><i class="fas fa-newspaper"></i> University News Feed</div>
+                    <div class="card-action">View All <i class="fas fa-arrow-right" style="font-size:10px;"></i></div>
+                  </div>
+                  <div class="tabs">
+                    <div class="tab active">Latest</div>
+                    <div class="tab">Trending</div>
+                    <div class="tab">Official</div>
+                    <div class="tab">My Dept</div>
+                  </div>
+                  <div class="feed-list">
+                    <div class="feed-item">
+                      <div class="feed-avatar" style="background:linear-gradient(135deg,#2872A1,#1e5a82);">DR</div>
+                      <div class="feed-content">
+                        <div class="feed-header-row">
+                          <span class="feed-author">Dr. Aung Myint</span>
+                          <span class="feed-verified"><i class="fas fa-circle-check"></i></span>
+                          <span class="feed-meta">Department Head • 2 hours ago</span>
+                        </div>
+                        <div class="feed-text">Final examination schedule for Semester 2 has been published. Please check your academic portal for detailed timetable and room assignments. Good luck everyone! 🎓</div>
+                        <div class="feed-tags"><span class="badge badge-blue">📢 Official</span><span class="badge badge-purple">🎓 Academic</span></div>
+                        <div class="feed-actions">
+                          <span class="feed-action active"><i class="fas fa-heart"></i> 42</span>
+                          <span class="feed-action"><i class="fas fa-comment"></i> 8</span>
+                          <span class="feed-action"><i class="fas fa-share"></i> Share</span>
+                          <span class="feed-action"><i class="fas fa-bookmark"></i> Save</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="feed-item">
+                      <div class="feed-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">SA</div>
+                      <div class="feed-content">
+                        <div class="feed-header-row">
+                          <span class="feed-author">Student Affairs Office</span>
+                          <span class="feed-verified"><i class="fas fa-circle-check"></i></span>
+                          <span class="feed-meta">Official • 5 hours ago</span>
+                        </div>
+                        <div class="feed-text">🎉 Annual University Sports Day registration is now open! All students are encouraged to participate. Events include football, basketball, badminton, and track. Deadline: August 5th.</div>
+                        <div class="feed-image"><img src="https://images.unsplash.com/photo-1526676037777-05a232554f77?w=800&h=300&fit=crop" alt="Sports"></div>
+                        <div class="feed-tags"><span class="badge badge-green">🎉 Event</span></div>
+                        <div class="feed-actions">
+                          <span class="feed-action"><i class="fas fa-heart"></i> 128</span>
+                          <span class="feed-action"><i class="fas fa-comment"></i> 24</span>
+                          <span class="feed-action"><i class="fas fa-share"></i> Share</span>
+                          <span class="feed-action"><i class="fas fa-bookmark"></i> Save</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="feed-item">
+                      <div class="feed-avatar" style="background:linear-gradient(135deg,#10b981,#059669);">FN</div>
+                      <div class="feed-content">
+                        <div class="feed-header-row">
+                          <span class="feed-author">Finance Office</span>
+                          <span class="feed-verified"><i class="fas fa-circle-check"></i></span>
+                          <span class="feed-meta">Official • 1 day ago</span>
+                        </div>
+                        <div class="feed-text">Scholarship stipend for outstanding students will be distributed starting next Monday. Eligible students please prepare your bank account details and submit via the Finance portal.</div>
+                        <div class="feed-tags"><span class="badge badge-orange">💰 Finance</span><span class="badge badge-blue">📢 Official</span></div>
+                        <div class="feed-actions">
+                          <span class="feed-action"><i class="fas fa-heart"></i> 89</span>
+                          <span class="feed-action"><i class="fas fa-comment"></i> 15</span>
+                          <span class="feed-action"><i class="fas fa-share"></i> Share</span>
+                          <span class="feed-action"><i class="fas fa-bookmark"></i> Save</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div class="card" style="margin-bottom:16px;">
+                  <div class="card-header">
+                    <div class="card-title"><i class="fas fa-calendar-days"></i> Upcoming Events</div>
+                    <div class="card-action">Calendar <i class="fas fa-arrow-right" style="font-size:10px;"></i></div>
+                  </div>
+                  <div class="events-list">
+                    <div class="event-item">
+                      <div class="event-date"><div class="day">31</div><div class="month">JUL</div></div>
+                      <div class="event-info"><h4>CS Department Meeting</h4><p>Room 302 • 10:00 AM</p></div>
+                      <button class="event-join">Join</button>
+                    </div>
+                    <div class="event-item">
+                      <div class="event-date"><div class="day">02</div><div class="month">AUG</div></div>
+                      <div class="event-info"><h4>Project Defense Day</h4><p>Main Hall • 9:00 AM</p></div>
+                      <button class="event-join">Join</button>
+                    </div>
+                    <div class="event-item">
+                      <div class="event-date"><div class="day">05</div><div class="month">AUG</div></div>
+                      <div class="event-info"><h4>Sports Day Registration Close</h4><p>Online • 11:59 PM</p></div>
+                      <button class="event-join">Remind</button>
+                    </div>
+                    <div class="event-item">
+                      <div class="event-date"><div class="day">10</div><div class="month">AUG</div></div>
+                      <div class="event-info"><h4>Career Fair 2026</h4><p>Campus Center • All Day</p></div>
+                      <button class="event-join">RSVP</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card" style="margin-bottom:16px;">
+                  <div class="card-header">
+                    <div class="card-title"><i class="fas fa-comment-dots"></i> Messages</div>
+                    <div class="card-action">Open Chat <i class="fas fa-arrow-right" style="font-size:10px;"></i></div>
+                  </div>
+                  <div>
+                    <div class="msg-item">
+                      <div class="msg-avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444);">ZL</div>
+                      <div class="msg-content">
+                        <div class="msg-name">Zayar Lin <span class="msg-time">2m ago</span></div>
+                        <div class="msg-preview">Hey, did you finish the DB assignment?</div>
+                      </div>
+                      <div class="msg-unread"></div>
+                    </div>
+                    <div class="msg-item">
+                      <div class="msg-avatar" style="background:linear-gradient(135deg,#10b981,#06b6d4);">SL</div>
+                      <div class="msg-content">
+                        <div class="msg-name">Su Lae Bo Bo <span class="msg-time">1h ago</span></div>
+                        <div class="msg-preview">Meeting at 3 PM today 👍</div>
+                      </div>
+                      <div class="msg-unread"></div>
+                    </div>
+                    <div class="msg-item">
+                      <div class="msg-avatar" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">KP</div>
+                      <div class="msg-content">
+                        <div class="msg-name">Khaing Zin Phyo <span class="msg-time">3h ago</span></div>
+                        <div class="msg-preview">Thanks for the notes! Really helpful.</div>
+                      </div>
+                    </div>
+                    <div class="msg-item">
+                      <div class="msg-avatar" style="background:linear-gradient(135deg,#2872A1,#CBDDE9);color:#1a3a52;">DR</div>
+                      <div class="msg-content">
+                        <div class="msg-name">Dr. Aung Myint <span class="msg-time">Yesterday</span></div>
+                        <div class="msg-preview">Your project proposal looks great!</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="card">
+                  <div class="card-header">
+                    <div class="card-title"><i class="fas fa-bolt"></i> Quick Access</div>
+                  </div>
+                  <div style="padding:8px 18px 16px;">
+                    <div class="quick-grid">
+                      <div class="quick-item"><i class="fas fa-file-lines"></i><span>Exam Results</span></div>
+                      <div class="quick-item"><i class="fas fa-clipboard-check"></i><span>Roll Call</span></div>
+                      <div class="quick-item"><i class="fas fa-calendar-days"></i><span>Timetable</span></div>
+                      <div class="quick-item"><i class="fas fa-coins"></i><span>Finance</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== FEED ==================== -->
+          <div class="page" id="page-feed">
+            <h1 class="page-title">Feed</h1>
+            <p class="page-subtitle">Latest updates from your university community</p>
+            <div style="display:flex;gap:12px;margin-bottom:18px;">
+              <button class="btn btn-primary btn-sm">Latest</button>
+              <button class="btn btn-secondary btn-sm">Trending</button>
+              <button class="btn btn-secondary btn-sm">Official</button>
+            </div>
+            <div class="compose-box">
+              <div class="compose-header">
+                <div class="compose-avatar">MK</div>
+                <textarea class="compose-input" placeholder="What's on your mind?"></textarea>
+              </div>
+              <div class="compose-actions">
+                <div class="compose-tools">
+                  <button class="tool-btn"><i class="fas fa-image"></i> Media</button>
+                  <button class="tool-btn"><i class="fas fa-tag"></i> Tag</button>
+                  <button class="tool-btn"><i class="fas fa-location-dot"></i> Location</button>
+                </div>
+                <button class="btn btn-primary btn-sm">Post</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="feed-list">
+                <div class="feed-item">
+                  <div class="feed-avatar" style="background:linear-gradient(135deg,#2872A1,#1e5a82);">DR</div>
+                  <div class="feed-content">
+                    <div class="feed-header-row">
+                      <span class="feed-author">Dr. Aung Myint</span>
+                      <span class="feed-verified"><i class="fas fa-circle-check"></i></span>
+                      <span class="feed-meta">Department Head • 2 hours ago</span>
+                    </div>
+                    <div class="feed-text">Final examination schedule for Semester 2 has been published. Please check your academic portal for detailed timetable and room assignments. Good luck everyone! 🎓</div>
+                    <div class="feed-tags"><span class="badge badge-blue">📢 Official</span><span class="badge badge-purple">🎓 Academic</span></div>
+                    <div class="feed-actions">
+                      <span class="feed-action active"><i class="fas fa-heart"></i> 42</span>
+                      <span class="feed-action"><i class="fas fa-comment"></i> 8 comments</span>
+                      <span class="feed-action"><i class="fas fa-share"></i> 7 shares</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">SA</div>
+                  <div class="feed-content">
+                    <div class="feed-header-row">
+                      <span class="feed-author">Sarah Chen</span>
+                      <span class="feed-meta">Computer Science • 2m ago</span>
+                    </div>
+                    <div class="feed-text">Just finished my final year project! 3 months of hard work finally paid off. Anyone else presenting this week?</div>
+                    <div class="feed-image"><img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&h=300&fit=crop" alt="Project"></div>
+                    <div class="feed-actions">
+                      <span class="feed-action"><i class="fas fa-heart"></i> 42</span>
+                      <span class="feed-action"><i class="fas fa-comment"></i> 5 comments</span>
+                      <span class="feed-action"><i class="fas fa-share"></i> 7 shares</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-avatar" style="background:linear-gradient(135deg,#10b981,#059669);">FN</div>
+                  <div class="feed-content">
+                    <div class="feed-header-row">
+                      <span class="feed-author">Finance Office</span>
+                      <span class="feed-verified"><i class="fas fa-circle-check"></i></span>
+                      <span class="feed-meta">Official • 1 day ago</span>
+                    </div>
+                    <div class="feed-text">Scholarship stipend for outstanding students will be distributed starting next Monday. Eligible students please prepare your bank account details.</div>
+                    <div class="feed-tags"><span class="badge badge-orange">💰 Finance</span></div>
+                    <div class="feed-actions">
+                      <span class="feed-action"><i class="fas fa-heart"></i> 89</span>
+                      <span class="feed-action"><i class="fas fa-comment"></i> 15 comments</span>
+                      <span class="feed-action"><i class="fas fa-share"></i> 12 shares</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== EXPLORE ==================== -->
+          <div class="page" id="page-explore">
+            <h1 class="page-title">Explore</h1>
+            <p class="page-subtitle">Discover clubs, events, people, and courses</p>
+            <div class="search-box" style="width:100%;margin-bottom:18px;max-width:500px;">
+              <i class="fas fa-magnifying-glass"></i>
+              <input type="text" placeholder="Search clubs, events, people, courses...">
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:18px;">
+              <button class="btn btn-primary btn-sm">All</button>
+              <button class="btn btn-secondary btn-sm">Clubs</button>
+              <button class="btn btn-secondary btn-sm">Events</button>
+              <button class="btn btn-secondary btn-sm">People</button>
+              <button class="btn btn-secondary btn-sm">Courses</button>
+            </div>
+            <div class="explore-grid">
+              <div class="explore-card">
+                <div class="explore-header">
+                  <div class="explore-title">Robotics Club</div>
+                  <div class="explore-meta">45 members</div>
+                </div>
+                <div class="explore-desc">Building the future, one robot at a time. Join us for weekly builds and competitions!</div>
+                <div class="explore-tags"><span class="badge badge-blue">Robotics</span><span class="badge badge-purple">Engineering</span></div>
+              </div>
+              <div class="explore-card">
+                <div class="explore-header">
+                  <div class="explore-title">Photography Workshop</div>
+                  <div class="explore-meta">Jul 25, 2026</div>
+                </div>
+                <div class="explore-desc">Learn the art of photography from professional photographers.</div>
+                <div class="explore-tags"><span class="badge badge-green">Photography</span><span class="badge badge-blue">Workshop</span></div>
+              </div>
+              <div class="explore-card">
+                <div class="explore-header">
+                  <div class="explore-title">Sarah Chen</div>
+                  <div class="explore-meta">CS - Year 3</div>
+                </div>
+                <div class="explore-desc">Computer Science - Year 3 - AI Enthusiast</div>
+                <div class="explore-tags"><span class="badge badge-blue">CS</span><span class="badge badge-purple">AI</span></div>
+              </div>
+              <div class="explore-card">
+                <div class="explore-header">
+                  <div class="explore-title">Web Development 101</div>
+                  <div class="explore-meta">128 enrolled</div>
+                </div>
+                <div class="explore-desc">Learn modern web development with React and Next.js</div>
+                <div class="explore-tags"><span class="badge badge-blue">Web Dev</span><span class="badge badge-purple">React</span></div>
+              </div>
+              <div class="explore-card">
+                <div class="explore-header">
+                  <div class="explore-title">Chess Club</div>
+                  <div class="explore-meta">32 members</div>
+                </div>
+                <div class="explore-desc">Strategic minds unite! Casual and competitive chess for all skill levels.</div>
+                <div class="explore-tags"><span class="badge badge-blue">Chess</span><span class="badge badge-purple">Strategy</span></div>
+              </div>
+              <div class="explore-card">
+                <div class="explore-header">
+                  <div class="explore-title">Career Fair 2026</div>
+                  <div class="explore-meta">Aug 5, 2026</div>
+                </div>
+                <div class="explore-desc">Meet top employers and find your dream internship or job.</div>
+                <div class="explore-tags"><span class="badge badge-green">Career</span><span class="badge badge-blue">Networking</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== INBOX ==================== -->
+          <div class="page" id="page-inbox">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+              <div>
+                <h1 class="page-title">Inbox</h1>
+                <p class="page-subtitle">Your official university communications</p>
+              </div>
+              <button class="btn btn-primary"><i class="fas fa-pen"></i> Compose</button>
+            </div>
+            <div class="tabs" style="margin-bottom:18px;">
+              <div class="tab active">All</div>
+              <div class="tab">Unread (2)</div>
+              <div class="tab">Starred</div>
+              <div class="tab">Exam Results (2)</div>
+            </div>
+            <div class="card">
+              <div class="inbox-item unread">
+                <div class="inbox-avatar" style="background:linear-gradient(135deg,#2872A1,#1e5a82);">UA</div>
+                <div class="inbox-content">
+                  <div class="inbox-sender">
+                    <span>University Admin</span>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                      <span class="inbox-time">10m ago</span>
+                      <div class="inbox-actions">
+                        <div class="inbox-action"><i class="fas fa-star" style="color:#f59e0b;"></i></div>
+                        <div class="inbox-action"><i class="fas fa-trash"></i></div>
+                      </div>
+                    </span>
+                  </div>
+                  <div class="inbox-subject">Exam Schedule Released</div>
+                  <div class="inbox-preview">The final examination schedule for the semester has been published...</div>
+                </div>
+              </div>
+              <div class="inbox-item unread">
+                <div class="inbox-avatar" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">PA</div>
+                <div class="inbox-content">
+                  <div class="inbox-sender">
+                    <span>Prof. Anderson</span>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                      <span class="inbox-time">1h ago</span>
+                      <div class="inbox-actions">
+                        <div class="inbox-action"><i class="fas fa-star"></i></div>
+                        <div class="inbox-action"><i class="fas fa-trash"></i></div>
+                      </div>
+                    </span>
+                  </div>
+                  <div class="inbox-subject">Project Feedback</div>
+                  <div class="inbox-preview">Great work on your midterm project! Here are some suggestions for improvement...</div>
+                </div>
+              </div>
+              <div class="inbox-item">
+                <div class="inbox-avatar" style="background:linear-gradient(135deg,#10b981,#06b6d4);">LS</div>
+                <div class="inbox-content">
+                  <div class="inbox-sender">
+                    <span>Library Services</span>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                      <span class="inbox-time">3h ago</span>
+                      <div class="inbox-actions">
+                        <div class="inbox-action"><i class="fas fa-star"></i></div>
+                        <div class="inbox-action"><i class="fas fa-trash"></i></div>
+                      </div>
+                    </span>
+                  </div>
+                  <div class="inbox-subject">Book Due Reminder</div>
+                  <div class="inbox-preview">This is a reminder that the following books are due for return...</div>
+                </div>
+              </div>
+              <div class="inbox-item unread">
+                <div class="inbox-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">SU</div>
+                <div class="inbox-content">
+                  <div class="inbox-sender">
+                    <span>Student Union</span>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                      <span class="inbox-time">5h ago</span>
+                      <div class="inbox-actions">
+                        <div class="inbox-action"><i class="fas fa-star" style="color:#f59e0b;"></i></div>
+                        <div class="inbox-action"><i class="fas fa-trash"></i></div>
+                      </div>
+                    </span>
+                  </div>
+                  <div class="inbox-subject">Upcoming Events This Week</div>
+                  <div class="inbox-preview">Check out the exciting events we have planned for this week...</div>
+                </div>
+              </div>
+              <div class="inbox-item">
+                <div class="inbox-avatar" style="background:linear-gradient(135deg,#2872A1,#CBDDE9);color:#1a3a52;">CS</div>
+                <div class="inbox-content">
+                  <div class="inbox-sender">
+                    <span>Career Services</span>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                      <span class="inbox-time">1d ago</span>
+                      <div class="inbox-actions">
+                        <div class="inbox-action"><i class="fas fa-star"></i></div>
+                        <div class="inbox-action"><i class="fas fa-trash"></i></div>
+                      </div>
+                    </span>
+                  </div>
+                  <div class="inbox-subject">Internship Opportunity</div>
+                  <div class="inbox-preview">We have an exciting internship opportunity at Google for CS students...</div>
+                </div>
+              </div>
+              <div class="inbox-item">
+                <div class="inbox-avatar" style="background:linear-gradient(135deg,#ef4444,#dc2626);">SC</div>
+                <div class="inbox-content">
+                  <div class="inbox-sender">
+                    <span>Scholarship Committee</span>
+                    <span style="display:flex;align-items:center;gap:8px;">
+                      <span class="inbox-time">2d ago</span>
+                      <div class="inbox-actions">
+                        <div class="inbox-action"><i class="fas fa-star"></i></div>
+                        <div class="inbox-action"><i class="fas fa-trash"></i></div>
+                      </div>
+                    </span>
+                  </div>
+                  <div class="inbox-subject">Application Status Update</div>
+                  <div class="inbox-preview">Your scholarship application has been received and is under review...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== MESSAGES ==================== -->
+          <div class="page" id="page-messages">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+              <div>
+                <h1 class="page-title">Messages</h1>
+                <p class="page-subtitle">Direct messages with university members</p>
+              </div>
+              <button class="btn btn-primary"><i class="fas fa-plus"></i> New Message</button>
+            </div>
+            <div class="grid-2">
+              <div class="card" style="max-height:600px;overflow-y:auto;">
+                <div style="padding:16px 22px;border-bottom:1px solid rgba(203,221,233,0.3);">
+                  <div class="search-box" style="width:100%;">
+                    <i class="fas fa-magnifying-glass"></i>
+                    <input type="text" placeholder="Search conversations...">
+                  </div>
+                </div>
+                <div class="msg-item" style="background:rgba(40,114,161,0.04);">
+                  <div class="msg-avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444);">ZL</div>
+                  <div class="msg-content">
+                    <div class="msg-name">Zayar Lin <span class="msg-time">2m ago</span></div>
+                    <div class="msg-preview">Hey, did you finish the DB assignment?</div>
+                  </div>
+                  <div class="msg-unread"></div>
+                </div>
+                <div class="msg-item">
+                  <div class="msg-avatar" style="background:linear-gradient(135deg,#10b981,#06b6d4);">SL</div>
+                  <div class="msg-content">
+                    <div class="msg-name">Su Lae Bo Bo <span class="msg-time">1h ago</span></div>
+                    <div class="msg-preview">Meeting at 3 PM today 👍</div>
+                  </div>
+                  <div class="msg-unread"></div>
+                </div>
+                <div class="msg-item">
+                  <div class="msg-avatar" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">KP</div>
+                  <div class="msg-content">
+                    <div class="msg-name">Khaing Zin Phyo <span class="msg-time">3h ago</span></div>
+                    <div class="msg-preview">Thanks for the notes! Really helpful.</div>
+                  </div>
+                </div>
+                <div class="msg-item">
+                  <div class="msg-avatar" style="background:linear-gradient(135deg,#2872A1,#CBDDE9);color:#1a3a52;">DR</div>
+                  <div class="msg-content">
+                    <div class="msg-name">Dr. Aung Myint <span class="msg-time">Yesterday</span></div>
+                    <div class="msg-preview">Your project proposal looks great!</div>
+                  </div>
+                </div>
+                <div class="msg-item">
+                  <div class="msg-avatar" style="background:linear-gradient(135deg,#ef4444,#dc2626);">SM</div>
+                  <div class="msg-content">
+                    <div class="msg-name">Soe Moe Kyaw <span class="msg-time">2d ago</span></div>
+                    <div class="msg-preview">Let's meet at the library tomorrow.</div>
+                  </div>
+                </div>
+              </div>
+              <div class="card" style="display:flex;flex-direction:column;">
+                <div style="padding:16px 22px;border-bottom:1px solid rgba(203,221,233,0.3);display:flex;align-items:center;gap:12px;">
+                  <div class="msg-avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444);width:42px;height:42px;font-size:14px;">ZL</div>
+                  <div>
+                    <div style="font-size:14px;font-weight:700;color:var(--accent);">Zayar Lin</div>
+                    <div style="font-size:11px;color:var(--success);font-weight:600;"><i class="fas fa-circle" style="font-size:6px;margin-right:4px;"></i>Online</div>
+                  </div>
+                </div>
+                <div style="flex:1;padding:20px;display:flex;flex-direction:column;gap:12px;background:var(--secondary-lighter);">
+                  <div style="align-self:flex-end;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;padding:10px 16px;border-radius:14px 14px 4px 14px;font-size:13px;max-width:70%;box-shadow:0 2px 8px rgba(40,114,161,0.15);">Hey Zayar! Yes, I finished it last night. It was pretty challenging.</div>
+                  <div style="align-self:flex-start;background:#fff;padding:10px 16px;border-radius:14px 14px 14px 4px;font-size:13px;max-width:70%;box-shadow:0 1px 4px rgba(0,0,0,0.04);">Nice! Can you help me with the ER diagram part?</div>
+                  <div style="align-self:flex-end;background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;padding:10px 16px;border-radius:14px 14px 4px 14px;font-size:13px;max-width:70%;box-shadow:0 2px 8px rgba(40,114,161,0.15);">Sure, let's meet at the library after lunch?</div>
+                  <div style="align-self:flex-start;background:#fff;padding:10px 16px;border-radius:14px 14px 14px 4px;font-size:13px;max-width:70%;box-shadow:0 1px 4px rgba(0,0,0,0.04);">Perfect! See you at 2 PM 👍</div>
+                </div>
+                <div style="padding:14px 22px;border-top:1px solid rgba(203,221,233,0.3);display:flex;gap:10px;">
+                  <button class="icon-btn" style="width:36px;height:36px;"><i class="fas fa-paperclip"></i></button>
+                  <input type="text" class="form-input" placeholder="Type a message..." style="flex:1;">
+                  <button class="btn btn-primary" style="padding:8px 16px;"><i class="fas fa-paper-plane"></i></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== STUDENTS ==================== -->
+          <div class="page" id="page-students">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+              <div>
+                <h1 class="page-title">Students</h1>
+                <p class="page-subtitle">38 total • 3 majors</p>
+              </div>
+              <button class="btn btn-primary"><i class="fas fa-plus"></i> Add Student</button>
+            </div>
+            <div class="grid-3" style="margin-bottom:18px;">
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon blue"><i class="fas fa-laptop-code"></i></div>
+                </div>
+                <div class="stat-value">16</div>
+                <div class="stat-label">Computer Science</div>
+                <div style="font-size:11px;color:var(--text-lighter);margin-top:4px;">42% of total</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon purple"><i class="fas fa-microchip"></i></div>
+                </div>
+                <div class="stat-value">11</div>
+                <div class="stat-label">Computer Technology</div>
+                <div style="font-size:11px;color:var(--text-lighter);margin-top:4px;">29% of total</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header">
+                  <div class="stat-icon teal"><i class="fas fa-network-wired"></i></div>
+                </div>
+                <div class="stat-value">11</div>
+                <div class="stat-label">CS & Technology</div>
+                <div style="font-size:11px;color:var(--text-lighter);margin-top:4px;">29% of total</div>
+              </div>
+            </div>
+            <div class="filter-bar">
+              <div class="search-box">
+                <i class="fas fa-magnifying-glass"></i>
+                <input type="text" placeholder="Search by name, roll no, or major...">
+              </div>
+              <select class="filter-select"><option>All Semesters</option></select>
+              <select class="filter-select"><option>All Years</option></select>
+              <select class="filter-select"><option>All Majors</option></select>
+            </div>
+            <div class="card">
+              <div style="padding:14px 22px;border-bottom:1px solid rgba(203,221,233,0.2);font-size:13px;color:var(--text-light);font-weight:600;">Semester 1 <span style="margin-left:8px;font-weight:400;">• 6 students</span></div>
+              <table class="data-table">
+                <thead><tr><th>Name</th><th>Roll No</th><th>Major</th><th>Email</th><th>Semester</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#2872A1,#1e5a82);">NW</span><span class="table-name">Nathan White</span></td><td>UCSTGO-1001</td><td><span class="badge badge-blue">Computer Science</span></td><td>nathan.white@uni.edu</td><td>Sem 1</td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">SA</span><span class="table-name">Sarah Anderson</span></td><td>UCSTGO-1002</td><td><span class="badge badge-blue">Computer Science</span></td><td>sarah.anderson@uni.edu</td><td>Sem 1</td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#10b981,#059669);">LL</span><span class="table-name">Lisa Lee</span></td><td>UCSTGO-1003</td><td><span class="badge badge-blue">Computer Science</span></td><td>lisa.lee@uni.edu</td><td>Sem 1</td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">MB</span><span class="table-name">Megan Brown</span></td><td>UCSTGO-1004</td><td><span class="badge badge-teal">CS & Technology</span></td><td>megan.brown@uni.edu</td><td>Sem 1</td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#ef4444,#dc2626);">JT</span><span class="table-name">Justin Thomas</span></td><td>UCSTGO-1005</td><td><span class="badge badge-teal">CS & Technology</span></td><td>justin.thomas@uni.edu</td><td>Sem 1</td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#2872A1,#CBDDE9);color:#1a3a52;">SD</span><span class="table-name">Sarah Davis</span></td><td>UCSTGO-1006</td><td><span class="badge badge-blue">Computer Science</span></td><td>sarah.davis@uni.edu</td><td>Sem 1</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ==================== LECTURERS ==================== -->
+          <div class="page" id="page-lecturers">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+              <div>
+                <h1 class="page-title">Lecturers</h1>
+                <p class="page-subtitle">29 total • 6 departments</p>
+              </div>
+              <button class="btn btn-primary"><i class="fas fa-plus"></i> Add Lecturer</button>
+            </div>
+            <div class="grid-4" style="margin-bottom:18px;">
+              <div class="stat-card">
+                <div class="stat-header"><div class="stat-icon blue"><i class="fas fa-building"></i></div></div>
+                <div class="stat-value">7</div>
+                <div class="stat-label">Faculty of CS</div>
+                <div style="font-size:11px;color:var(--text-lighter);margin-top:4px;">8 students • 7 staff</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header"><div class="stat-icon purple"><i class="fas fa-server"></i></div></div>
+                <div class="stat-value">8</div>
+                <div class="stat-label">Faculty of Systems</div>
+                <div style="font-size:11px;color:var(--text-lighter);margin-top:4px;">0 students • 8 staff</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header"><div class="stat-icon teal"><i class="fas fa-calculator"></i></div></div>
+                <div class="stat-value">4</div>
+                <div class="stat-label">Faculty of Computing</div>
+                <div style="font-size:11px;color:var(--text-lighter);margin-top:4px;">0 students • 4 staff</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header"><div class="stat-icon orange"><i class="fas fa-database"></i></div></div>
+                <div class="stat-value">6</div>
+                <div class="stat-label">Faculty of IS</div>
+                <div style="font-size:11px;color:var(--text-lighter);margin-top:4px;">0 students • 6 staff</div>
+              </div>
+            </div>
+            <div class="filter-bar">
+              <select class="filter-select" style="width:100%;max-width:300px;"><option>All Departments</option></select>
+            </div>
+            <div class="card">
+              <table class="data-table">
+                <thead><tr><th>Name</th><th>Department</th><th>Courses</th><th>Actions</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#2872A1,#1e5a82);">AK</span><span class="table-name">Dr. Aung Ko</span></td><td>Faculty of Computer Science</td><td><span class="badge badge-blue">2 courses</span></td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">KT</span><span class="table-name">Dr. Khin Mar Tun</span></td><td>Faculty of Computer Science</td><td><span class="badge badge-blue">2 courses</span></td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#10b981,#059669);">SM</span><span class="table-name">Dr. Soe Moe</span></td><td>Faculty of Computer Science</td><td><span class="badge badge-blue">2 courses</span></td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">HM</span><span class="table-name">Dr. Hla Myint</span></td><td>Faculty of Computer Science</td><td><span class="badge badge-blue">2 courses</span></td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#ef4444,#dc2626);">TN</span><span class="table-name">Dr. Thida Nwe</span></td><td>Faculty of Computer Science</td><td><span class="badge badge-blue">3 courses</span></td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#2872A1,#CBDDE9);color:#1a3a52;">WZ</span><span class="table-name">Dr. Win Zaw</span></td><td>Faculty of Computer Science</td><td><span class="badge badge-blue">2 courses</span></td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#f59e0b,#ef4444);">PP</span><span class="table-name">Daw Phyu Phyu</span></td><td>Faculty of Computer Science</td><td><span class="badge badge-blue">1 course</span></td><td><button class="btn btn-ghost btn-sm">View</button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ==================== STAFF ==================== -->
+          <div class="page" id="page-staff">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+              <div>
+                <h1 class="page-title">Staff</h1>
+                <p class="page-subtitle">4 total • 4 departments</p>
+              </div>
+              <button class="btn btn-primary"><i class="fas fa-plus"></i> Add Staff</button>
+            </div>
+            <div class="tabs" style="margin-bottom:18px;">
+              <div class="tab active">Staff Overview</div>
+              <div class="tab">Departments</div>
+            </div>
+            <div class="grid-4" style="margin-bottom:18px;">
+              <div class="stat-card"><div class="stat-value">4</div><div class="stat-label">Total Staff</div></div>
+              <div class="stat-card"><div class="stat-value">4</div><div class="stat-label">Departments</div></div>
+              <div class="stat-card"><div class="stat-value">1</div><div class="stat-label">Admin Roles</div></div>
+              <div class="stat-card"><div class="stat-value">4</div><div class="stat-label">Staff IDs</div></div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title"><i class="fas fa-users"></i> All Staff Members</div></div>
+              <table class="data-table">
+                <thead><tr><th>Name</th><th>Staff ID</th><th>Department</th><th>Role</th><th>Phone</th><th>Email</th></tr></thead>
+                <tbody>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#2872A1,#1e5a82);">UM</span><span class="table-name">U Myo Min</span></td><td>ADM-001</td><td>Administration</td><td><span class="badge badge-blue">Administration</span></td><td>09-123456001</td><td>myo.min@uni.edu</td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#10b981,#059669);">DH</span><span class="table-name">Daw Hlaing</span></td><td>FIN-001</td><td>Finance</td><td><span class="badge badge-green">Finance</span></td><td>09-123456002</td><td>hlaing@uni.edu</td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);">UA</span><span class="table-name">U Aung Aung</span></td><td>SA-001</td><td>Student Affairs</td><td><span class="badge badge-purple">Student Affairs</span></td><td>09-123456003</td><td>aung.aung@uni.edu</td></tr>
+                  <tr><td><span class="table-avatar" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);">UK</span><span class="table-name">U Kyaw Kyaw</span></td><td>ITSM-001</td><td>IT Supporting</td><td><span class="badge badge-orange">IT Support</span></td><td>09-123456004</td><td>kyaw.kyaw@uni.edu</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ==================== EXAM RESULTS ==================== -->
+          <div class="page" id="page-exam-results">
+            <div class="welcome-bar" style="margin-bottom:22px;">
+              <div class="welcome-text">
+                <h1>Exam Results</h1>
+                <p>Upload, match & deliver to students</p>
+              </div>
+              <div style="text-align:right;position:relative;z-index:1;">
+                <div style="font-size:32px;font-weight:800;">0</div>
+                <div style="font-size:12px;opacity:0.8;">SENT</div>
+              </div>
+            </div>
+            <div class="tabs" style="margin-bottom:18px;">
+              <div class="tab active"><i class="fas fa-upload" style="margin-right:4px;"></i>Upload</div>
+              <div class="tab"><i class="fas fa-user-graduate" style="margin-right:4px;"></i>Students</div>
+            </div>
+            <div class="grid-2">
+              <div>
+                <div class="card">
+                  <div class="card-header"><div class="card-title"><i class="fas fa-upload"></i> Upload PDFs</div>
+                    <div style="display:flex;gap:6px;">
+                      <span class="badge badge-blue">All</span>
+                      <span class="badge badge-green">1st</span>
+                      <span class="badge badge-green">2nd</span>
+                      <span class="badge badge-green">3rd</span>
+                      <span class="badge badge-green">4th</span>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <div class="upload-zone">
+                      <i class="fas fa-cloud-arrow-up"></i>
+                      <h4>Drop PDFs here or <span style="color:var(--primary);">browse</span></h4>
+                      <p>Name files with roll number (xxxx) or student name</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <div class="card">
+                  <div class="card-header"><div class="card-title"><i class="fas fa-gear"></i> Settings</div></div>
+                  <div class="card-body">
+                    <div class="form-group">
+                      <label class="form-label">Academic Year</label>
+                      <select class="form-select"><option>2025-2026</option><option>2024-2025</option></select>
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Semester</label>
+                      <select class="form-select"><option>Semester 1</option><option>Semester 2</option></select>
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Exam Type</label>
+                      <select class="form-select"><option>Final Exam</option><option>Midterm</option><option>Quiz</option></select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== ROLL CALL ==================== -->
+          <div class="page" id="page-roll-call">
+            <h1 class="page-title">Roll Call</h1>
+            <p class="page-subtitle">Upload Excel, live marking & attendance tracking</p>
+            <div class="tabs" style="margin-bottom:18px;">
+              <div class="tab">Dashboard</div>
+              <div class="tab active">Live</div>
+              <div class="tab">My Attendance</div>
+            </div>
+            <div class="roll-layout">
+              <div class="roll-panel">
+                <h3><i class="fas fa-sliders"></i> Filter Options</h3>
+                <div class="form-group">
+                  <label class="form-label">Subject</label>
+                  <select class="form-select"><option>Data Structures</option><option>Database Systems</option><option>Web Development</option></select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Date</label>
+                  <input type="date" class="form-input" value="2026-07-29">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Year</label>
+                  <div class="year-pills">
+                    <button class="year-pill active">All</button>
+                    <button class="year-pill">1st</button>
+                    <button class="year-pill">2nd</button>
+                    <button class="year-pill">3rd</button>
+                    <button class="year-pill">4th</button>
+                  </div>
+                </div>
+                <div class="roll-stat-row">
+                  <div class="roll-stat"><div class="num">38</div><div class="lbl">Total</div></div>
+                  <div class="roll-stat"><div class="num" style="color:var(--success);">38</div><div class="lbl">Present</div></div>
+                  <div class="roll-stat"><div class="num absent">0</div><div class="lbl">Absent</div></div>
+                </div>
+                <div style="text-align:center;font-size:12px;color:var(--text-light);margin-bottom:12px;">100% attendance</div>
+                <button class="btn btn-primary" style="width:100%;"><i class="fas fa-save"></i> Save Attendance</button>
+              </div>
+              <div class="card">
+                <div class="card-header">
+                  <div class="card-title"><i class="fas fa-clipboard-check"></i> Mark Attendance — Data Structures</div>
+                  <div style="font-size:12px;color:var(--text-lighter);font-weight:600;">2026-07-29 • 38 students</div>
+                </div>
+                <table class="data-table">
+                  <thead><tr><th>#</th><th>Roll No</th><th>Name</th><th>Year</th><th>Status</th></tr></thead>
+                  <tbody>
+                    <tr><td>1</td><td>UCSTGO-1001</td><td><span class="table-name">Nathan White</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>2</td><td>UCSTGO-1002</td><td><span class="table-name">Sarah Anderson</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>3</td><td>UCSTGO-1003</td><td><span class="table-name">Lisa Lee</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>4</td><td>UCSTGO-1004</td><td><span class="table-name">Megan Brown</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>5</td><td>UCSTGO-1005</td><td><span class="table-name">Justin Thomas</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>6</td><td>UCSTGO-1006</td><td><span class="table-name">Sarah Davis</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>7</td><td>UCSTGO-1007</td><td><span class="table-name">Amanda Taylor</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>8</td><td>UCSTGO-1008</td><td><span class="table-name">David Kim</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>9</td><td>UCSTGO-1009</td><td><span class="table-name">David Wilson</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                    <tr><td>10</td><td>UCSTGO-1010</td><td><span class="table-name">Marcus Rodriguez</span></td><td>1st Year</td><td><button class="status-toggle present"><i class="fas fa-check"></i> Present</button></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== TIMETABLE ==================== -->
+          <div class="page" id="page-timetable">
+            <h1 class="page-title">Timetable</h1>
+            <p class="page-subtitle">Your weekly class schedule</p>
+            <div class="filter-bar">
+              <select class="filter-select"><option>Semester 2 - 2026</option></select>
+              <select class="filter-select"><option>All Courses</option></select>
+              <button class="btn btn-primary btn-sm"><i class="fas fa-download"></i> Export</button>
+            </div>
+            <div class="card">
+              <div class="timetable-grid">
+                <div class="timetable-cell header">Time</div>
+                <div class="timetable-cell header">Mon</div>
+                <div class="timetable-cell header">Tue</div>
+                <div class="timetable-cell header">Wed</div>
+                <div class="timetable-cell header">Thu</div>
+                <div class="timetable-cell header">Fri</div>
+
+                <div class="timetable-cell time">8:00 AM</div>
+                <div class="timetable-cell"></div>
+                <div class="timetable-cell class"><div class="subj">Data Structures</div><div class="room">Room 302</div></div>
+                <div class="timetable-cell"></div>
+                <div class="timetable-cell class"><div class="subj">Database Systems</div><div class="room">Lab 1</div></div>
+                <div class="timetable-cell"></div>
+
+                <div class="timetable-cell time">10:00 AM</div>
+                <div class="timetable-cell class"><div class="subj">Web Development</div><div class="room">Lab 3</div></div>
+                <div class="timetable-cell"></div>
+                <div class="timetable-cell class"><div class="subj">Algorithms</div><div class="room">Room 205</div></div>
+                <div class="timetable-cell"></div>
+                <div class="timetable-cell class"><div class="subj">Data Structures</div><div class="room">Room 302</div></div>
+
+                <div class="timetable-cell time">1:00 PM</div>
+                <div class="timetable-cell"></div>
+                <div class="timetable-cell class"><div class="subj">Software Eng</div><div class="room">Room 401</div></div>
+                <div class="timetable-cell"></div>
+                <div class="timetable-cell class"><div class="subj">Web Development</div><div class="room">Lab 3</div></div>
+                <div class="timetable-cell"></div>
+
+                <div class="timetable-cell time">3:00 PM</div>
+                <div class="timetable-cell class"><div class="subj">Database Systems</div><div class="room">Lab 1</div></div>
+                <div class="timetable-cell"></div>
+                <div class="timetable-cell class"><div class="subj">Software Eng</div><div class="room">Room 401</div></div>
+                <div class="timetable-cell"></div>
+                <div class="timetable-cell class"><div class="subj">Algorithms</div><div class="room">Room 205</div></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== ANNOUNCEMENTS ==================== -->
+          <div class="page" id="page-announcements">
+            <h1 class="page-title">Announcements</h1>
+            <p class="page-subtitle">Official university announcements and notices</p>
+            <div class="compose-box">
+              <div class="compose-header">
+                <div class="compose-avatar" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));color:#fff;"><i class="fas fa-bullhorn"></i></div>
+                <textarea class="compose-input" placeholder="Post an official announcement..."></textarea>
+              </div>
+              <div class="compose-actions">
+                <div class="compose-tools">
+                  <button class="tool-btn"><i class="fas fa-paperclip"></i> Attach</button>
+                  <button class="tool-btn"><i class="fas fa-tag"></i> Priority</button>
+                </div>
+                <button class="btn btn-primary btn-sm">Publish</button>
+              </div>
+            </div>
+            <div class="card">
+              <div class="feed-list">
+                <div class="feed-item">
+                  <div class="feed-avatar" style="background:linear-gradient(135deg,var(--danger),#dc2626);"><i class="fas fa-exclamation"></i></div>
+                  <div class="feed-content">
+                    <div class="feed-header-row">
+                      <span class="feed-author">Rector's Office</span>
+                      <span class="feed-verified"><i class="fas fa-circle-check"></i></span>
+                      <span class="feed-meta">High Priority • 1 hour ago</span>
+                    </div>
+                    <div class="feed-text">All students are required to submit their semester project reports by August 15th, 2026. Late submissions will not be accepted without prior approval.</div>
+                    <div class="feed-tags"><span class="badge badge-red">🔴 High Priority</span><span class="badge badge-blue">📢 Official</span></div>
+                    <div class="feed-actions">
+                      <span class="feed-action"><i class="fas fa-heart"></i> 156</span>
+                      <span class="feed-action"><i class="fas fa-comment"></i> 32</span>
+                      <span class="feed-action"><i class="fas fa-share"></i> Share</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-avatar" style="background:linear-gradient(135deg,var(--primary),var(--primary-dark));"><i class="fas fa-graduation-cap"></i></div>
+                  <div class="feed-content">
+                    <div class="feed-header-row">
+                      <span class="feed-author">Department Head</span>
+                      <span class="feed-verified"><i class="fas fa-circle-check"></i></span>
+                      <span class="feed-meta">2 hours ago</span>
+                    </div>
+                    <div class="feed-text">Final examination schedule has been released. Please check your respective course pages for detailed information regarding exam venues and timings.</div>
+                    <div class="feed-tags"><span class="badge badge-blue">📢 Official</span><span class="badge badge-purple">🎓 Academic</span></div>
+                    <div class="feed-actions">
+                      <span class="feed-action"><i class="fas fa-heart"></i> 89</span>
+                      <span class="feed-action"><i class="fas fa-comment"></i> 15</span>
+                      <span class="feed-action"><i class="fas fa-share"></i> Share</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="feed-item">
+                  <div class="feed-avatar" style="background:linear-gradient(135deg,var(--warning),#d97706);"><i class="fas fa-triangle-exclamation"></i></div>
+                  <div class="feed-content">
+                    <div class="feed-header-row">
+                      <span class="feed-author">IT Support</span>
+                      <span class="feed-meta">1 day ago</span>
+                    </div>
+                    <div class="feed-text">Scheduled maintenance on the university network will take place this Saturday from 10 PM to 2 AM. All online services may be temporarily unavailable.</div>
+                    <div class="feed-tags"><span class="badge badge-orange">⚠️ Maintenance</span></div>
+                    <div class="feed-actions">
+                      <span class="feed-action"><i class="fas fa-heart"></i> 45</span>
+                      <span class="feed-action"><i class="fas fa-comment"></i> 8</span>
+                      <span class="feed-action"><i class="fas fa-share"></i> Share</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== EVENTS ==================== -->
+          <div class="page" id="page-events">
+            <h1 class="page-title">Events</h1>
+            <p class="page-subtitle">University events, sports, and activities</p>
+            <div style="display:flex;gap:8px;margin-bottom:18px;">
+              <button class="btn btn-primary btn-sm">All Events</button>
+              <button class="btn btn-secondary btn-sm">Sports</button>
+              <button class="btn btn-secondary btn-sm">Academic</button>
+              <button class="btn btn-secondary btn-sm">Cultural</button>
+              <button class="btn btn-secondary btn-sm">My Registrations</button>
+            </div>
+            <div class="grid-2">
+              <div class="card">
+                <div style="height:180px;background:linear-gradient(135deg,var(--primary),var(--primary-dark));display:flex;align-items:center;justify-content:center;color:#fff;font-size:64px;"><i class="fas fa-trophy"></i></div>
+                <div style="padding:20px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span class="badge badge-green">🎉 Sports</span>
+                    <span style="font-size:11px;color:var(--text-lighter);font-weight:600;">Aug 15, 2026</span>
+                  </div>
+                  <h3 style="font-size:16px;font-weight:700;color:var(--accent);margin-bottom:6px;">Annual University Sports Day</h3>
+                  <p style="font-size:13px;color:var(--text-light);line-height:1.5;margin-bottom:14px;">Join us for a day of sports and fun! Events include football, basketball, badminton, track and field, and more. Open to all students and staff.</p>
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <i class="fas fa-location-dot" style="color:var(--primary);font-size:12px;"></i>
+                      <span style="font-size:12px;color:var(--text-light);">University Stadium</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm">Register</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div style="height:180px;background:linear-gradient(135deg,var(--purple),#7c3aed);display:flex;align-items:center;justify-content:center;color:#fff;font-size:64px;"><i class="fas fa-briefcase"></i></div>
+                <div style="padding:20px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span class="badge badge-purple">💼 Career</span>
+                    <span style="font-size:11px;color:var(--text-lighter);font-weight:600;">Aug 10, 2026</span>
+                  </div>
+                  <h3 style="font-size:16px;font-weight:700;color:var(--accent);margin-bottom:6px;">Career Fair 2026</h3>
+                  <p style="font-size:13px;color:var(--text-light);line-height:1.5;margin-bottom:14px;">Meet top employers from tech, finance, and consulting. Bring your resume and get ready for on-the-spot interviews and networking.</p>
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <i class="fas fa-location-dot" style="color:var(--primary);font-size:12px;"></i>
+                      <span style="font-size:12px;color:var(--text-light);">Campus Center Hall</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm">RSVP</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div style="height:180px;background:linear-gradient(135deg,var(--success),#059669);display:flex;align-items:center;justify-content:center;color:#fff;font-size:64px;"><i class="fas fa-code"></i></div>
+                <div style="padding:20px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span class="badge badge-blue">💻 Tech</span>
+                    <span style="font-size:11px;color:var(--text-lighter);font-weight:600;">Aug 5, 2026</span>
+                  </div>
+                  <h3 style="font-size:16px;font-weight:700;color:var(--accent);margin-bottom:6px;">Hackathon 2026</h3>
+                  <p style="font-size:13px;color:var(--text-light);line-height:1.5;margin-bottom:14px;">24-hour coding competition. Form teams of 3-4 and build innovative solutions. Prizes include internships and tech gadgets!</p>
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <i class="fas fa-location-dot" style="color:var(--primary);font-size:12px;"></i>
+                      <span style="font-size:12px;color:var(--text-light);">Innovation Lab</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm">Register</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div style="height:180px;background:linear-gradient(135deg,var(--warning),#d97706);display:flex;align-items:center;justify-content:center;color:#fff;font-size:64px;"><i class="fas fa-music"></i></div>
+                <div style="padding:20px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span class="badge badge-orange">🎭 Cultural</span>
+                    <span style="font-size:11px;color:var(--text-lighter);font-weight:600;">Sep 1, 2026</span>
+                  </div>
+                  <h3 style="font-size:16px;font-weight:700;color:var(--accent);margin-bottom:6px;">Cultural Festival Night</h3>
+                  <p style="font-size:13px;color:var(--text-light);line-height:1.5;margin-bottom:14px;">A night of music, dance, and cultural performances from all departments. Food stalls and fun activities included!</p>
+                  <div style="display:flex;align-items:center;justify-content:space-between;">
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <i class="fas fa-location-dot" style="color:var(--primary);font-size:12px;"></i>
+                      <span style="font-size:12px;color:var(--text-light);">Main Auditorium</span>
+                    </div>
+                    <button class="btn btn-primary btn-sm">Get Tickets</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== FINANCE ==================== -->
+          <div class="page" id="page-finance">
+            <h1 class="page-title">Finance</h1>
+            <p class="page-subtitle">Tuition fees, scholarships, and stipends</p>
+            <div class="grid-3" style="margin-bottom:22px;">
+              <div class="stat-card">
+                <div class="stat-header"><div class="stat-icon blue"><i class="fas fa-file-invoice-dollar"></i></div></div>
+                <div class="stat-value">$2,400</div>
+                <div class="stat-label">Total Tuition Due</div>
+                <div style="font-size:11px;color:var(--text-lighter);margin-top:4px;">Semester 2, 2026</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header"><div class="stat-icon green"><i class="fas fa-check-circle"></i></div></div>
+                <div class="stat-value">$1,200</div>
+                <div class="stat-label">Amount Paid</div>
+                <div style="font-size:11px;color:var(--success);margin-top:4px;">50% completed</div>
+              </div>
+              <div class="stat-card">
+                <div class="stat-header"><div class="stat-icon orange"><i class="fas fa-hourglass-half"></i></div></div>
+                <div class="stat-value">$1,200</div>
+                <div class="stat-label">Remaining Balance</div>
+                <div style="font-size:11px;color:var(--danger);margin-top:4px;">Due: Aug 15, 2026</div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-header"><div class="card-title"><i class="fas fa-list"></i> Payment History</div><div class="card-action">View All</div></div>
+              <table class="data-table">
+                <thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Status</th><th>Receipt</th></tr></thead>
+                <tbody>
+                  <tr><td>Jul 15, 2026</td><td>Semester 2 - Installment 1</td><td style="font-weight:700;">$600</td><td><span class="badge badge-green">✅ Paid</span></td><td><button class="btn btn-ghost btn-sm"><i class="fas fa-download"></i></button></td></tr>
+                  <tr><td>Jun 15, 2026</td><td>Semester 2 - Registration Fee</td><td style="font-weight:700;">$600</td><td><span class="badge badge-green">✅ Paid</span></td><td><button class="btn btn-ghost btn-sm"><i class="fas fa-download"></i></button></td></tr>
+                  <tr><td>Mar 10, 2026</td><td>Semester 1 - Final Payment</td><td style="font-weight:700;">$600</td><td><span class="badge badge-green">✅ Paid</span></td><td><button class="btn btn-ghost btn-sm"><i class="fas fa-download"></i></button></td></tr>
+                  <tr><td>Jan 15, 2026</td><td>Semester 1 - Installment 1</td><td style="font-weight:700;">$600</td><td><span class="badge badge-green">✅ Paid</span></td><td><button class="btn btn-ghost btn-sm"><i class="fas fa-download"></i></button></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- ==================== LOST & FOUND ==================== -->
+          <div class="page" id="page-lost-found">
+            <h1 class="page-title">Lost & Found</h1>
+            <p class="page-subtitle">Report and find lost items on campus</p>
+            <div style="display:flex;gap:8px;margin-bottom:18px;">
+              <button class="btn btn-primary btn-sm">All Items</button>
+              <button class="btn btn-secondary btn-sm">Lost</button>
+              <button class="btn btn-secondary btn-sm">Found</button>
+              <button class="btn btn-secondary btn-sm">My Reports</button>
+              <button class="btn btn-primary btn-sm" style="margin-left:auto;"><i class="fas fa-plus"></i> Report Item</button>
+            </div>
+            <div class="grid-2">
+              <div class="card">
+                <div style="height:160px;background:linear-gradient(135deg,var(--secondary-light),var(--secondary));display:flex;align-items:center;justify-content:center;"><i class="fas fa-wallet" style="font-size:48px;color:var(--primary);opacity:0.5;"></i></div>
+                <div style="padding:18px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span class="badge badge-red">🔴 Lost</span>
+                    <span style="font-size:11px;color:var(--text-lighter);font-weight:600;">Jul 28, 2026</span>
+                  </div>
+                  <h3 style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px;">Black Leather Wallet</h3>
+                  <p style="font-size:12.5px;color:var(--text-light);line-height:1.5;margin-bottom:12px;">Lost near the cafeteria on Tuesday afternoon. Contains student ID and some cash. Please contact if found.</p>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="msg-avatar" style="background:linear-gradient(135deg,#2872A1,#1e5a82);width:28px;height:28px;font-size:10px;">NW</div>
+                    <span style="font-size:12px;color:var(--text-light);font-weight:600;">Nathan White</span>
+                    <span style="margin-left:auto;font-size:11px;color:var(--text-lighter);">Contact</span>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div style="height:160px;background:linear-gradient(135deg,#dcfce7,#bbf7d0);display:flex;align-items:center;justify-content:center;"><i class="fas fa-mobile-screen" style="font-size:48px;color:var(--success);opacity:0.5;"></i></div>
+                <div style="padding:18px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span class="badge badge-green">🟢 Found</span>
+                    <span style="font-size:11px;color:var(--text-lighter);font-weight:600;">Jul 27, 2026</span>
+                  </div>
+                  <h3 style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px;">iPhone 14 - Blue Case</h3>
+                  <p style="font-size:12.5px;color:var(--text-light);line-height:1.5;margin-bottom:12px;">Found in Lecture Hall 302 after the Database class. Handed over to the Student Affairs office.</p>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="msg-avatar" style="background:linear-gradient(135deg,#10b981,#059669);width:28px;height:28px;font-size:10px;">SA</div>
+                    <span style="font-size:12px;color:var(--text-light);font-weight:600;">Student Affairs</span>
+                    <span style="margin-left:auto;font-size:11px;color:var(--text-lighter);">Claim</span>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div style="height:160px;background:linear-gradient(135deg,#fef3c7,#fde68a);display:flex;align-items:center;justify-content:center;"><i class="fas fa-key" style="font-size:48px;color:var(--warning);opacity:0.5;"></i></div>
+                <div style="padding:18px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span class="badge badge-red">🔴 Lost</span>
+                    <span style="font-size:11px;color:var(--text-lighter);font-weight:600;">Jul 26, 2026</span>
+                  </div>
+                  <h3 style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px;">Room Key - Dorm B-204</h3>
+                  <p style="font-size:12.5px;color:var(--text-light);line-height:1.5;margin-bottom:12px;">Lost somewhere between the library and Dorm B. Has a blue keychain with university logo.</p>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="msg-avatar" style="background:linear-gradient(135deg,#f59e0b,#d97706);width:28px;height:28px;font-size:10px;">MB</div>
+                    <span style="font-size:12px;color:var(--text-light);font-weight:600;">Megan Brown</span>
+                    <span style="margin-left:auto;font-size:11px;color:var(--text-lighter);">Contact</span>
+                  </div>
+                </div>
+              </div>
+              <div class="card">
+                <div style="height:160px;background:linear-gradient(135deg,#f3e8ff,#e9d5ff);display:flex;align-items:center;justify-content:center;"><i class="fas fa-laptop" style="font-size:48px;color:#8b5cf6;opacity:0.5;"></i></div>
+                <div style="padding:18px;">
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                    <span class="badge badge-green">🟢 Found</span>
+                    <span style="font-size:11px;color:var(--text-lighter);font-weight:600;">Jul 25, 2026</span>
+                  </div>
+                  <h3 style="font-size:15px;font-weight:700;color:var(--accent);margin-bottom:6px;">Laptop Bag - Grey</h3>
+                  <p style="font-size:12.5px;color:var(--text-light);line-height:1.5;margin-bottom:12px;">Found in the cafeteria. Contains a Lenovo laptop and some notebooks. Please verify ownership.</p>
+                  <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="msg-avatar" style="background:linear-gradient(135deg,#8b5cf6,#ec4899);width:28px;height:28px;font-size:10px;">DR</div>
+                    <span style="font-size:12px;color:var(--text-light);font-weight:600;">Dr. Aung Myint</span>
+                    <span style="margin-left:auto;font-size:11px;color:var(--text-lighter);">Claim</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== SETTINGS ==================== -->
+          <div class="page" id="page-settings">
+            <h1 class="page-title">Settings</h1>
+            <p class="page-subtitle">Manage your account and preferences</p>
+            <div class="grid-2">
+              <div class="card" style="max-height:fit-content;">
+                <div class="settings-nav">
+                  <div class="settings-item active"><i class="fas fa-user"></i> Profile</div>
+                  <div class="settings-item"><i class="fas fa-bell"></i> Notifications</div>
+                  <div class="settings-item"><i class="fas fa-shield-halved"></i> Security</div>
+                  <div class="settings-item"><i class="fas fa-palette"></i> Appearance</div>
+                  <div class="settings-item"><i class="fas fa-globe"></i> Language</div>
+                  <div class="settings-item"><i class="fas fa-circle-question"></i> Help & Support</div>
+                </div>
+              </div>
+              <div>
+                <div class="card" style="margin-bottom:18px;">
+                  <div class="card-header"><div class="card-title"><i class="fas fa-user"></i> Profile Information</div></div>
+                  <div class="card-body">
+                    <div style="display:flex;align-items:center;gap:16px;margin-bottom:20px;">
+                      <div style="width:72px;height:72px;border-radius:50%;background:linear-gradient(135deg,#CBDDE9,#a8cce0);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;color:var(--primary);">MK</div>
+                      <div>
+                        <div style="font-size:14px;font-weight:700;color:var(--accent);">Mg Kyaw</div>
+                        <div style="font-size:12px;color:var(--text-light);">Student • Computer Science • Year 3</div>
+                        <button class="btn btn-secondary btn-sm" style="margin-top:8px;"><i class="fas fa-camera"></i> Change Photo</button>
+                      </div>
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Full Name</label>
+                      <input type="text" class="form-input" value="Mg Kyaw">
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Email</label>
+                      <input type="email" class="form-input" value="mg.kyaw@uni.edu">
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Phone Number</label>
+                      <input type="tel" class="form-input" value="09-123456789">
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Bio</label>
+                      <textarea class="form-textarea" placeholder="Tell us about yourself...">Computer Science student passionate about AI and web development.</textarea>
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;">
+                      <button class="btn btn-ghost">Cancel</button>
+                      <button class="btn btn-primary">Save Changes</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="card-header"><div class="card-title"><i class="fas fa-shield-halved"></i> Security</div></div>
+                  <div class="card-body">
+                    <div class="form-group">
+                      <label class="form-label">Current Password</label>
+                      <input type="password" class="form-input" placeholder="Enter current password">
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">New Password</label>
+                      <input type="password" class="form-input" placeholder="Enter new password">
+                    </div>
+                    <div class="form-group">
+                      <label class="form-label">Confirm New Password</label>
+                      <input type="password" class="form-input" placeholder="Confirm new password">
+                    </div>
+                    <div style="display:flex;gap:10px;justify-content:flex-end;">
+                      <button class="btn btn-ghost">Cancel</button>
+                      <button class="btn btn-primary">Update Password</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <button class="fab"><i class="fas fa-comment-dots"></i></button>
+  </div>
+
+  <script>
+    // Navigation
+    const navItems = document.querySelectorAll('.nav-item[data-page]');
+    const pages = document.querySelectorAll('.page');
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const sidebar = document.getElementById('sidebar');
+
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        const pageId = item.getAttribute('data-page');
+
+        // Update active nav
+        navItems.forEach(n => n.classList.remove('active'));
+        item.classList.add('active');
+
+        // Show page
+        pages.forEach(p => p.classList.remove('active'));
+        const targetPage = document.getElementById('page-' + pageId);
+        if (targetPage) targetPage.classList.add('active');
+
+        // Close mobile sidebar
+        sidebar.classList.remove('open');
+      });
+    });
+
+    mobileMenuBtn.addEventListener('click', () => {
+      sidebar.classList.toggle('open');
+    });
+
+    // Tab switching
+    document.querySelectorAll('.tabs').forEach(tabContainer => {
+      const tabs = tabContainer.querySelectorAll('.tab');
+      tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabs.forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+        });
+      });
+    });
+
+    // Year pills
+    document.querySelectorAll('.year-pills').forEach(container => {
+      const pills = container.querySelectorAll('.year-pill');
+      pills.forEach(pill => {
+        pill.addEventListener('click', () => {
+          pills.forEach(p => p.classList.remove('active'));
+          pill.classList.add('active');
+        });
+      });
+    });
+
+    // Settings nav
+    document.querySelectorAll('.settings-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.settings-item').forEach(i => i.classList.remove('active'));
+        item.classList.add('active');
+      });
+    });
+
+    // Feed actions
+    document.querySelectorAll('.feed-action').forEach(action => {
+      action.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (action.querySelector('.fa-heart')) {
+          action.classList.toggle('active');
+        }
+      });
+    });
+
+    // Status toggle for roll call
+    document.querySelectorAll('.status-toggle').forEach(toggle => {
+      toggle.addEventListener('click', () => {
+        if (toggle.classList.contains('present')) {
+          toggle.classList.remove('present');
+          toggle.classList.add('absent');
+          toggle.innerHTML = '<i class="fas fa-xmark"></i> Absent';
+        } else {
+          toggle.classList.remove('absent');
+          toggle.classList.add('present');
+          toggle.innerHTML = '<i class="fas fa-check"></i> Present';
+        }
+      });
+    });
+  </script>
+</body>
+</html>
