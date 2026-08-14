@@ -147,6 +147,7 @@ export interface Database {
           sender_email: string;
           sender_name: string;
           content: string;
+          attachments: Json | null;
           created_at: number;
           is_read: boolean;
         };
@@ -155,10 +156,11 @@ export interface Database {
           sender_email: string;
           sender_name: string;
           content: string;
+          attachments?: Json | null;
           created_at?: number | null;
           is_read?: boolean | null;
         };
-        Update: { is_read?: boolean | null };
+        Update: { is_read?: boolean | null; attachments?: Json | null };
       };
       notifications: {
         Row: {

@@ -55,9 +55,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const identity = await getSessionIdentity();
   if (!identity) return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
   const { id } = await params;
-  const { content } = (await request.json().catch(() => ({ content: '' }))) as { content?: string };
+  const { content, attachments } = (await request.json().catch(() => ({ content: '', attachments: undefined }))) as {
+    content?: string;
+    attachments?: { name: string; size: number; mime: string; path: string }[];
+  };
   const text = (content ?? '').trim();
-  if (!text) return NextResponse.json({ message: 'Empty message' }, { status: 400 });
+
+  const atts = Array.isArray(attachments) ? attachments : [];
+  if (atts.length > 0) {
+    const invalid = atts.some(
+      (a) =>
+        !a ||
+        typeof a.name !== 'string' ||
+        typeof a.path !== 'string' ||
+        !a.path.startsWith(`${id}/`) ||
+        typeof a.size !== 'number' ||
+        a.size <= 0 ||
+        a.size > 20 * 1024 * 1024
+    );
+    if (invalid) return NextResponse.json({ message: 'Invalid attachment metadata' }, { status: 400 });
+  }
+  if (!text && atts.length === 0) return NextResponse.json({ message: 'Empty message' }, { status: 400 });
 
   const supabase = createServerSupabase() as unknown as SupabaseClient;
   const { data: conv, error: cErr } = await supabase
@@ -83,6 +101,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       sender_email: identity.email,
       sender_name: identity.name,
       content: text,
+      attachments: atts.length > 0 ? atts : undefined,
       created_at: now,
     })
     .select()

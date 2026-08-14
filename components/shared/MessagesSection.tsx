@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   MessageSquare, Send, Plus, Search, UserCheck, UserX, Ban, RotateCcw, Clock,
-  Users, Check, Filter, Settings, UserMinus, Trash2,
+  Users, Check, Filter, Settings, UserMinus, Trash2, Paperclip, FileText,
+  FileSpreadsheet, File, Download, Loader2, Image as ImageIcon,
 } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
@@ -14,6 +15,15 @@ import { toast } from 'sonner';
 type ConvStatus = 'pending' | 'active' | 'blocked';
 
 const GROUP_META_EMAIL = '__GROUP__';
+
+interface QuickGroup {
+  key: string;
+  label: string;
+  emails: string[];
+  sem: string;
+  sec: string;
+  year: string;
+}
 
 interface ConvInfo {
   id: string;
@@ -29,13 +39,100 @@ interface ConvInfo {
   members: { email: string; name: string; initials: string }[];
 }
 
+interface ChatAttachment {
+  name: string;
+  size: number;
+  mime: string;
+  path: string;
+}
+
 interface ChatMessage {
   id: string;
   sender_email: string;
   sender_name: string;
   sender_initials?: string;
   content: string;
+  attachments?: ChatAttachment[];
   created_at: number;
+}
+
+const ATTACH_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt,.csv,.zip';
+
+function formatBytes(b: number): string {
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
+  return `${(b / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileIcon(mime: string, name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? '';
+  if (mime.startsWith('image/')) return <ImageIcon size={16} />;
+  if (['doc', 'docx', 'odt'].includes(ext)) return <FileText size={16} />;
+  if (['xls', 'xlsx', 'csv', 'ods'].includes(ext)) return <FileSpreadsheet size={16} />;
+  if (mime.includes('pdf')) return <FileText size={16} />;
+  return <File size={16} />;
+}
+
+function MessageAttachments({ convId, attachments, mine }: { convId: string; attachments: ChatAttachment[]; mine: boolean }) {
+  const [urls, setUrls] = useState<Record<string, { url: string; downloadUrl: string }> | null>(null);
+  const [error, setError] = useState(false);
+  const pathsKey = attachments.map((a) => a.path).join('\u0000');
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/conversations/${convId}/attachments?paths=${encodeURIComponent(JSON.stringify(attachments.map((a) => a.path)))}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load failed'))))
+      .then((data) => { if (!cancelled) setUrls(data.urls ?? {}); })
+      .catch(() => { if (!cancelled) setError(true); });
+    return () => { cancelled = true; };
+  }, [convId, pathsKey, attachments]);
+
+  if (!attachments || attachments.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1.5" style={{ maxWidth: 280 }}>
+      {attachments.map((a) => {
+        const entry = urls?.[a.path];
+        const isImage = a.mime.startsWith('image/');
+        if (isImage) {
+          return (
+            <div key={a.path}>
+              {entry?.url ? (
+                <a href={entry.downloadUrl} target="_blank" rel="noreferrer" title={a.name}>
+                  <img
+                    src={entry.url}
+                    alt={a.name}
+                    style={{ maxWidth: '100%', maxHeight: 220, borderRadius: 'var(--radius-sm)', display: 'block', objectFit: 'cover', border: '1px solid rgba(255,255,255,0.2)' }}
+                  />
+                </a>
+              ) : (
+                <div className="flex items-center gap-2" style={{ fontSize: 11, opacity: 0.75 }}>
+                  {error ? 'Attachment unavailable' : <><Loader2 size={13} className="animate-spin" /> Loading…</>}
+                </div>
+              )}
+            </div>
+          );
+        }
+        return (
+          <a
+            key={a.path}
+            href={entry?.downloadUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-2 px-2.5 py-2 no-underline"
+            style={{ borderRadius: 'var(--radius-sm)', background: mine ? 'rgba(255,255,255,0.16)' : 'var(--surface-soft)', color: mine ? '#fff' : 'var(--text)' }}
+          >
+            {fileIcon(a.mime, a.name)}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate" style={{ fontSize: 12.5, fontWeight: 600 }}>{a.name}</span>
+              <span className="block" style={{ fontSize: 10.5, opacity: 0.7 }}>{formatBytes(a.size)}</span>
+            </span>
+            {entry?.downloadUrl && <Download size={13} />}
+            {!entry?.downloadUrl && !error && <Loader2 size={13} className="animate-spin" />}
+            {error && <span style={{ fontSize: 10, opacity: 0.7 }}>Failed</span>}
+          </a>
+        );
+      })}
+    </div>
+  );
 }
 
 function timeLabel(ts: number): string {
@@ -71,9 +168,13 @@ export default function MessagesSection() {
   const [yearFilter, setYearFilter] = useState('');
   const [semesterFilter, setSemesterFilter] = useState('');
   const [sectionFilter, setSectionFilter] = useState('');
+  const [activeQuick, setActiveQuick] = useState<QuickGroup | null>(null);
   const [showManage, setShowManage] = useState(false);
   const [groupNameDraft, setGroupNameDraft] = useState('');
   const [addMemberSearch, setAddMemberSearch] = useState('');
+  const [pendingFiles, setPendingFiles] = useState<{ file: File; preview?: string; error?: string }[]>([]);
+  const [sending, setSending] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const msgScrollRef = useRef<HTMLDivElement>(null);
   const MESSAGE_PAGE = 20;
@@ -304,18 +405,54 @@ export default function MessagesSection() {
 
   const handleSend = async () => {
     const content = draft.trim();
-    if (!content || !selectedId || !me) return;
+    if (!selectedId || !me || (!content && pendingFiles.length === 0) || sending) return;
+    setSending(true);
     try {
+      let attachments: ChatAttachment[] = [];
+      if (pendingFiles.length > 0) {
+        const fd = new FormData();
+        pendingFiles.forEach((p) => fd.append('files', p.file));
+        const up = await fetch(`/api/conversations/${selectedId}/attachments`, { method: 'POST', body: fd });
+        if (!up.ok) throw new Error((await up.json().catch(() => ({ message: 'Upload failed' }))).message);
+        attachments = ((await up.json()).attachments as ChatAttachment[]) ?? [];
+      }
       const res = await fetch(`/api/conversations/${selectedId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content, attachments }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not send message' }))).message);
       setDraft('');
+      setPendingFiles((prev) => {
+        prev.forEach((p) => { if (p.preview) URL.revokeObjectURL(p.preview); });
+        return [];
+      });
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not send message');
+    } finally {
+      setSending(false);
     }
+  };
+
+  const addPendingFiles = (list: FileList | null) => {
+    if (!list) return;
+    const files = [...list];
+    setPendingFiles((prev) => {
+      const next = [...prev];
+      for (const f of files) {
+        if (next.length >= 8) break;
+        next.push({ file: f, preview: f.type.startsWith('image/') ? URL.createObjectURL(f) : undefined });
+      }
+      return next;
+    });
+  };
+
+  const removePendingFile = (index: number) => {
+    setPendingFiles((prev) => {
+      const p = prev[index];
+      if (p?.preview) URL.revokeObjectURL(p.preview);
+      return prev.filter((_, i) => i !== index);
+    });
   };
 
   const handleConversationAction = useCallback(async (action: 'accept' | 'reject' | 'block' | 'unblock') => {
@@ -350,6 +487,53 @@ export default function MessagesSection() {
   });
 
   const hasActiveFilter = !!(yearFilter || semesterFilter || sectionFilter);
+
+  const quickGroups = useMemo<QuickGroup[]>(() => {
+    const semNo = (s: string) => Number((s.match(/\d+/) ?? [0])[0]) || 0;
+    const semMap = new Map<string, QuickGroup>();
+    const secMap = new Map<string, QuickGroup>();
+    const years = new Set<string>();
+    for (const p of people) {
+      if (p.year) years.add(p.year);
+      if (!p.semester) continue;
+      const y = p.year ?? '';
+      const semKey = `sem:${y}|${p.semester}`;
+      if (!semMap.has(semKey)) semMap.set(semKey, { key: semKey, label: p.semester, emails: [], sem: p.semester, sec: '', year: y });
+      semMap.get(semKey)!.emails.push(p.email);
+      if (p.section) {
+        const secKey = `sec:${y}|${p.semester}|${p.section}`;
+        if (!secMap.has(secKey)) secMap.set(secKey, { key: secKey, label: `${p.semester} Section ${p.section}`, emails: [], sem: p.semester, sec: p.section, year: y });
+        secMap.get(secKey)!.emails.push(p.email);
+      }
+    }
+    const multiYear = years.size > 1;
+    const cmp = (a: QuickGroup, b: QuickGroup) => a.year.localeCompare(b.year) || semNo(a.sem) - semNo(b.sem) || a.sem.localeCompare(b.sem) || a.sec.localeCompare(b.sec);
+    return [...semMap.values(), ...secMap.values()].sort(cmp).map((g) => ({
+      ...g,
+      label: `Whole ${g.sem}${g.sec ? ` · Section ${g.sec}` : ''}${multiYear && g.year ? ` · ${g.year}` : ''}`,
+    }));
+  }, [people]);
+
+  const toggleQuickGroup = (g: QuickGroup) => {
+    if (activeQuick?.key === g.key) {
+      setSelectedMembers((prev) => prev.filter((e) => !g.emails.includes(e)));
+      setYearFilter('');
+      setSemesterFilter('');
+      setSectionFilter('');
+      setActiveQuick(null);
+      return;
+    }
+    setSelectedMembers((prev) => {
+      const next = new Set(prev);
+      g.emails.forEach((e) => next.add(e));
+      return [...next];
+    });
+    setYearFilter(g.year);
+    setSemesterFilter(g.sem);
+    setSectionFilter(g.sec);
+    setSearch('');
+    setActiveQuick(g);
+  };
 
   const toggleMember = (email: string) => {
     setSelectedMembers((prev) => (prev.includes(email) ? prev.filter((e) => e !== email) : [...prev, email]));
@@ -617,7 +801,15 @@ export default function MessagesSection() {
                       {showSender && (
                         <div className="text-[10.5px] font-semibold mb-0.5" style={{ color: 'var(--primary)' }}>{m.sender_name || m.sender_email}</div>
                       )}
-                      {m.content}
+                      {m.content && <div>{m.content}</div>}
+                      {m.attachments && m.attachments.length > 0 && (
+                        <MessageAttachments
+                          key={m.attachments.map((a) => a.path).join('|')}
+                          convId={selectedId ?? ''}
+                          attachments={m.attachments}
+                          mine={mine}
+                        />
+                      )}
                       <div className="text-[10px] mt-1" style={{ opacity: 0.7 }}>{timeLabel(m.created_at)}</div>
                     </div>
                   </div>
@@ -626,32 +818,66 @@ export default function MessagesSection() {
               <div ref={endRef} />
             </div>
 
-            <div className="flex items-center gap-2 p-3" style={{ borderTop: '1px solid var(--surface)' }}>
-              {composerDisabledReason ? (
-                <div className="flex-1 text-center text-xs py-2.5" style={{ color: 'var(--text-lighter)' }}>
-                  {composerDisabledReason}
-                </div>
-              ) : (
-                <div className="flex-1 flex items-center gap-2" style={{ background: 'var(--divider)', borderRadius: 'var(--radius-md)', padding: '4px 4px 4px 14px', border: '1.5px solid var(--surface-border)' }}>
-                  <input
-                    type="text"
-                    value={draft}
-                    onChange={(e) => setDraft(e.target.value)}
-                    onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
-                    placeholder="Type a message..."
-                    className="flex-1 bg-transparent outline-none"
-                    style={{ fontSize: 13.5, color: 'var(--text)', border: 'none' }}
-                  />
-                  <button
-                    onClick={handleSend}
-                    disabled={!draft.trim()}
-                    className="flex items-center justify-center cursor-pointer border-none disabled:opacity-30"
-                    style={{ width: 32, height: 32, borderRadius: 'var(--radius-sm)', color: '#fff', background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
-                  >
-                    <Send size={14} />
-                  </button>
+            <div style={{ borderTop: '1px solid var(--surface)' }}>
+              {!composerDisabledReason && pendingFiles.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5">
+                  {pendingFiles.map((p, i) => (
+                    <div key={i} className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 600, padding: '4px 6px 4px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--divider)', border: '1.5px solid var(--surface-border)', color: 'var(--text)' }}>
+                      {p.preview ? (
+                        <img src={p.preview} alt="" style={{ width: 18, height: 18, borderRadius: 3, objectFit: 'cover' }} />
+                      ) : (
+                        fileIcon(p.file.type, p.file.name)
+                      )}
+                      <span className="max-w-[140px] truncate">{p.file.name}</span>
+                      <button onClick={() => removePendingFile(i)} className="cursor-pointer border-none bg-transparent" style={{ color: 'var(--text-light)', fontSize: 12 }} title="Remove">✕</button>
+                    </div>
+                  ))}
                 </div>
               )}
+              <div className="flex items-center gap-2 p-3">
+                {composerDisabledReason ? (
+                  <div className="flex-1 text-center text-xs py-2.5" style={{ color: 'var(--text-lighter)' }}>
+                    {composerDisabledReason}
+                  </div>
+                ) : (
+                  <div className="flex-1 flex items-center gap-2" style={{ background: 'var(--divider)', borderRadius: 'var(--radius-md)', padding: '4px 4px 4px 14px', border: '1.5px solid var(--surface-border)' }}>
+                    <input
+                      type="text"
+                      value={draft}
+                      onChange={(e) => setDraft(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
+                      placeholder="Type a message..."
+                      className="flex-1 bg-transparent outline-none"
+                      style={{ fontSize: 13.5, color: 'var(--text)', border: 'none' }}
+                    />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept={ATTACH_ACCEPT}
+                      className="hidden"
+                      onChange={(e) => { addPendingFiles(e.target.files); e.target.value = ''; }}
+                    />
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={sending}
+                      className="flex items-center justify-center cursor-pointer border-none disabled:opacity-40"
+                      title="Attach files"
+                      style={{ width: 30, height: 30, borderRadius: 'var(--radius-sm)', color: 'var(--text-light)', background: 'transparent' }}
+                    >
+                      <Paperclip size={15} />
+                    </button>
+                    <button
+                      onClick={handleSend}
+                      disabled={(!draft.trim() && pendingFiles.length === 0) || sending}
+                      className="flex items-center justify-center cursor-pointer border-none disabled:opacity-30"
+                      style={{ width: 32, height: 32, borderRadius: 'var(--radius-sm)', color: '#fff', background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+                    >
+                      {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </>
         )}
@@ -736,7 +962,7 @@ export default function MessagesSection() {
               </select>
               {hasActiveFilter && (
                 <button
-                  onClick={() => { setYearFilter(''); setSemesterFilter(''); setSectionFilter(''); }}
+                  onClick={() => { setYearFilter(''); setSemesterFilter(''); setSectionFilter(''); setActiveQuick(null); }}
                   className="btn btn-ghost btn-xs"
                   style={{ color: 'var(--text-lighter)', fontSize: 11 }}
                 >
@@ -744,6 +970,34 @@ export default function MessagesSection() {
                 </button>
               )}
             </div>
+
+            {chatMode === 'group' && quickGroups.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5" style={{ padding: '10px 20px 12px', borderBottom: '1px solid var(--surface)' }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-light)' }}>Quick pick:</span>
+                {quickGroups.map((g) => {
+                  const active = activeQuick?.key === g.key;
+                  return (
+                    <button
+                      key={g.key}
+                      onClick={() => toggleQuickGroup(g)}
+                      className="cursor-pointer"
+                      title={`Select everyone in ${g.sem}${g.sec ? ` section ${g.sec}` : ''} (${g.emails.length} people)`}
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: '4px 10px',
+                        borderRadius: 14,
+                        border: `1.5px solid ${active ? 'var(--primary)' : 'var(--surface-border)'}`,
+                        background: active ? 'rgba(58,139,194,0.15)' : 'var(--divider)',
+                        color: active ? 'var(--primary)' : 'var(--text)',
+                      }}
+                    >
+                      {g.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--surface)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -12,6 +12,7 @@
 --   migrations/20260813000000_init.sql   (posts, likes, comments, convs, msgs, notifs)
 --   migrations/20260814000000_shares.sql (post_shares + posts.shares_count)
 --   migrations/20260814020000_updated_at.sql (posts/comments updated_at for "edited" flag)
+--   migrations/20260815000000_attachments.sql (chat_messages.attachments for file sharing)
 -- It is idempotent-safe and has been verified against PostgreSQL 16.
 -- ============================================================================
 
@@ -130,6 +131,14 @@ create table if not exists public.post_shares (
   created_at    bigint not null default (extract(epoch from now()) * 1000)
 );
 create index if not exists idx_shares_post on public.post_shares (post_id, created_at);
+
+------------------------------------------------------------
+-- chat_messages.attachments (chat file attachments)
+-- Each entry: { "name", "size", "mime", "path" } where "path" is
+-- the object path inside the PRIVATE "chat-attachments" storage
+-- bucket (signed URLs are issued server-side to participants only).
+------------------------------------------------------------
+alter table public.chat_messages add column if not exists attachments jsonb not null default '[]'::jsonb;
 
 ------------------------------------------------------------
 -- Realtime is enabled on all tables by default.
