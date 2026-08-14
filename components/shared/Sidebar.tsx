@@ -55,10 +55,12 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
   const me = session?.email ?? '';
 
   const [pendingRequests, setPendingRequests] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
   useEffect(() => {
     if (!me) return;
+    let cancelled = false;
     const loadCounts = async () => {
       const { count: pending } = await supabase
         .from('conversations')
@@ -66,29 +68,54 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
         .contains('participant_ids', [me])
         .eq('status', 'pending')
         .neq('requested_by', me);
+      if (cancelled) return;
       setPendingRequests(pending ?? 0);
+
+      const { data: convs } = await supabase
+        .from('conversations')
+        .select('id')
+        .contains('participant_ids', [me])
+        .eq('status', 'active');
+      const ids = ((convs ?? []) as Array<{ id: string }>).map((c) => c.id);
+      if (ids.length > 0) {
+        const { count: unreadMsgs } = await supabase
+          .from('chat_messages')
+          .select('*', { count: 'exact', head: true })
+          .in('conversation_id', ids)
+          .eq('is_read', false)
+          .neq('sender_email', me);
+        if (!cancelled) setUnreadMessages(unreadMsgs ?? 0);
+      } else if (!cancelled) {
+        setUnreadMessages(0);
+      }
+
       const or = `recipient_email.eq.${me},and(recipient_role.eq.${role},recipient_email.is.null)`;
       const { count: unread } = await supabase
         .from('notifications')
         .select('*', { count: 'exact', head: true })
         .or(or)
         .eq('read', false);
-      setUnreadNotifications(unread ?? 0);
+      if (!cancelled) setUnreadNotifications(unread ?? 0);
     };
     loadCounts();
     const ch1 = supabase
-      .channel(uniqueChannelName('sidebar:messages'))
+      .channel(uniqueChannelName('sidebar:conversations'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, loadCounts)
       .subscribe();
     const ch2 = supabase
+      .channel(uniqueChannelName('sidebar:chat_messages'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages' }, loadCounts)
+      .subscribe();
+    const ch3 = supabase
       .channel(uniqueChannelName('sidebar:notifications'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, loadCounts)
       .subscribe();
-    return () => { supabase.removeChannel(ch1); supabase.removeChannel(ch2); };
+    return () => { cancelled = true; supabase.removeChannel(ch1); supabase.removeChannel(ch2); supabase.removeChannel(ch3); };
   }, [supabase, me, role]);
 
   const badgeFor = (id: string): string | undefined => {
-    if (id === 'messages') return pendingRequests > 0 ? String(pendingRequests) : undefined;
+    if (id === 'inbox') return pendingRequests > 0 ? String(pendingRequests) : undefined;
+    if (id === 'messages') return unreadMessages > 0 ? String(unreadMessages) : undefined;
     if (id === 'notifications') return unreadNotifications > 0 ? String(unreadNotifications) : undefined;
     return undefined;
   };
@@ -145,9 +172,9 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
                 >
                   <IconComp size={16} />
                   <span className="flex-1 text-left">{item.label}</span>
-                  {(badgeFor(item.id) ?? item.badge) && (
+                  {(badgeFor(item.id)) && (
                     <span className="bg-error text-error-content text-[10px] font-bold px-[7px] py-[2px] rounded-full">
-                      {badgeFor(item.id) ?? item.badge}
+                      {badgeFor(item.id)}
                     </span>
                   )}
                 </Link>

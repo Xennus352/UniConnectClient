@@ -4,6 +4,30 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServerSupabase } from '@/utils/supabase/server';
 import { getSessionIdentity } from '@/utils/supabase/auth';
 
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const identity = await getSessionIdentity();
+  if (!identity) return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
+  const { id } = await params;
+  const supabase = createServerSupabase() as unknown as SupabaseClient;
+
+  const { data: conv, error: cErr } = await supabase
+    .from('conversations')
+    .select('*')
+    .eq('id', id)
+    .single();
+  if (cErr || !conv) return NextResponse.json({ message: cErr?.message || 'Conversation not found' }, { status: 404 });
+  if (!conv.participant_ids.includes(identity.email)) {
+    return NextResponse.json({ message: 'Not a participant' }, { status: 403 });
+  }
+
+  await supabase
+    .from('chat_messages')
+    .update({ is_read: true })
+    .eq('conversation_id', id)
+    .neq('sender_email', identity.email);
+  return NextResponse.json({ ok: true });
+}
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const identity = await getSessionIdentity();
   if (!identity) return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
@@ -67,14 +91,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   await supabase.from('conversations').update({ last_message_at: now }).eq('id', id);
 
-  const other = conv.participant_ids.find((e: string) => e !== identity.email);
-  if (other) {
-    await supabase.from('notifications').insert({
-      recipient_email: other,
-      type: 'message',
-      message: `New message from ${identity.name}`,
-      created_at: now,
-    });
+  const others = (conv.participant_ids as string[]).filter((e) => e !== identity.email);
+  if (others.length > 0) {
+    await supabase.from('notifications').insert(
+      others.map((email) => ({
+        recipient_email: email,
+        type: 'message',
+        message: `New message from ${identity.name}`,
+        created_at: now,
+      }))
+    );
   }
 
   return NextResponse.json(message, { status: 201 });

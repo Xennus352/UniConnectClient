@@ -10,6 +10,9 @@ export interface UniversityPerson {
   role: string;
   initials: string;
   sub: string;
+  year?: string;
+  semester?: string;
+  section?: string;
 }
 
 function initialsOf(name: string): string {
@@ -48,7 +51,16 @@ export function useUniversityPeople() {
         u.roleName === 'STUDENT' ? 'Student' :
         u.roleName === 'SYSTEM_ADMIN' ? 'Admin' : 'Staff';
       const sub = student ? `${student.majorCode} \u2022 ${student.sectionName}` : staffRec ? staffRec.unitName : u.email;
-      people.push({ email: u.email, name, role, initials: initialsOf(name), sub });
+      people.push({
+        email: u.email,
+        name,
+        role,
+        initials: initialsOf(name),
+        sub,
+        year: student ? String(student.academicYear ?? '') : undefined,
+        semester: student && student.semesterNo ? `Sem ${student.semesterNo}` : undefined,
+        section: student ? student.sectionName : undefined,
+      });
     }
     return people.sort((a, b) => a.name.localeCompare(b.name));
   }, []);

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'https://uniconnectserver-production.up.railway.app';
+const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 const SESSION_COOKIE = 'uniconnect_session';
 const BACKEND_COOKIE = 'uniconnect_backend';

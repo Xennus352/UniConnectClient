@@ -4,22 +4,81 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServerSupabase } from '@/utils/supabase/server';
 import { getSessionIdentity } from '@/utils/supabase/auth';
 
-// Create or open a conversation. A NEW conversation starts as `pending`
-// (a message request). Existing ones return their current status.
+const GROUP_META_EMAIL = '__GROUP__';
+
+interface GroupParticipant {
+  email: string;
+  name: string;
+  initials: string;
+}
+
+// Create or open a conversation. A NEW 1:1 conversation starts as `pending`
+// (a message request); existing ones return their current status. Group
+// conversations are created `active` immediately with no message request.
 export async function POST(request: Request) {
   const identity = await getSessionIdentity();
   if (!identity) return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
-  const { otherEmail, otherName, otherInitials } = (await request.json().catch(() => ({}))) as {
+  const body = (await request.json().catch(() => ({}))) as {
+    type?: 'direct' | 'group';
     otherEmail?: string;
     otherName?: string;
     otherInitials?: string;
+    groupName?: string;
+    participants?: GroupParticipant[];
   };
+
+  const supabase = createServerSupabase() as unknown as SupabaseClient;
+  const now = Date.now();
+
+  if (body.type === 'group') {
+    const name = (body.groupName ?? '').trim();
+    const participants = Array.isArray(body.participants) ? body.participants : [];
+    if (!name) return NextResponse.json({ message: 'Group name is required' }, { status: 400 });
+
+    const emails = [
+      ...new Set(
+        participants
+          .map((p) => (p.email ?? '').toLowerCase())
+          .filter((e) => e && e !== identity.email.toLowerCase())
+      ),
+    ];
+    if (emails.length < 1) return NextResponse.json({ message: 'Select at least one member' }, { status: 400 });
+
+    const participant_ids = [identity.email, ...emails].sort();
+    const memberMeta: GroupParticipant[] = [];
+    for (const p of participants) {
+      const email = (p.email ?? '').toLowerCase();
+      if (!email || !emails.includes(email)) continue;
+      if (memberMeta.some((m) => m.email === email)) continue;
+      memberMeta.push({ email, name: p.name || email.split('@')[0], initials: p.initials || email.slice(0, 2).toUpperCase() });
+    }
+    const participant_meta = [
+      { email: GROUP_META_EMAIL, name, initials: name.slice(0, 2).toUpperCase() },
+      { email: identity.email, name: identity.name, initials: identity.initials },
+      ...memberMeta,
+    ];
+
+    const { data: conv, error } = await supabase
+      .from('conversations')
+      .insert({
+        participant_ids,
+        status: 'active',
+        requested_by: identity.email,
+        participant_meta,
+        created_at: now,
+        last_message_at: now,
+      })
+      .select()
+      .single();
+    if (error || !conv) return NextResponse.json({ message: error?.message || 'Create failed' }, { status: 500 });
+    return NextResponse.json({ conversationId: conv.id, status: 'active' }, { status: 201 });
+  }
+
+  const { otherEmail, otherName, otherInitials } = body;
   if (!otherEmail || otherEmail.toLowerCase() === identity.email.toLowerCase()) {
     return NextResponse.json({ message: 'Invalid participant' }, { status: 400 });
   }
 
-  const supabase = createServerSupabase() as unknown as SupabaseClient;
-  const now = Date.now();
   const participant_ids = [identity.email, otherEmail].sort();
 
   const { data: existing, error: qErr } = await supabase

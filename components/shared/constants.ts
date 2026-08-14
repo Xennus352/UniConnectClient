@@ -91,9 +91,9 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'LayoutDashboard', label: 'Dashboard', id: 'dashboard' },
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
         { icon: 'Compass', label: 'Explore', id: 'explore' },
-        { icon: 'Mail', label: 'Inbox', id: 'inbox', badge: 5 },
-        { icon: 'MessageSquare', label: 'Messages', id: 'messages', badge: 3 },
-        { icon: 'Bell', label: 'Notifications', id: 'notifications', badge: 4 },
+        { icon: 'Mail', label: 'Inbox', id: 'inbox' },
+        { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
+        { icon: 'Bell', label: 'Notifications', id: 'notifications' },
       ],
     },
     {
@@ -138,9 +138,9 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       items: [
         { icon: 'LayoutDashboard', label: 'Dashboard', id: 'dashboard' },
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
-        { icon: 'Mail', label: 'Inbox', id: 'inbox', badge: 5 },
-        { icon: 'MessageSquare', label: 'Messages', id: 'messages', badge: 3 },
-        { icon: 'Bell', label: 'Notifications', id: 'notifications', badge: 4 },
+        { icon: 'Mail', label: 'Inbox', id: 'inbox' },
+        { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
+        { icon: 'Bell', label: 'Notifications', id: 'notifications' },
       ],
     },
     {

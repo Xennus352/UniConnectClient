@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const BASE = process.env.NEXT_PUBLIC_API_URL || 'https://uniconnectserver-production.up.railway.app';
+const BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
 const COOKIE_OPTS = {
   path: '/',
@@ -25,18 +25,25 @@ async function refreshTokens(refreshToken: string): Promise<{ accessToken: strin
   return { accessToken: data.accessToken, refreshToken: data.refreshToken };
 }
 
-// The university server rotates the refresh token on every refresh call, so
-// concurrent requests that all hit an expired access token must share a single
-// refresh to avoid racing each other. Keep one in-flight refresh per process.
-let pendingRefresh: Promise<{ accessToken: string; refreshToken: string }> | null = null;
-
-function refreshOnce(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
-  if (!pendingRefresh) {
-    pendingRefresh = refreshTokens(refreshToken).finally(() => {
-      pendingRefresh = null;
-    });
+// The university server rotates the refresh token on every refresh call, so a
+// burst of concurrent requests that all hit an expired access token must share
+// a single refresh result — including requests that arrive AFTER that refresh
+// finished but still carry the old (now-revoked) token. Cache the successful
+// result keyed by the refresh token that was consumed.
+const refreshCache = new Map<string, Promise<{ accessToken: string; refreshToken: string }>>();
+async function refreshOnce(refreshToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  const cached = refreshCache.get(refreshToken);
+  if (cached) return cached;
+  const pending = refreshTokens(refreshToken);
+  refreshCache.set(refreshToken, pending);
+  try {
+    const tokens = await pending;
+    if (refreshCache.size > 16) refreshCache.clear();
+    return tokens;
+  } catch (err) {
+    refreshCache.delete(refreshToken);
+    throw err;
   }
-  return pendingRefresh;
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
