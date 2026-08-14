@@ -220,6 +220,7 @@ function pageNumbers(total: number, current: number): (number | '…')[] {
 export function ExploreSection() {
   const { user: session } = useSession();
   const me = session?.email ?? '';
+  const role = session?.role ?? '';
   const [filter, setFilter] = useState('All');
   const filters = ['All', 'People', 'Events'];
   const [query, setQuery] = useState('');
@@ -361,7 +362,7 @@ export function ExploreSection() {
             <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
               <CalendarDays size={16} /> Events
             </div>
-            <Link href="/admin/events" style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600, textDecoration: 'none' }}>View All →</Link>
+            <Link href={`/${role}/events`} style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600, textDecoration: 'none' }}>View All →</Link>
           </div>
           {eventsLoading ? (
             <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>Loading events...</div>
@@ -371,9 +372,9 @@ export function ExploreSection() {
             <div style={{ padding: '6px 0' }}>
               {shownEvents.map((e) => (
                 <Link
-                  key={e.id}
-                  href="/admin/events"
-                  className="hover:bg-(--surface-soft)"
+                key={e.id}
+              href={`/${role}/events`}
+              className="hover:bg-(--surface-soft)"
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', textDecoration: 'none', borderBottom: '1px solid var(--surface)', transition: 'background 0.15s' }}
                 >
                   <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)' }}>

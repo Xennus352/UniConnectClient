@@ -21,6 +21,8 @@ import {
 } from 'lucide-react';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { default as InboxSection } from '@/components/shared/InboxSection';
+export { ExploreSection } from '@/components/admin/sections';
 import BlockedSection from '@/components/shared/BlockedSection';
 
 interface TimetableEntry {

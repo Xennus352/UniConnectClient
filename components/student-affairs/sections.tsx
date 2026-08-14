@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import Link from 'next/link';
 import WelcomeBar from '@/components/shared/WelcomeBar';
 import StatCard from '@/components/shared/StatCard';
@@ -12,31 +12,23 @@ import DataTable from '@/components/shared/DataTable';
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
 import {
   Users, CalendarCheck, MessageSquare, ClipboardList,
-  GraduationCap, BookOpen, Search, Filter, Plus, Download,
-  Check, X, Eye,
-  ClipboardCheck, Mail, Newspaper, Upload, Save, Bell, Ban,
+  GraduationCap, BookOpen, Search, Plus,
+  Eye, Mail, Newspaper, Upload, Save, Bell, Ban,
 } from 'lucide-react';
-import type { StudentData, RollCallData } from '@/components/shared/types';
-import { apiFetch, markAttendance } from '@/components/shared/api';
+import type { StudentData } from '@/components/shared/types';
+import { apiFetch } from '@/components/shared/api';
 import type {
-  AcademicTermRecord, AttendanceRecord, ClassSessionRecord,
-  ScheduleRecord, StudentRecord,
+  StudentRecord, UserRecord,
 } from '@/components/shared/api';
 import { useUniversityData } from '@/components/shared/useUniversityData';
 import { useSupabase } from '@/utils/supabase/client';
-import { useFeedPosts, useConversations } from '@/lib/supabase/hooks';
+import { useFeedPosts, useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from '@/components/shared/session';
 import { toast } from 'sonner';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { ExploreSection } from '@/components/admin/sections';
 import BlockedSection from '@/components/shared/BlockedSection';
-
-interface TimetableEntry {
-  time: string;
-  mon: string; tue: string; wed: string; thu: string; fri: string;
-}
-
-const PERIOD_START_MIN = [8 * 60, 9 * 60 + 45, 11 * 60 + 30, 14 * 60, 15 * 60 + 45, 17 * 60 + 30, 19 * 60 + 15];
 
 function initialsOf(name: string): string {
   return name.split(/\s+/).slice(0, 2).map((w) => (w[0] || '').toUpperCase()).join('');
@@ -50,12 +42,6 @@ function ordinalSuffix(n: number): string {
   if (rem === 2) return `${n}nd`;
   if (rem === 3) return `${n}rd`;
   return `${n}th`;
-}
-
-function slotTimeLabel(startPeriodNo: number): string {
-  const fmt = (m: number) => `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`;
-  const start = PERIOD_START_MIN[startPeriodNo - 1] ?? 8 * 60;
-  return `${fmt(start)} \u2013 ${fmt(start + 90)}`;
 }
 
 function timeLabel(ts: number): string {
@@ -75,15 +61,61 @@ export function Dashboard() {
   const supabase = useSupabase();
   const { posts, loading: postsLoading } = useFeedPosts(supabase);
   const { conversations, loading: convLoading } = useConversations(supabase, me);
+  const { events, loading: eventsLoading } = useEvents(supabase);
+  const eventIds = useMemo(() => (events ?? []).map((e) => e.id), [events]);
+  const { registrations } = useEventRegistrations(supabase, eventIds, me);
+  const { data: users, loading: usersLoading } = useUniversityData<UserRecord[]>(
+    useCallback(() => apiFetch<UserRecord[]>('/api/users'), [])
+  );
+
+  const [feedTab, setFeedTab] = useState('Latest');
+  const feedTabs = ['Latest', 'Lost & Found'];
+
+  const counts = useMemo(() => {
+    const list = users ?? [];
+    return { students: list.filter((u) => u.roleName === 'STUDENT').length };
+  }, [users]);
+
+  const upcomingEvents = useMemo(
+    () => (events ?? []).filter((e) => e.event_date >= Date.now()).sort((a, b) => a.event_date - b.event_date).slice(0, 3),
+    [events]
+  );
+  const upcomingCount = useMemo(
+    () => (events ?? []).filter((e) => e.event_date >= Date.now()).length,
+    [events]
+  );
+
+  const feedPosts = useMemo(() => {
+    const list = posts ?? [];
+    if (feedTab !== 'Lost & Found') return list;
+    return list.filter((p) =>
+      Array.isArray(p.tags) &&
+      (p.tags as { label?: string }[]).some((t) =>
+        (t.label ?? '').replace(/^#/, '').toLowerCase() === 'lost & found'
+      )
+    );
+  }, [posts, feedTab]);
+
+  const unreadTotal = useMemo(
+    () => (conversations ?? []).reduce((s, c) => s + (c.unread ?? 0), 0),
+    [conversations]
+  );
+  const pendingRequests = useMemo(
+    () => (conversations ?? []).filter((c) => c.status === 'pending' && c.requestedBy !== me).length,
+    [conversations, me]
+  );
 
   return (
     <div>
-      <WelcomeBar name="Student Affairs Office" subtitle="Student services overview — 3 pending requests and 2 upcoming events this week" />
+      <WelcomeBar
+        name="Student Affairs Office"
+        subtitle={`Student services overview — ${pendingRequests} pending request${pendingRequests === 1 ? '' : 's'} and ${upcomingCount} upcoming event${upcomingCount === 1 ? '' : 's'} this week`}
+      />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
-        <StatCard icon={<GraduationCap size={20} />} iconBgClass="bg-primary/10 text-primary" value="2,847" label="Active Students" trend="+124 this year" />
-        <StatCard icon={<CalendarCheck size={20} />} iconBgClass="bg-success/10 text-success" value={16} label="Upcoming Events" trend="This month" />
-        <StatCard icon={<MessageSquare size={20} />} iconBgClass="bg-warning/10 text-warning" value={24} label="New Messages" trend="8 unread" />
-        <StatCard icon={<ClipboardList size={20} />} iconBgClass="bg-error/10 text-error" value={12} label="Pending Requests" trend="Need review" />
+        <StatCard icon={<GraduationCap size={20} />} iconBgClass="bg-primary/10 text-primary" value={usersLoading ? '—' : counts.students} label="Active Students" trend={usersLoading ? 'Loading...' : 'Active accounts'} />
+        <StatCard icon={<CalendarCheck size={20} />} iconBgClass="bg-success/10 text-success" value={eventsLoading ? '—' : upcomingCount} label="Upcoming Events" trend={eventsLoading ? 'Loading...' : 'Scheduled'} />
+        <StatCard icon={<MessageSquare size={20} />} iconBgClass="bg-warning/10 text-warning" value={convLoading ? '—' : (conversations?.length ?? 0)} label="New Messages" trend={convLoading ? 'Loading...' : `${unreadTotal} unread`} />
+        <StatCard icon={<ClipboardList size={20} />} iconBgClass="bg-error/10 text-error" value={pendingRequests} label="Pending Requests" trend="Need review" />
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-[18px]">
         <div>
@@ -97,29 +129,34 @@ export function Dashboard() {
               </Link>
             </div>
             <div style={{ display: 'flex', gap: 4, padding: '0 22px', borderBottom: '1px solid var(--surface)' }}>
-              {['Latest', 'Trending', 'Official'].map((tab, i) => (
-                <button key={tab} style={{
-                  padding: '12px 16px', fontSize: 13, fontWeight: 600,
-                  color: i === 0 ? 'var(--primary)' : 'var(--text-light)',
-                  cursor: 'pointer', borderBottom: '2.5px solid transparent',
-                  borderBottomColor: i === 0 ? 'var(--primary)' : 'transparent',
-                  background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none',
-                  marginBottom: -1,
-                }}>
-                  {tab}
+              {feedTabs.map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setFeedTab(t)}
+                  style={{
+                    padding: '12px 16px', fontSize: 13, fontWeight: 600,
+                    color: feedTab === t ? 'var(--primary)' : 'var(--text-light)',
+                    cursor: 'pointer', borderBottom: feedTab === t ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+                    background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+                    marginBottom: -1,
+                  }}
+                >
+                  {t}
                 </button>
               ))}
             </div>
             <div style={{ padding: 0 }}>
-              {!posts && postsLoading && (
+              {postsLoading && !posts && (
                 <div style={{ padding: '24px 22px', textAlign: 'center', color: 'var(--text-lighter)', fontSize: 13 }}>Loading...</div>
-            )}
-            {posts && posts.length === 0 && (
-              <div style={{ padding: '24px 22px', textAlign: 'center', color: 'var(--text-lighter)', fontSize: 13 }}>No posts yet</div>
-            )}
-            {posts?.slice(0, 2).map((post) => (
-              <FeedPost key={post.id} post={post} />
-            ))}
+              )}
+              {!postsLoading && feedPosts.length === 0 && (
+                <div style={{ padding: '24px 22px', textAlign: 'center', color: 'var(--text-lighter)', fontSize: 13 }}>
+                  {feedTab === 'Lost & Found' ? 'No lost & found posts yet' : 'No posts yet'}
+                </div>
+              )}
+              {!postsLoading && feedPosts.slice(0, 2).map((post) => (
+                <FeedPost key={post.id} post={post} />
+              ))}
             </div>
           </div>
         </div>
@@ -133,9 +170,33 @@ export function Dashboard() {
                 Calendar <span style={{ fontSize: 10 }}>→</span>
               </Link>
             </div>
-            <div>
+            {!eventsLoading && upcomingEvents.length === 0 ? (
               <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 13 }}>No upcoming events</div>
-            </div>
+            ) : (
+              <div style={{ padding: '6px 0' }}>
+                {upcomingEvents.map((e) => (
+                  <Link
+                    key={e.id}
+                    href="/student-affair/events"
+                    className="hover:bg-(--surface-soft)"
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', textDecoration: 'none', borderBottom: '1px solid var(--surface)', transition: 'background 0.15s' }}
+                  >
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)' }}>
+                      <CalendarCheck size={17} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-lighter)', marginTop: 2 }}>
+                        {new Date(e.event_date).toLocaleDateString()}
+                        {e.location ? ` • ${e.location}` : ''}
+                        {registrations?.[e.id] ? ` • ${registrations[e.id].count} registered` : ''}
+                      </div>
+                    </div>
+                    <span className="badge badge-sm shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
           <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
@@ -306,368 +367,6 @@ export function LostFoundSection() {
   return <LostFoundPage />;
 }
 
-export function TimetableSection() {
-  const terms = useUniversityData<AcademicTermRecord[]>(
-    useCallback(() => apiFetch<AcademicTermRecord[]>('/api/terms'), [])
-  );
-  const activeTerm = useMemo(() => {
-    const list = terms.data || [];
-    return list.find((t) => t.status === 'ACTIVE') || list[0] || null;
-  }, [terms.data]);
-  const schedules = useUniversityData<ScheduleRecord[]>(
-    useCallback(
-      () => (activeTerm
-        ? apiFetch<ScheduleRecord[]>(`/api/schedules?termId=${activeTerm.termId}`)
-        : Promise.resolve([])),
-      [activeTerm]
-    )
-  );
-  const ttRows = useMemo<TimetableEntry[]>(() => {
-    if (!schedules.data || schedules.data.length === 0) return [];
-    const dayKeys = ['mon', 'tue', 'wed', 'thu', 'fri'] as const;
-    const bySlot = new Map<number, TimetableEntry>();
-    for (const s of schedules.data) {
-      if (s.dayOfWeek < 1 || s.dayOfWeek > 5) continue;
-      let entry = bySlot.get(s.startPeriodNo);
-      if (!entry) {
-        entry = {
-          time: slotTimeLabel(s.startPeriodNo),
-          mon: '\u2014 Free \u2014',
-          tue: '\u2014 Free \u2014',
-          wed: '\u2014 Free \u2014',
-          thu: '\u2014 Free \u2014',
-          fri: '\u2014 Free \u2014',
-        };
-        bySlot.set(s.startPeriodNo, entry);
-      }
-      entry[dayKeys[s.dayOfWeek - 1]] = s.courseCode;
-    }
-    return Array.from(bySlot.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([, v]) => v);
-  }, [schedules.data]);
-
-  return (
-    <div>
-      {((terms.loading && !terms.data) || (schedules.loading && !schedules.data)) && (
-        <div style={{ fontSize: 12, color: 'var(--text-lighter)', marginBottom: 12 }}>Loading...</div>
-      )}
-      {((terms.error && !terms.data) || (schedules.error && !schedules.data)) && (
-        <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>University server unreachable — retrying…</div>
-      )}
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Timetable</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Your weekly class schedule</p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
-        <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, minWidth: 180 }}>
-          <option>Semester 2 - 2026</option>
-          <option>Semester 1 - 2026</option>
-        </select>
-        <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, minWidth: 140 }}>
-          <option>All Courses</option>
-          <option>CS-401</option>
-          <option>CS-402</option>
-          <option>CS-403</option>
-        </select>
-        <button style={{
-          background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff',
-          borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 12, fontWeight: 600,
-          border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)',
-          display: 'flex', alignItems: 'center', gap: 6,
-        }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)' }}
-        >
-          <Download size={14} /> Export
-        </button>
-      </div>
-      {ttRows.length === 0 ? (
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ padding: 56, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>No schedules published yet</div>
-        </div>
-      ) : (
-      <div style={{
-        display: 'grid', gridTemplateColumns: '80px repeat(5, 1fr)', gap: 1,
-        background: 'var(--secondary)', borderRadius: 'var(--radius-lg)', overflow: 'hidden',
-        border: '1px solid var(--secondary)',
-      }}>
-        {['Time', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((h, i) => (
-          <div key={h} style={{
-            background: i === 0 ? 'linear-gradient(135deg, var(--primary), var(--primary-dark))' : 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
-            color: '#fff', fontWeight: 700, fontSize: i === 0 ? 11 : 12,
-            padding: '12px 8px', textAlign: 'center',
-          }}>{h}</div>
-        ))}
-        {ttRows.map((row, i) => (
-          <React.Fragment key={i}>
-            <div style={{
-              background: 'var(--secondary-lighter)', fontWeight: 700,
-              color: 'var(--accent)', fontSize: 11, padding: '12px 8px',
-              textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            }}>{row.time}</div>
-            {['mon', 'tue', 'wed', 'thu', 'fri'].map((day) => {
-              const val = row[day as keyof typeof row];
-              const isLunch = val.includes('Lunch');
-              const isFree = val.includes('Free');
-              const isClass = !isLunch && !isFree;
-              return (
-                <div key={`${day}-${i}`} style={{
-                  background: isLunch ? 'var(--white)' : isClass ? 'linear-gradient(135deg, #e8f4fc, #d0e8f5)' : 'var(--white)',
-                  padding: '12px 8px', fontSize: isLunch ? 11 : 11.5, textAlign: 'center',
-                  minHeight: 70, display: 'flex', flexDirection: 'column',
-                  alignItems: 'center', justifyContent: 'center',
-                  borderRadius: isClass ? 6 : 0,
-                  margin: isClass ? 2 : 0,
-                  color: isLunch ? 'var(--text-lighter)' : isFree ? 'var(--text-lighter)' : 'inherit',
-                  fontStyle: isLunch || isFree ? 'italic' : 'normal',
-                }}>
-                  {isClass ? (
-                    <>
-                      <div style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 11 }}>{val.split('\n')[0]}</div>
-                      <div style={{ fontSize: 10, color: 'var(--text-light)', marginTop: 2 }}>{val.split('\n')[1]}</div>
-                    </>
-                  ) : (
-                    <span style={{ fontSize: 11 }}>{val.replace(/— /g, '')}</span>
-                  )}
-                </div>
-              );
-            })}
-          </React.Fragment>
-        ))}
-      </div>
-      )}
-    </div>
-  );
-}
-
-interface RollCallRow extends RollCallData {
-  studentId: string;
-}
-
-export function RollCallSection() {
-  const sessions = useUniversityData<ClassSessionRecord[]>(
-    useCallback(() => apiFetch<ClassSessionRecord[]>('/api/sessions'), [])
-  );
-  const firstSession = useMemo(
-    () => (sessions.data && sessions.data.length > 0 ? sessions.data[0] : null),
-    [sessions.data]
-  );
-  const attendance = useUniversityData<AttendanceRecord[]>(
-    useCallback(
-      () => (firstSession
-        ? apiFetch<AttendanceRecord[]>(`/api/attendance?sessionId=${firstSession.sessionId}`)
-        : Promise.resolve([])),
-      [firstSession]
-    )
-  );
-  const rows = useMemo<RollCallRow[]>(() => {
-    if (!attendance.data || attendance.data.length === 0) return [];
-    return attendance.data.map((a) => ({
-      studentId: a.studentId,
-      rollNo: a.rollNo,
-      name: a.studentName,
-      initials: initialsOf(a.studentName),
-      color: 'from-info to-info/70',
-      year: '\u2014',
-      present: a.attendanceStatus === 'PRESENT',
-    }));
-  }, [attendance.data]);
-
-  const [rollData, setRollData] = useState<RollCallRow[]>([]);
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync server rows into toggleable state
-    setRollData(rows);
-  }, [rows]);
-  const totalPresent = rollData.filter(r => r.present).length;
-
-  const persist = useCallback(async (next: RollCallRow[], prev: RollCallRow[]) => {
-    if (!firstSession) return;
-    try {
-      await markAttendance(firstSession.sessionId, next.map((r) => ({
-        studentId: r.studentId,
-        attendanceStatus: r.present ? 'PRESENT' as const : 'ABSENT' as const,
-      })));
-    } catch {
-      setRollData(prev);
-      toast.error('Failed to save attendance');
-    }
-  }, [firstSession]);
-
-  const togglePresent = (studentId: string, present: boolean) => {
-    const prev = rollData;
-    const next = prev.map(r => r.studentId === studentId ? { ...r, present } : r);
-    setRollData(next);
-    void persist(next, prev);
-  };
-
-  const markAllPresent = () => {
-    const prev = rollData;
-    const next = prev.map(r => ({ ...r, present: true }));
-    setRollData(next);
-    void persist(next, prev);
-  };
-
-  const saveAll = () => {
-    void persist(rollData, rollData);
-  };
-
-  return (
-    <div>
-      {((sessions.loading && !sessions.data) || (attendance.loading && !attendance.data)) && (
-        <div style={{ fontSize: 12, color: 'var(--text-lighter)', marginBottom: 12 }}>Loading...</div>
-      )}
-      {((sessions.error && !sessions.data) || (attendance.error && !attendance.data)) && (
-        <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>University server unreachable — retrying…</div>
-      )}
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Roll Call</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Upload Excel, live marking & attendance tracking</p>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--surface)' }}>
-        {['Dashboard', 'Live', 'My Attendance'].map((tab, i) => (
-          <button key={tab} style={{
-            padding: '12px 16px', fontSize: 13, fontWeight: 600,
-            color: i === 1 ? 'var(--primary)' : 'var(--text-light)',
-            cursor: 'pointer', borderBottom: '2.5px solid transparent',
-            borderBottomColor: i === 1 ? 'var(--primary)' : 'transparent',
-            background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none',
-            marginBottom: -1,
-          }}>{tab}</button>
-        ))}
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-[18px]">
-        <div className="bg-base-100 backdrop-blur-xl" style={{
-          borderRadius: 'var(--radius-lg)',
-          border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)',
-          padding: 20,
-        }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Filter size={14} /> Filter Options
-          </h3>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Subject</label>
-            <select style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}>
-              <option>Data Structures</option>
-              <option>Database Systems</option>
-              <option>Web Development</option>
-            </select>
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Date</label>
-            <input type="date" defaultValue="2026-07-29"
-              style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
-          </div>
-          <div style={{ marginBottom: 16 }}>
-            <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Year</label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {['All', '1st', '2nd', '3rd', '4th'].map((y) => (
-                <button key={y} style={{
-                  padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 600,
-                  cursor: 'pointer', border: '1.5px solid var(--secondary)',
-                  background: y === 'All' ? 'linear-gradient(135deg, var(--primary), var(--primary-dark))' : 'var(--white)',
-                  color: y === 'All' ? '#fff' : 'var(--text-light)',
-                  borderColor: y === 'All' ? 'var(--primary)' : 'var(--secondary)',
-                  boxShadow: y === 'All' ? '0 2px 8px rgba(14, 165, 233,0.3)' : 'none',
-                }}>{y}</button>
-              ))}
-            </div>
-          </div>
-          <div style={{ display: 'flex', gap: 12, margin: '16px 0' }}>
-            <div style={{ textAlign: 'center', flex: 1, padding: 12, background: 'var(--secondary-lighter)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent)' }}>{rollData.length}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-light)', textTransform: 'uppercase', fontWeight: 700, marginTop: 2 }}>Total</div>
-            </div>
-            <div style={{ textAlign: 'center', flex: 1, padding: 12, background: 'var(--secondary-lighter)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--success)' }}>{totalPresent}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-light)', textTransform: 'uppercase', fontWeight: 700, marginTop: 2 }}>Present</div>
-            </div>
-            <div style={{ textAlign: 'center', flex: 1, padding: 12, background: 'var(--secondary-lighter)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--danger)' }}>{rollData.length - totalPresent}</div>
-              <div style={{ fontSize: 10, color: 'var(--text-light)', textTransform: 'uppercase', fontWeight: 700, marginTop: 2 }}>Absent</div>
-            </div>
-          </div>
-          <div style={{ textAlign: 'center', fontSize: 12, color: 'var(--text-light)', marginBottom: 12 }}>
-            {rollData.length > 0 ? Math.round(totalPresent / rollData.length * 100) : 0}% attendance
-          </div>
-          <button onClick={saveAll} style={{
-            background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff',
-            borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600,
-            border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)',
-            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-          }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)' }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)' }}
-          >
-            <Save size={14} /> Save Attendance
-          </button>
-        </div>
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <ClipboardCheck size={16} /> Mark Attendance — {firstSession ? `${firstSession.courseCode} \u2022 ${firstSession.sectionName}` : 'No active session'}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-lighter)', fontWeight: 600 }}>{firstSession ? firstSession.sessionDate : '\u2014'} • {rollData.length} students</div>
-          </div>
-          {rollData.length === 0 ? (
-            <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>No attendance records yet</div>
-          ) : (
-          <DataTable
-            columns={[
-              { key: 'rollNo', label: 'Roll No', render: (v: string) => <span style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600 }}>{v}</span> },
-              { key: 'name', label: 'Student', render: (_: any, row: RollCallRow) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <div className={`w-[34px] h-[34px] rounded-full bg-gradient-to-br ${row.color} flex items-center justify-center text-white font-bold text-xs`}>{row.initials}</div>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{row.name}</span>
-                </div>
-              )},
-              { key: 'year', label: 'Year' },
-              { key: 'present', label: 'Status', render: (_: any, row: RollCallRow) => (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <button onClick={() => togglePresent(row.studentId, true)}
-                    style={{
-                      display: 'inlineFlex', alignItems: 'center', gap: 6,
-                      padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                      cursor: 'pointer', border: 'none', transition: 'all 0.2s',
-                      background: row.present ? '#dcfce7' : 'var(--secondary-lighter)',
-                      color: row.present ? '#166534' : 'var(--text-light)',
-                    }}>
-                    <Check size={12} /> Present
-                  </button>
-                  <button onClick={() => togglePresent(row.studentId, false)}
-                    style={{
-                      display: 'inlineFlex', alignItems: 'center', gap: 6,
-                      padding: '5px 12px', borderRadius: 20, fontSize: 11, fontWeight: 700,
-                      cursor: 'pointer', border: 'none', transition: 'all 0.2s',
-                      background: !row.present ? '#fee2e2' : 'var(--secondary-lighter)',
-                      color: !row.present ? '#991b1b' : 'var(--text-light)',
-                    }}>
-                    <X size={12} /> Absent
-                  </button>
-                </div>
-              )},
-            ]}
-            data={rollData}
-          />
-          )}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 22px', borderTop: '1px solid var(--surface)' }}>
-            <span style={{ fontSize: 12, color: 'var(--text-light)', fontWeight: 500 }}>
-              {totalPresent} of {rollData.length} present
-            </span>
-            <button onClick={markAllPresent}
-              style={{
-                background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff',
-                borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 13, fontWeight: 600,
-                border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)',
-              }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)' }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)' }}
-            >
-              <Check size={14} /> Mark All Present
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 
 export function SettingsSection() {

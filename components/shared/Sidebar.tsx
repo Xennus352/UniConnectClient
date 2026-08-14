@@ -50,7 +50,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
   const router = useRouter();
-  const { user: session } = useSession();
+  const { user: session, refresh } = useSession();
   const supabase = useSupabase();
   const me = session?.email ?? '';
 
@@ -122,6 +122,7 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
 
   const handleLogout = async () => {
     await backendLogout();
+    await refresh();
     router.replace('/');
   };
 

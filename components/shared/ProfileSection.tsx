@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { User, Newspaper, BadgeCheck, Pencil, Trash2, Check, X } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { User, Newspaper, BadgeCheck, Pencil, Trash2, Check, X, LogOut } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
 import { useSession } from './session';
 import { toast } from 'sonner';
-import { apiFetch } from './api';
+import { apiFetch, backendLogout } from './api';
 import type { UserRecord, StaffRecord, StudentRecord } from './api';
 import type { Database } from '@/utils/supabase/types';
 
@@ -60,7 +61,8 @@ const EMPTY_PROFILE: BackendProfile = {
 };
 
 export default function ProfileSection() {
-  const { user: session } = useSession();
+  const router = useRouter();
+  const { user: session, refresh } = useSession();
   const supabase = useSupabase();
   const me = session?.email ?? '';
 
@@ -69,6 +71,18 @@ export default function ProfileSection() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await backendLogout();
+      await refresh();
+    } catch {
+      // session clearing still proceeds on failure
+    }
+    router.replace('/');
+  };
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- initial posts load
@@ -240,6 +254,26 @@ export default function ProfileSection() {
                 <span style={{ fontWeight: 600, color: 'var(--accent)' }}>{v}</span>
               </div>
             ))}
+          </div>
+          <div className="px-6 pb-6" style={{ borderTop: '1px solid var(--surface)' }}>
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="w-full flex items-center justify-center gap-2 border-none font-semibold disabled:opacity-60"
+              style={{ marginTop: 16, borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: 13, background: 'var(--danger)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 14px rgba(220, 38, 38, 0.25)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+            >
+              {loggingOut ? (
+                <>
+                  <span className="loading loading-spinner loading-sm" /> Logging out...
+                </>
+              ) : (
+                <>
+                  <LogOut size={15} /> Logout
+                </>
+              )}
+            </button>
           </div>
         </div>
 

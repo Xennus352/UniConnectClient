@@ -308,15 +308,29 @@ export function useConversations(supabase: TypedSupabaseClient, me: string) {
       setLoading(false);
     };
     load();
-    const channel = supabase
+     const channel = supabase
       .channel(uniqueChannelName('public:conversations'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, (payload) => {
         setItems((prev) => {
           if (!prev) return prev;
-          const mutate = (row: any) => enrichConvs(row ? [row] : [], me)[0];
-          if (payload.eventType === 'INSERT') return [mutate(payload.new), ...prev];
-          if (payload.eventType === 'UPDATE') return prev.map((c) => (c.id === payload.new.id ? mutate(payload.new) : c)).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
-          if (payload.eventType === 'DELETE') return prev.filter((c) => c.id !== (payload.old as any)?.id);
+          const isMine = (row: any) => {
+            const ids: string[] | undefined = row?.participant_ids;
+            return Array.isArray(ids) && ids.includes(me);
+          };
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new;
+            if (!isMine(row)) return prev;
+            if (prev.some((c) => c.id === row.id)) return prev;
+            return [enrichConvs([row], me)[0], ...prev];
+          }
+          if (payload.eventType === 'UPDATE') {
+            const row = payload.new;
+            if (!isMine(row)) return prev;
+            return prev.map((c) => (c.id === row.id ? enrichConvs([row], me)[0] : c)).sort((a, b) => b.lastMessageAt - a.lastMessageAt);
+          }
+          if (payload.eventType === 'DELETE') {
+            return prev.filter((c) => c.id !== (payload.old as any)?.id);
+          }
           return prev;
         });
       })
@@ -446,14 +460,24 @@ export function useNotifications(supabase: TypedSupabaseClient, recipientEmail: 
       setLoading(false);
     };
     load();
-    const channel = supabase
+     const channel = supabase
       .channel(uniqueChannelName('public:notifications'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, (payload) => {
         setItems((prev) => {
           if (!prev) return prev;
-          if (payload.eventType === 'INSERT') return [payload.new as Notification, ...prev];
+          const isMine = (row: any) =>
+            row?.recipient_email === recipientEmail ||
+            (!row?.recipient_email && row?.recipient_role === role);
+          if (payload.eventType === 'INSERT') {
+            const row = payload.new as Notification;
+            if (!isMine(row)) return prev;
+            if (prev.some((n) => n.id === row.id)) return prev;
+            return [row, ...prev];
+          }
           if (payload.eventType === 'DELETE') return prev.filter((n) => n.id !== (payload.old as Notification).id);
-          return prev.map((n) => (n.id === (payload.new as Notification)?.id ? (payload.new as Notification) : n));
+          const row = payload.new as Notification;
+          if (!isMine(row)) return prev;
+          return prev.map((n) => (n.id === row.id ? row : n));
         });
       })
       .subscribe();

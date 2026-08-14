@@ -28,6 +28,7 @@ import type {
 import { useUniversityData } from '@/components/shared/useUniversityData';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { ExploreSection } from '@/components/admin/sections';
 import BlockedSection from '@/components/shared/BlockedSection';
 
 interface TimetableEntry {
