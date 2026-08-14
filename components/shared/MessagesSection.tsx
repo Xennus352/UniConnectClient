@@ -820,18 +820,28 @@ export default function MessagesSection() {
 
             <div style={{ borderTop: '1px solid var(--surface)' }}>
               {!composerDisabledReason && pendingFiles.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5 px-3 pt-2.5">
-                  {pendingFiles.map((p, i) => (
-                    <div key={i} className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 600, padding: '4px 6px 4px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--divider)', border: '1.5px solid var(--surface-border)', color: 'var(--text)' }}>
-                      {p.preview ? (
-                        <img src={p.preview} alt="" style={{ width: 18, height: 18, borderRadius: 3, objectFit: 'cover' }} />
-                      ) : (
-                        fileIcon(p.file.type, p.file.name)
-                      )}
-                      <span className="max-w-[140px] truncate">{p.file.name}</span>
-                      <button onClick={() => removePendingFile(i)} className="cursor-pointer border-none bg-transparent" style={{ color: 'var(--text-light)', fontSize: 12 }} title="Remove">✕</button>
-                    </div>
-                  ))}
+                <div className="flex flex-wrap items-end gap-2 px-3 pt-2.5">
+                  {pendingFiles.map((p, i) =>
+                    p.preview ? (
+                      <div key={i} className="relative shrink-0" style={{ width: 64, height: 64 }}>
+                        <img src={p.preview} alt={p.file.name} className="w-full h-full object-cover" style={{ borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--surface-border)' }} />
+                        <button
+                          onClick={() => removePendingFile(i)}
+                          className="absolute -top-2 -right-2 flex items-center justify-center cursor-pointer border-none rounded-full"
+                          title="Remove"
+                          style={{ width: 19, height: 19, background: 'var(--danger)', color: '#fff', fontSize: 10, lineHeight: 1 }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <div key={i} className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 600, padding: '4px 6px 4px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--divider)', border: '1.5px solid var(--surface-border)', color: 'var(--text)' }}>
+                        {fileIcon(p.file.type, p.file.name)}
+                        <span className="max-w-[140px] truncate">{p.file.name}</span>
+                        <button onClick={() => removePendingFile(i)} className="cursor-pointer border-none bg-transparent" style={{ color: 'var(--text-light)', fontSize: 12 }} title="Remove">✕</button>
+                      </div>
+                    )
+                  )}
                 </div>
               )}
               <div className="flex items-center gap-2 p-3">
