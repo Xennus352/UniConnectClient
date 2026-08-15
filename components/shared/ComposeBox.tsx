@@ -21,7 +21,7 @@ export default function ComposeBox({ placeholder = 'Share an update with your un
         <div
           className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
           style={{
-            background: 'linear-gradient(to bottom right, #CBDDE9, #a8cce0)',
+            background: 'linear-gradient(to bottom right, #bae6fd, #bae6fd)',
             color: 'var(--primary)',
             fontWeight: 700,
             fontSize: 14,
@@ -131,16 +131,16 @@ export default function ComposeBox({ placeholder = 'Share an update with your un
             background: 'linear-gradient(var(--primary), var(--primary-dark))',
             color: '#fff',
             fontSize: 13,
-            boxShadow: '0 2px 8px rgba(40,114,161,0.25)',
+            boxShadow: '0 2px 8px rgba(2, 132, 199,0.25)',
             transition: 'all 0.2s',
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-1px)';
-            e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.35)';
+            e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.35)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 2px 8px rgba(40,114,161,0.25)';
+            e.currentTarget.style.boxShadow = '0 2px 8px rgba(2, 132, 199,0.25)';
           }}
         >
           <Send size={14} /> Post

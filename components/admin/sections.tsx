@@ -18,14 +18,14 @@ import DataTable from '@/components/shared/DataTable';
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
 import { toast } from 'sonner';
 import { useSupabase } from '@/utils/supabase/client';
-import { useFeedPosts, useConversations } from '@/lib/supabase/hooks';
+import { useFeedPosts, useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from '@/components/shared/session';
 import {
   Users, GraduationCap, FileText,
-  ClipboardCheck, CalendarDays,
+  ClipboardCheck, CalendarDays, CalendarCheck,
   Coins, Search, Settings, MessageSquare, Newspaper,
   Mail, Upload, Filter, Plus, Download,
-  Check, X, Eye, BookOpen, Bell, MessageCircle, User,
+  Check, X, Eye, BookOpen, Bell, MessageCircle, User, Ban,
 } from 'lucide-react';
 import type {
   StudentData, LecturerData,
@@ -33,6 +33,8 @@ import type {
 } from '@/components/shared/types';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { default as LostFoundSection } from '@/components/shared/LostFoundSection';
+import BlockedSection from '@/components/shared/BlockedSection';
 
 const initialsOf = (name: string) =>
   name.trim().split(/\s+/).slice(0, 2).map((w) => (w[0] || '').toUpperCase()).join('');
@@ -52,11 +54,18 @@ const timeLabel = (ts: number) => {
 
 export function Dashboard() {
   const [feedTab, setFeedTab] = useState('Latest');
-  const feedTabs = ['Latest', 'Trending', 'Official', 'My Dept'];
+  const feedTabs = ['Latest', 'Lost & Found'];
   const { user: session } = useSession();
   const me = session?.email ?? '';
   const { posts, loading: postsLoading } = useFeedPosts(useSupabase());
   const { conversations, loading: convLoading } = useConversations(useSupabase(), me);
+  const { events, loading: eventsLoading } = useEvents(useSupabase());
+  const eventIds = useMemo(() => (events ?? []).map((e) => e.id), [events]);
+  const { registrations } = useEventRegistrations(useSupabase(), eventIds, me);
+  const upcomingEvents = useMemo(
+    () => (events ?? []).filter((e) => e.event_date >= Date.now()).slice(0, 3),
+    [events]
+  );
   const { data: users, loading: usersLoading } = useUniversityData<UserRecord[]>(
     useCallback(() => apiFetch<UserRecord[]>('/api/users'), [])
   );
@@ -69,6 +78,17 @@ export function Dashboard() {
       total: list.length,
     };
   }, [users]);
+
+  const feedPosts = useMemo(() => {
+    const list = posts ?? [];
+    if (feedTab !== 'Lost & Found') return list;
+    return list.filter((p) =>
+      Array.isArray(p.tags) &&
+      (p.tags as { label?: string }[]).some((t) =>
+        (t.label ?? '').replace(/^#/, '').toLowerCase() === 'lost & found'
+      )
+    );
+  }, [posts, feedTab]);
 
   return (
     <div>
@@ -97,10 +117,10 @@ export function Dashboard() {
             </div>
             <div style={{ padding: '6px 0' }}>
               {!postsLoading ? (
-                posts && posts.length === 0 ? (
-                  <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>No posts yet</div>
+                feedPosts && feedPosts.length === 0 ? (
+                  <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>{feedTab === 'Lost & Found' ? 'No lost & found posts yet' : 'No posts yet'}</div>
                 ) : (
-                  (posts ?? []).slice(0, 2).map((post) => (
+                  feedPosts.slice(0, 2).map((post) => (
                     <FeedPost key={post.id} post={post} />
                   ))
                 )
@@ -118,9 +138,35 @@ export function Dashboard() {
               </div>
               <Link href="/admin/events" style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600, textDecoration: 'none' }}>Calendar →</Link>
             </div>
-            <div style={{ padding: '30px 22px', textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
-              No upcoming events
-            </div>
+            {!eventsLoading && upcomingEvents.length === 0 ? (
+              <div style={{ padding: '30px 22px', textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
+                No upcoming events
+              </div>
+            ) : (
+              <div style={{ padding: '6px 0' }}>
+                {upcomingEvents.map((e) => (
+                  <Link
+                    key={e.id}
+                    href="/admin/events"
+                    className="hover:bg-(--surface-soft)"
+                    style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', textDecoration: 'none', borderBottom: '1px solid var(--surface)', transition: 'background 0.15s' }}
+                  >
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)' }}>
+                      <CalendarCheck size={17} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-lighter)', marginTop: 2 }}>
+                        {new Date(e.event_date).toLocaleDateString()}
+                        {e.location ? ` • ${e.location}` : ''}
+                        {registrations?.[e.id] ? ` • ${registrations[e.id].count} registered` : ''}
+                      </div>
+                    </div>
+                    <span className="badge badge-sm shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
           <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginBottom: 16 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
@@ -149,26 +195,87 @@ export function Dashboard() {
 }
 
 
+const ROLE_LABEL: Record<string, { label: string; bg: string; color: string }> = {
+  SYSTEM_ADMIN: { label: 'Admin', bg: 'rgba(217,70,239,0.14)', color: '#c026d3' },
+  STAFF: { label: 'Lecturer / Staff', bg: 'rgba(2,132,199,0.12)', color: '#0284c7' },
+  STUDENT: { label: 'Student', bg: 'rgba(52,211,153,0.15)', color: '#16a34a' },
+};
+
+const PEOPLE_PAGE_SIZE = 10;
+
+function pageNumbers(total: number, current: number): (number | '…')[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const set = new Set<number>([1, total, current - 1, current, current + 1]);
+  const sorted = Array.from(set).filter((n) => n >= 1 && n <= total).sort((a, b) => a - b);
+  const out: (number | '…')[] = [];
+  let prev = 0;
+  for (const n of sorted) {
+    if (n - prev > 1) out.push('…');
+    out.push(n);
+    prev = n;
+  }
+  return out;
+}
+
 export function ExploreSection() {
+  const { user: session } = useSession();
+  const me = session?.email ?? '';
+  const role = session?.role ?? '';
   const [filter, setFilter] = useState('All');
-  const filters = ['All', 'Clubs', 'Events', 'People', 'Courses'];
+  const filters = ['All', 'People', 'Events'];
+  const [query, setQuery] = useState('');
+  const [page, setPage] = useState(1);
+  const { data: users, loading: usersLoading } = useUniversityData<UserRecord[]>(
+    useCallback(() => apiFetch<UserRecord[]>('/api/users'), [])
+  );
+  const supabase = useSupabase();
+  const { events, loading: eventsLoading } = useEvents(supabase);
+  const eventIds = useMemo(() => (events ?? []).map((e) => e.id), [events]);
+  const { registrations } = useEventRegistrations(supabase, eventIds, me);
+
+  useEffect(() => { setPage(1); }, [query, filter]);
+
+  const people = useMemo(() => {
+    const list = users ?? [];
+    const q = query.trim().toLowerCase();
+    return q
+      ? list.filter((u) => u.email.toLowerCase().includes(q) || (u.roleName ?? '').toLowerCase().includes(q))
+      : list;
+  }, [users, query]);
+
+  const totalPeople = people.length;
+  const totalPeoplePages = Math.max(1, Math.ceil(totalPeople / PEOPLE_PAGE_SIZE));
+  const safePage = Math.min(page, totalPeoplePages);
+  const pagePeople = people.slice((safePage - 1) * PEOPLE_PAGE_SIZE, safePage * PEOPLE_PAGE_SIZE);
+  const peopleStart = totalPeople === 0 ? 0 : (safePage - 1) * PEOPLE_PAGE_SIZE + 1;
+  const peopleEnd = Math.min(safePage * PEOPLE_PAGE_SIZE, totalPeople);
+
+  const shownEvents = useMemo(() => {
+    const list = (events ?? []).filter((e) => e.event_date >= Date.now() - 24 * 60 * 60 * 1000);
+    const q = query.trim().toLowerCase();
+    return q
+      ? list.filter((e) => e.title.toLowerCase().includes(q) || (e.location ?? '').toLowerCase().includes(q) || e.category.toLowerCase().includes(q))
+      : list;
+  }, [events, query]);
+
+  const showPeople = filter === 'All' || filter === 'People';
+  const showEvents = filter === 'All' || filter === 'Events';
 
   return (
     <div>
       <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Explore</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Discover clubs, courses, events and people</p>
+      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Discover people and events across the university</p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--divider)', padding: '9px 16px', borderRadius: 'var(--radius-md)', border: '1.5px solid var(--secondary)', flex: 1, maxWidth: 400 }}>
           <Search size={14} style={{ color: 'var(--text-lighter)' }} />
-          <input type="text" placeholder="Search explore..." style={{ border: 'none', background: 'none', outline: 'none', fontSize: 13, width: '100%', color: 'var(--text)', fontWeight: 500 }} />
+          <input
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search people or events..."
+            style={{ border: 'none', background: 'none', outline: 'none', fontSize: 13, width: '100%', color: 'var(--text)', fontWeight: 500 }}
+          />
         </div>
-        <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, minWidth: 140 }}>
-          <option>All Categories</option>
-          <option>Clubs</option>
-          <option>Courses</option>
-          <option>Events</option>
-          <option>People</option>
-        </select>
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
         {filters.map((f) => (
@@ -177,9 +284,117 @@ export function ExploreSection() {
           </button>
         ))}
       </div>
-      <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
-        Nothing here yet
-      </div>
+
+      {showPeople && (
+        <div className="bg-base-100 backdrop-blur-xl mb-5" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Users size={16} /> People
+            </div>
+            {!usersLoading && <span style={{ fontSize: 12, color: 'var(--text-lighter)' }}>{totalPeople} result{totalPeople === 1 ? '' : 's'}</span>}
+          </div>
+          {usersLoading ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>Loading people...</div>
+          ) : people.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>No people found</div>
+          ) : (
+            <div style={{ padding: '6px 0' }}>
+              {pagePeople.map((u) => {
+                const meta = ROLE_LABEL[u.roleName] ?? ROLE_LABEL.STUDENT;
+                return (
+                  <div key={u.userId} className="hover:bg-(--surface-soft)" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '14px 22px', borderBottom: '1px solid var(--surface)', transition: 'background 0.15s' }}>
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, var(--primary), var(--secondary))', color: '#fff', fontSize: 13, fontWeight: 700 }}>
+                      {u.email.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--accent)' }}>{u.email}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-lighter)', marginTop: 2 }}>
+                        {u.isActive ? 'Active' : 'Inactive'}
+                        {u.registrationStatus ? ` • ${u.registrationStatus}` : ''}
+                      </div>
+                    </div>
+                    <span className="badge badge-sm shrink-0" style={{ background: meta.bg, color: meta.color, border: 'none' }}>{meta.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {totalPeople > PEOPLE_PAGE_SIZE && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 22px', borderTop: '1px solid var(--surface)', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-lighter)' }}>Showing {peopleStart}–{peopleEnd} of {totalPeople}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={safePage <= 1}
+                  style={{ background: 'none', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '5px 12px', fontSize: 12, fontWeight: 600, color: 'var(--primary)', cursor: safePage <= 1 ? 'not-allowed' : 'pointer', opacity: safePage <= 1 ? 0.4 : 1 }}
+                >
+                  Prev
+                </button>
+                {pageNumbers(totalPeoplePages, safePage).map((n, i) =>
+                  typeof n === 'number' ? (
+                    <button
+                      key={i}
+                      onClick={() => setPage(n)}
+                      style={{ minWidth: 30, background: n === safePage ? 'linear-gradient(var(--primary), var(--primary-dark))' : 'none', color: n === safePage ? '#fff' : 'var(--primary)', border: n === safePage ? 'none' : '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '5px 8px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      {n}
+                    </button>
+                  ) : (
+                    <span key={i} style={{ fontSize: 12, color: 'var(--text-lighter)', padding: '0 2px' }}>{n}</span>
+                  )
+                )}
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPeoplePages, p + 1))}
+                  disabled={safePage >= totalPeoplePages}
+                  style={{ background: 'none', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '5px 12px', fontSize: 12, fontWeight: 600, color: 'var(--primary)', cursor: safePage >= totalPeoplePages ? 'not-allowed' : 'pointer', opacity: safePage >= totalPeoplePages ? 0.4 : 1 }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showEvents && (
+        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <CalendarDays size={16} /> Events
+            </div>
+            <Link href={`/${role}/events`} style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600, textDecoration: 'none' }}>View All →</Link>
+          </div>
+          {eventsLoading ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>Loading events...</div>
+          ) : shownEvents.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>No events yet</div>
+          ) : (
+            <div style={{ padding: '6px 0' }}>
+              {shownEvents.map((e) => (
+                <Link
+                key={e.id}
+              href={`/${role}/events`}
+              className="hover:bg-(--surface-soft)"
+                  style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', textDecoration: 'none', borderBottom: '1px solid var(--surface)', transition: 'background 0.15s' }}
+                >
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)' }}>
+                    <CalendarCheck size={17} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--accent)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.title}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-lighter)', marginTop: 2 }}>
+                      {new Date(e.event_date).toLocaleDateString()}
+                      {e.location ? ` • ${e.location}` : ''}
+                      {registrations?.[e.id] ? ` • ${registrations[e.id].count} registered` : ''}
+                    </div>
+                  </div>
+                  <span className="badge badge-sm shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -893,27 +1108,7 @@ export function TimetableSection() {
   );
 }
 
-export function EventsSection() {
-  const [eventFilter, setEventFilter] = useState('All Events');
-  const eventFilters = ['All Events', 'Sports', 'Academic', 'Cultural', 'My Registrations'];
-
-  return (
-    <div>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Events</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>University events and academic calendar</p>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
-        {eventFilters.map((f) => (
-          <button key={f} onClick={() => setEventFilter(f)} style={{ background: eventFilter === f ? 'linear-gradient(var(--primary), var(--primary-dark))' : 'var(--secondary-light)', color: eventFilter === f ? '#fff' : 'var(--primary)', borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 12, fontWeight: 600, border: eventFilter === f ? 'none' : '1.5px solid var(--secondary)', cursor: 'pointer' }}>
-            {f}
-          </button>
-        ))}
-      </div>
-      <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
-        Nothing here yet
-      </div>
-    </div>
-  );
-}
+export { default as EventsSection } from '@/components/shared/EventsSection';
 
 export function FinanceSection() {
   return (
@@ -930,7 +1125,7 @@ export function FinanceSection() {
 
 export function SettingsSection() {
   const [settingsTab, setSettingsTab] = useState('Profile');
-  const settingsTabs = ['Profile', 'Notifications', 'Security', 'Appearance'];
+  const settingsTabs = ['Profile', 'Notifications', 'Security', 'Appearance', 'Blocked'];
   const [notifPrefs, setNotifPrefs] = useState({ push: true, emailDigest: false, messageAlerts: true, eventReminders: true });
 
   const notifToggles = [
@@ -953,7 +1148,7 @@ export function SettingsSection() {
               </div>
               <div style={{ padding: '16px 22px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, #CBDDE9, #a8cce0)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>AD</div>
+                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, #bae6fd, #bae6fd)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>AD</div>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>Admin User</div>
                     <div style={{ fontSize: 12, color: 'var(--text-light)' }}>System Administrator • Management Portal</div>
@@ -1011,15 +1206,26 @@ export function SettingsSection() {
           {settingsTab === 'Appearance' && (
             <ThemeSwitcher />
           )}
+          {settingsTab === 'Blocked' && (
+            <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}><Ban size={16} /> Blocked Users</div>
+              </div>
+              <div style={{ padding: '16px 22px' }}>
+                <BlockedSection bare />
+              </div>
+            </div>
+          )}
         </div>
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', maxHeight: 'fit-content' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0' }}>
             {settingsTabs.map((t) => (
-              <button key={t} onClick={() => setSettingsTab(t)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13, fontWeight: settingsTab === t ? 700 : 500, color: settingsTab === t ? 'var(--primary)' : 'var(--text)', background: settingsTab === t ? 'linear-gradient(90deg, rgba(58,139,194,0.15), transparent)' : 'transparent', border: 'none', borderLeft: settingsTab === t ? '3px solid var(--primary)' : '3px solid transparent', textAlign: 'left' }}>
+              <button key={t} onClick={() => setSettingsTab(t)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13, fontWeight: settingsTab === t ? 700 : 500, color: settingsTab === t ? 'var(--primary)' : 'var(--text)', background: settingsTab === t ? 'linear-gradient(90deg, rgba(14, 165, 233,0.15), transparent)' : 'transparent', border: 'none', borderLeft: settingsTab === t ? '3px solid var(--primary)' : '3px solid transparent', textAlign: 'left' }}>
                 {t === 'Profile' && <User size={16} />}
                 {t === 'Notifications' && <Bell size={16} />}
                 {t === 'Security' && <Shield size={16} />}
                 {t === 'Appearance' && <Eye size={16} />}
+                {t === 'Blocked' && <Ban size={16} />}
                 {t === 'Language' && <Globe size={16} />}
                 {t === 'Help & Support' && <MessageCircle size={16} />}
                 {t}

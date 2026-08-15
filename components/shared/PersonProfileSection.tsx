@@ -1,18 +1,28 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, BadgeCheck, Newspaper, User } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Ban, MessageSquare, Newspaper, RotateCcw, User } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useSupabase } from '@/utils/supabase/client';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
 import { useSession } from './session';
 import FeedPost from './FeedPost';
-import { useUniversityPeople } from './useUniversityPeople';
-import { apiFetch } from './api';
-import type { UserRecord, StaffRecord, StudentRecord } from './api';
+import { useUniversityPeople, useUniversityRaw } from './useUniversityPeople';
+import { toast } from 'sonner';
 import type { Database } from '@/utils/supabase/types';
 
 type Post = Database['public']['Tables']['posts']['Row'];
+
+type ConvStatus = 'pending' | 'active' | 'blocked';
+
+interface PersonConvRow {
+  id: string;
+  participant_ids: string[];
+  status: ConvStatus;
+  blocked_by: string | null;
+  requested_by: string | null;
+}
 
 interface PersonDetail {
   rollNo: string;
@@ -26,13 +36,22 @@ const EMPTY_DETAIL: PersonDetail = { rollNo: '', major: '', semester: '', unit: 
 
 export default function PersonProfileSection({ email }: { email: string }) {
   const supabase = useSupabase();
+  const router = useRouter();
   const { user: session } = useSession();
+  const me = session?.email ?? '';
   const { people, loading: peopleLoading } = useUniversityPeople();
+  const { users, students, staff, loading: rawLoading } = useUniversityRaw();
 
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [detail, setDetail] = useState<PersonDetail>(EMPTY_DETAIL);
+  const [convId, setConvId] = useState<string | null>(null);
+  const [convStatus, setConvStatus] = useState<ConvStatus | null>(null);
+  const [blockedBy, setBlockedBy] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const person = people.find((p) => p.email.toLowerCase() === email.toLowerCase());
+  const isSelf = !!me && !!person && person.email.toLowerCase() === me.toLowerCase();
+  const isBlockedByMe = convStatus === 'blocked' && blockedBy === me;
 
   useEffect(() => {
     if (!email) return;
@@ -55,38 +74,60 @@ export default function PersonProfileSection({ email }: { email: string }) {
   }, [supabase, email]);
 
   const loadDetail = useCallback(async () => {
-    if (!email) return;
-    try {
-      const users = await apiFetch<UserRecord[]>('/api/users');
-      const u = users.find((x) => x.email.toLowerCase() === email.toLowerCase());
-      if (!u) return;
-      if (u.roleName === 'STUDENT') {
-        const students = await apiFetch<StudentRecord[]>('/api/students');
-        const s = students.find((x) => x.email.toLowerCase() === email.toLowerCase());
-        if (s) {
-          const year = Math.ceil(s.semesterNo / 2);
-          setDetail({
-            rollNo: s.rollNo,
-            major: s.majorCode,
-            semester: `Semester ${s.semesterNo} \u2022 ${year}${['st', 'nd', 'rd'][year - 1] || 'th'} Year`,
-            unit: '',
-            phone: s.phoneNo || '',
-          });
-        }
-      } else {
-        const staff = await apiFetch<StaffRecord[]>('/api/staff');
-        const s = staff.find((x) => x.userId === u.userId);
-        if (s) setDetail({ rollNo: '', major: '', semester: '', unit: s.unitName, phone: s.phoneNo || '' });
+    if (!email || rawLoading) return;
+    const u = users.find((x) => x.email.toLowerCase() === email.toLowerCase());
+    if (!u) return;
+    if (u.roleName === 'STUDENT') {
+      const s = students.find((x) => x.email.toLowerCase() === email.toLowerCase());
+      if (s) {
+        const year = Math.ceil(s.semesterNo / 2);
+        setDetail({
+          rollNo: s.rollNo,
+          major: s.majorCode,
+          semester: `Semester ${s.semesterNo} \u2022 ${year}${['st', 'nd', 'rd'][year - 1] || 'th'} Year`,
+          unit: '',
+          phone: s.phoneNo || '',
+        });
       }
-    } catch {
-      // university server unreachable; details are best-effort
+    } else {
+      const s = staff.find((x) => x.userId === u.userId);
+      if (s) setDetail({ rollNo: '', major: '', semester: '', unit: s.unitName, phone: s.phoneNo || '' });
     }
-  }, [email]);
+  }, [email, rawLoading, users, students, staff]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- load person details on mount
     loadDetail();
   }, [loadDetail]);
+
+  useEffect(() => {
+    if (!me || !email || me.toLowerCase() === email.toLowerCase()) return;
+    const load = async () => {
+      const { data } = (await supabase
+        .from('conversations')
+        .select('*')
+        .contains('participant_ids', [me])
+        .order('last_message_at', { ascending: false })) as unknown as { data: PersonConvRow[] | null };
+      const conv = (data ?? []).find(
+        (c) => (c.participant_ids ?? []).length === 2 && c.participant_ids.includes(email.toLowerCase()),
+      );
+      if (conv) {
+        setConvId(conv.id);
+        setConvStatus(conv.status);
+        setBlockedBy(conv.blocked_by || '');
+      } else {
+        setConvId(null);
+        setConvStatus(null);
+        setBlockedBy('');
+      }
+    };
+    load();
+    const ch = supabase
+      .channel(uniqueChannelName(`public:conversations:${me}:${email}`))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, () => { load(); })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [supabase, me, email]);
 
   const backPath = `/${session?.role ?? 'student'}/feed`;
   const roleKey = person?.role.toLowerCase() ?? '';
@@ -101,6 +142,54 @@ export default function PersonProfileSection({ email }: { email: string }) {
     ['Unit', detail.unit],
     ['Phone', detail.phone],
   ].filter(([, v]) => v) as [string, string][];
+
+  const messagePerson = async () => {
+    if (!person || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otherEmail: person.email, otherName: person.name, otherInitials: person.initials }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not start conversation' }))).message);
+      const { conversationId } = await res.json();
+      router.push(`/${session?.role ?? 'student'}/messages?conv=${conversationId}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not start conversation');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const blockOrUnblock = async () => {
+    if (!person || busy || !me) return;
+    setBusy(true);
+    try {
+      let id = convId;
+      if (!id) {
+        const res = await fetch('/api/conversations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ otherEmail: person.email, otherName: person.name, otherInitials: person.initials }),
+        });
+        if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not start conversation' }))).message);
+        id = (await res.json()).conversationId;
+      }
+      const action = isBlockedByMe ? 'unblock' : 'block';
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Action failed' }))).message);
+      toast.success(action === 'block' ? `${person.name} blocked` : `${person.name} unblocked`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Action failed');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (peopleLoading) {
     return (
@@ -138,10 +227,10 @@ export default function PersonProfileSection({ email }: { email: string }) {
       </Link>
 
       <div className="bg-base-100 backdrop-blur-xl mb-4" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-7" style={{ background: 'linear-gradient(160deg, rgba(58,139,194,0.12), transparent)' }}>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-7" style={{ background: 'linear-gradient(160deg, rgba(14, 165, 233,0.12), transparent)' }}>
           <div
             className={`w-20 h-20 rounded-full flex items-center justify-center text-white font-extrabold shrink-0 bg-gradient-to-br ${avatarGradient}`}
-            style={{ fontSize: 26, boxShadow: '0 6px 18px rgba(58,139,194,0.25)' }}
+            style={{ fontSize: 26, boxShadow: '0 6px 18px rgba(14, 165, 233,0.25)' }}
           >
             {person.initials}
           </div>
@@ -152,10 +241,50 @@ export default function PersonProfileSection({ email }: { email: string }) {
             </div>
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-lighter)' }}>{person.email}</div>
             <div className="flex items-center gap-2 mt-2">
-              <span className="badge badge-sm" style={{ background: 'rgba(58,139,194,0.12)', color: 'var(--primary)' }}>{person.role}</span>
+              <span className="badge badge-sm" style={{ background: 'rgba(14, 165, 233,0.12)', color: 'var(--primary)' }}>{person.role}</span>
               {person.sub && <span style={{ fontSize: 11.5, color: 'var(--text-light)' }}>{person.sub}</span>}
             </div>
           </div>
+          {!isSelf && (
+            <div className="flex flex-row sm:flex-col items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={messagePerson}
+                disabled={busy}
+                className="btn btn-primary btn-sm w-full"
+                style={{ borderRadius: 'var(--radius-md)', minWidth: 110 }}
+              >
+                {busy ? <span className="loading loading-spinner loading-xs" /> : <MessageSquare size={14} />}
+                Message
+              </button>
+              {isBlockedByMe ? (
+                <button
+                  type="button"
+                  onClick={blockOrUnblock}
+                  disabled={busy}
+                  className="btn btn-outline btn-sm w-full"
+                  style={{ borderRadius: 'var(--radius-md)', minWidth: 110 }}
+                >
+                  {busy ? <span className="loading loading-spinner loading-xs" /> : <RotateCcw size={14} />}
+                  Unblock
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={blockOrUnblock}
+                  disabled={busy}
+                  className="btn btn-sm w-full"
+                  style={{ borderRadius: 'var(--radius-md)', minWidth: 110, border: '1px solid var(--danger)', color: 'var(--danger)', background: 'transparent' }}
+                >
+                  {busy ? <span className="loading loading-spinner loading-xs" /> : <Ban size={14} />}
+                  Block
+                </button>
+              )}
+              {convStatus === 'blocked' && blockedBy && blockedBy !== me && (
+                <span className="text-[11px] font-semibold" style={{ color: 'var(--danger)' }}>Blocked you</span>
+              )}
+            </div>
+          )}
         </div>
         {detailRows.length > 0 && (
           <div className="px-6 py-4 grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-2.5" style={{ borderTop: '1px solid var(--surface)' }}>

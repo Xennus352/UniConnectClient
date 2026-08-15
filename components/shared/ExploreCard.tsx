@@ -1,5 +1,7 @@
 'use client';
 
+import PostTag from './PostTag';
+
 interface ExploreCardProps {
   title: string;
   meta: string;
@@ -24,7 +26,7 @@ export default function ExploreCard({ title, meta, description, tags }: ExploreC
       <p style={{ fontSize: 13, color: 'var(--text-light)', lineHeight: 1.5, marginBottom: 12 }}>{description}</p>
       <div className="flex gap-[6px] flex-wrap">
         {tags.map((tag, i) => (
-          <span key={i} className={`badge badge-sm ${tag.color}`}>{tag.label}</span>
+          <PostTag key={i} label={tag.label} />
         ))}
       </div>
     </div>

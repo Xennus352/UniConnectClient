@@ -25,6 +25,10 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     .update({ is_read: true })
     .eq('conversation_id', id)
     .neq('sender_email', identity.email);
+
+  const unreadMap = { ...((conv.unread_map ?? {}) as Record<string, number>) };
+  unreadMap[identity.email] = 0;
+  await supabase.from('conversations').update({ unread_map: unreadMap }).eq('id', id);
   return NextResponse.json({ ok: true });
 }
 
@@ -108,15 +112,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     .single();
   if (error || !message) return NextResponse.json({ message: error?.message || 'Send failed' }, { status: 500 });
 
-  await supabase.from('conversations').update({ last_message_at: now }).eq('id', id);
-
   const others = (conv.participant_ids as string[]).filter((e) => e !== identity.email);
+  const unreadMap = { ...((conv.unread_map ?? {}) as Record<string, number>) };
+  for (const e of others) unreadMap[e] = (unreadMap[e] ?? 0) + 1;
+  await supabase
+    .from('conversations')
+    .update({
+      last_message_at: now,
+      preview: (text || (atts.length > 0 ? '[Attachment]' : '')).slice(0, 140),
+      unread_map: unreadMap,
+    })
+    .eq('id', id);
+
   if (others.length > 0) {
     await supabase.from('notifications').insert(
       others.map((email) => ({
         recipient_email: email,
         type: 'message',
         message: `New message from ${identity.name}`,
+        conversation_id: id,
+        actor_email: identity.email,
+        actor_name: identity.name,
         created_at: now,
       }))
     );

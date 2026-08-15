@@ -24,8 +24,10 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       section: 'Main Menu',
       items: [
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
+        { icon: 'Mail', label: 'Inbox', id: 'inbox' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
+        { icon: 'Compass', label: 'Explore', id: 'explore' },
       ],
     },
     {
@@ -58,6 +60,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
+        { icon: 'Compass', label: 'Explore', id: 'explore' },
       ],
     },
     {
@@ -99,9 +102,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
     {
       section: 'Academic',
       items: [
-        { icon: 'GraduationCap', label: 'Students', id: 'students' },
-        { icon: 'Presentation', label: 'Lecturers', id: 'lecturers' },
-        { icon: 'Users', label: 'Staff', id: 'staff' },
         { icon: 'FileText', label: 'Exam Results', id: 'exam-results' },
         { icon: 'ClipboardCheck', label: 'Roll Call', id: 'roll-call' },
         { icon: 'CalendarDays', label: 'Timetable', id: 'timetable' },
@@ -111,7 +111,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       section: 'University',
       items: [
         { icon: 'CalendarCheck', label: 'Events', id: 'events' },
-        { icon: 'Coins', label: 'Finance', id: 'finance' },
+        { icon: 'Search', label: 'Lost & Found', id: 'lost-found' },
       ],
     },
     {
@@ -151,6 +151,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'Mail', label: 'Inbox', id: 'inbox' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
+        { icon: 'Compass', label: 'Explore', id: 'explore' },
       ],
     },
     {
@@ -159,8 +160,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'GraduationCap', label: 'Students', id: 'students' },
         { icon: 'CalendarCheck', label: 'Events', id: 'events' },
         { icon: 'Search', label: 'Lost & Found', id: 'lost-found' },
-        { icon: 'CalendarDays', label: 'Timetable', id: 'timetable' },
-        { icon: 'ClipboardCheck', label: 'Roll Call', id: 'roll-call' },
       ],
     },
     {

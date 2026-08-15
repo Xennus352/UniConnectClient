@@ -1,12 +1,12 @@
 'use client';
 
 import PageLayout from '@/components/shared/PageLayout';
-import { RollCallSection } from '@/components/student-affairs/sections';
+import { ExploreSection } from '@/components/student-affairs/sections';
 
-export default function RollCallPage() {
+export default function ExplorePage() {
   return (
     <PageLayout role="student-affair">
-      <RollCallSection />
+      <ExploreSection />
     </PageLayout>
   );
 }

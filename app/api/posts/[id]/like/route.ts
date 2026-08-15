@@ -46,7 +46,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await supabase.from('notifications').insert({
       recipient_email: post.author_email,
       type: 'like',
-      message: 'Someone liked your post',
+      message: `${identity.name} liked your post`,
+      post_id: id,
+      actor_email: identity.email,
+      actor_name: identity.name,
       created_at: Date.now(),
     });
   }

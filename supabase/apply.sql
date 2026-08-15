@@ -12,7 +12,9 @@
 --   migrations/20260813000000_init.sql   (posts, likes, comments, convs, msgs, notifs)
 --   migrations/20260814000000_shares.sql (post_shares + posts.shares_count)
 --   migrations/20260814020000_updated_at.sql (posts/comments updated_at for "edited" flag)
---   migrations/20260815000000_attachments.sql (chat_messages.attachments for file sharing)
+--   migrations/20260815000000_messages_preview_unread.sql (chat_messages.attachments,
+--     conversations.preview + conversations.unread_map for the chat list)
+--   migrations/20260817000000_lost_found.sql (posts.item_status + posts.item_location)
 -- It is idempotent-safe and has been verified against PostgreSQL 16.
 -- ============================================================================
 
@@ -141,6 +143,14 @@ create index if not exists idx_shares_post on public.post_shares (post_id, creat
 alter table public.chat_messages add column if not exists attachments jsonb not null default '[]'::jsonb;
 
 ------------------------------------------------------------
+-- conversations.preview + unread_map (chat list)
+-- preview holds the text of the last message; unread_map is a
+-- jsonb map { email: count } tracking unread messages per participant.
+------------------------------------------------------------
+alter table public.conversations add column if not exists preview text;
+alter table public.conversations add column if not exists unread_map jsonb not null default '{}'::jsonb;
+
+------------------------------------------------------------
 -- Realtime is enabled on all tables by default.
 -- Grant the anon/authenticated roles full access so the browser
 -- (anon key) can read the public datastore directly.
@@ -167,8 +177,62 @@ alter table public.post_comments add column if not exists updated_at bigint not 
 update public.posts set updated_at = created_at;
 update public.post_comments set updated_at = created_at;
 
+------------------------------------------------------------
+-- notifications navigation metadata (tap-to-go)
+-- post_id: like/comment/share/moderation -> open the post on the feed.
+-- conversation_id: message -> open the conversation in messages.
+-- actor_email/actor_name: who triggered the notification (profile link).
+------------------------------------------------------------
+alter table public.notifications add column if not exists post_id uuid references public.posts on delete cascade;
+alter table public.notifications add column if not exists conversation_id uuid references public.conversations on delete cascade;
+alter table public.notifications add column if not exists actor_email text;
+alter table public.notifications add column if not exists actor_name text;
+
+create index if not exists idx_notif_post on public.notifications (post_id);
+create index if not exists idx_notif_conv on public.notifications (conversation_id);
+
 -- NOTE: no DB triggers here on purpose. Write-path authorization (chat
 -- privacy: pending/active/blocked; likes/comments/messages; moderation;
 -- notifications) is enforced server-side in Next.js API routes using a
 -- service-role Supabase client + the Spring session email, so it cannot be
 -- bypassed by the browser. The browser (anon key) does realtime READS only.
+
+------------------------------------------------------------
+-- Lost & Found: structured metadata on posts.
+-- posts.item_status: 'lost' | 'found' | null
+-- posts.item_location: campus location or null
+------------------------------------------------------------
+alter table public.posts add column if not exists item_status text;
+alter table public.posts add column if not exists item_location text;
+
+create index if not exists idx_posts_item_status on public.posts (item_status) where item_status is not null;
+create index if not exists idx_posts_item_location on public.posts (item_location) where item_location is not null;
+-- Supabase schema for UniConnect Events.
+-- Events are created by admins / student affairs and browsed + registered by
+-- everyone. Follows the existing schema conventions (bigint unix-ms timestamps,
+-- Spring email stored on rows, no RLS — consistent with the other tables).
+-- Run this in the Supabase SQL editor.
+
+create table public.events (
+  id              uuid primary key default gen_random_uuid(),
+  title           text not null,
+  description     text,
+  location        text,
+  event_date      bigint not null,               -- unix ms
+  category        text not null default 'Other', -- Sports | Academic | Cultural | Other
+  max_attendees   int,
+  created_by      text not null,
+  created_by_name text not null,
+  created_at      bigint not null default (extract(epoch from now()) * 1000)
+);
+create index idx_events_date on public.events (event_date desc);
+
+create table public.event_registrations (
+  id         uuid primary key default gen_random_uuid(),
+  event_id   uuid references public.events on delete cascade,
+  user_email text not null,
+  user_name  text not null,
+  created_at bigint not null default (extract(epoch from now()) * 1000)
+);
+create unique index idx_event_registrations_unique on public.event_registrations (event_id, user_email);
+create index idx_event_registrations_event on public.event_registrations (event_id);

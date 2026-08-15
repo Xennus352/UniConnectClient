@@ -12,8 +12,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data, error } = await supabase
     .from('notifications')
     .update({ read: true })
+    .or(`and(recipient_email.ilike.${identity.email}),and(recipient_email.is.null,recipient_role.eq.${identity.role})`)
     .eq('id', id)
-    .eq('recipient_email', identity.email)
     .select()
     .single();
   if (error) return NextResponse.json({ message: error.message }, { status: 500 });

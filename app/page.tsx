@@ -8,6 +8,7 @@ import { LOGIN_CREDENTIALS } from '@/components/shared/constants';
 import { backendLogin } from '@/components/shared/api';
 import type { LoginResult } from '@/components/shared/api';
 import ThemeToggle from '@/components/shared/ThemeToggle';
+import { useSession } from '@/components/shared/session';
 
 const ROLE_ICONS = {
   student: BookOpen,
@@ -18,8 +19,10 @@ const ROLE_ICONS = {
 
 export default function Home() {
   const router = useRouter();
+  const { refresh } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loggingIn, setLoggingIn] = useState(false);
 
   const handleLogin = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -30,12 +33,19 @@ export default function Home() {
       toast.error('Invalid email or password. Please try again.');
       return;
     }
+    setLoggingIn(true);
     let result: LoginResult;
     try {
       result = await backendLogin(found.email, found.password);
     } catch (err) {
+      setLoggingIn(false);
       toast.error(err instanceof Error ? err.message : 'Cannot reach the university server. Please try again.');
       return;
+    }
+    try {
+      await refresh();
+    } catch {
+      // session refresh failures are non-fatal; navigation still proceeds
     }
     toast.success(`Welcome back, ${result.name}!`);
     router.push(found.path);
@@ -139,8 +149,16 @@ export default function Home() {
                 </span>
               </label>
 
-              <button type="submit" className="btn btn-primary btn-block mt-1">
-                <LogIn size={16} /> Sign In
+              <button type="submit" className="btn btn-primary btn-block mt-1" disabled={loggingIn}>
+                {loggingIn ? (
+                  <>
+                    <span className="loading loading-spinner loading-sm" /> Signing in...
+                  </>
+                ) : (
+                  <>
+                    <LogIn size={16} /> Sign In
+                  </>
+                )}
               </button>
             </form>
 

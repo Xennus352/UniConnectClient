@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { ShieldCheck, Check, X } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
-import { useSession } from './session';
 import { toast } from 'sonner';
+import PostTag from './PostTag';
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -34,7 +34,6 @@ type PostRow = {
 
 export default function ModerationSection() {
   const supabase = useSupabase();
-  const { user: session } = useSession();
   const [pending, setPending] = useState<PostRow[] | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [note, setNote] = useState('');
@@ -47,7 +46,7 @@ export default function ModerationSection() {
         .eq('status', 'pending_review')
         .order('created_at', { ascending: false });
       if (error) setPending([]);
-      else setPending((data ?? []) as PostRow[]);
+      else setPending((data ?? []).map((row) => ({ ...row, tags: (row.tags as PostRow['tags'] | null) ?? [] })));
     };
     load();
     const ch = supabase
@@ -62,27 +61,31 @@ export default function ModerationSection() {
   }, [supabase]);
 
   const handleApprove = async (postId: string, authorName: string) => {
-    const res = await fetch(`/api/posts/${postId}/moderate`, {
+    const res = await fetch(`/api/posts/${postId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'approved', moderatorRole: session?.role ?? '' }),
+      body: JSON.stringify({ status: 'approved' }),
     });
     if (res.ok) toast.success(`Post by ${authorName} approved and published to the feed`);
-    else toast.error('Failed to approve post');
+    else {
+      const err = await res.json().catch(() => ({ message: 'Failed to approve post' }));
+      toast.error(err.message || 'Failed to approve post');
+    }
   };
 
   const handleReject = async (postId: string, authorName: string) => {
-    const res = await fetch(`/api/posts/${postId}/moderate`, {
+    const res = await fetch(`/api/posts/${postId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'rejected', moderatorRole: session?.role ?? '', moderationNote: note.trim() }),
+      body: JSON.stringify({ status: 'rejected', moderationNote: note.trim() }),
     });
     if (res.ok) {
       toast.error(`Post by ${authorName} rejected`);
       setRejectingId(null);
       setNote('');
     } else {
-      toast.error('Failed to reject post');
+      const err = await res.json().catch(() => ({ message: 'Failed to reject post' }));
+      toast.error(err.message || 'Failed to reject post');
     }
   };
 
@@ -139,9 +142,7 @@ export default function ModerationSection() {
           {post.tags.length > 0 && (
             <div className="flex gap-[6px] px-5 pb-3 flex-wrap">
               {post.tags.map((tag, i) => (
-                <span key={i} className={`badge badge-sm ${tag.color} gap-1`}>
-                  {tag.emoji} {tag.label}
-                </span>
+                <PostTag key={i} label={tag.label} emoji={tag.emoji} />
               ))}
             </div>
           )}

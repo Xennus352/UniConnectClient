@@ -10,13 +10,14 @@ import QuickAccess from '@/components/shared/QuickAccess';
 import DataTable from '@/components/shared/DataTable';
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
 import FeedPost from '@/components/shared/FeedPost';
+import LostFoundPage from '@/components/shared/LostFoundSection';
 import { useSession } from '@/components/shared/session';
 import { toast } from 'sonner';
 import {
   BookOpen, ClipboardList, Megaphone, CalendarCheck,
   GraduationCap, FileText, CalendarDays,
   Search, MessageSquare, Newspaper, Upload,
-  Filter, Download, Plus, Check, X, Eye, Users,
+  Filter, Download, Plus, Check, X, Eye, Users, Ban,
 } from 'lucide-react';
 import type { StudentData, RollCallData } from '@/components/shared/types';
 import { apiFetch, markAttendance } from '@/components/shared/api';
@@ -27,6 +28,8 @@ import type {
 import { useUniversityData } from '@/components/shared/useUniversityData';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { ExploreSection } from '@/components/admin/sections';
+import BlockedSection from '@/components/shared/BlockedSection';
 
 interface TimetableEntry {
   time: string;
@@ -221,7 +224,7 @@ export function StudentsSection() {
                   <span style={{
                     display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase',
                     color: v === 'CS' ? 'var(--primary)' : v === 'SE' ? 'var(--accent)' : 'var(--info)',
-                    backgroundColor: v === 'CS' ? 'rgba(58,139,194,0.15)' : v === 'SE' ? 'rgba(45,68,92,0.08)' : 'rgba(59,130,246,0.08)',
+                    backgroundColor: v === 'CS' ? 'rgba(14, 165, 233,0.15)' : v === 'SE' ? 'rgba(45,68,92,0.08)' : 'rgba(59,130,246,0.08)',
                   }}>{v}</span>
                 )},
                 { key: 'semester', label: 'Semester', render: (v: string) => <span style={{ fontSize: 12.5, fontWeight: 500 }}>{v}</span> },
@@ -331,9 +334,9 @@ export function RollCallSection() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
         <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>Roll Call</h1>
         <button
-          style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}
+          style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)'; }}
         ><Download size={14} /> Export</button>
       </div>
       <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>
@@ -386,9 +389,9 @@ export function RollCallSection() {
             </div>
             <button
               onClick={markAllPresent}
-              style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8 }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}
+              style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 8 }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)'; }}
             ><Check size={14} /> Mark All Present</button>
             <button
               style={{ width: '100%', background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
@@ -620,7 +623,7 @@ export function ExamResultsSection() {
             <p style={{ fontSize: 12, color: 'var(--text-lighter)', marginBottom: 16, margin: '0 0 16px 0' }}>Upload PDF or Excel files with student results</p>
             <div
               style={{ border: '2px dashed var(--secondary)', borderRadius: 'var(--radius-lg)', padding: 32, textAlign: 'center', cursor: 'pointer', background: 'var(--secondary-lighter)', transition: 'all 0.2s', marginBottom: 16 }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = 'rgba(40,114,161,0.04)'; }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = 'rgba(2, 132, 199,0.04)'; }}
               onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--secondary)'; e.currentTarget.style.background = 'var(--secondary-lighter)'; }}
             >
               <Upload size={32} style={{ color: 'var(--text-lighter)', margin: '0 auto 8px', display: 'block' }} />
@@ -628,9 +631,9 @@ export function ExamResultsSection() {
               <p style={{ fontSize: 11, color: 'var(--text-lighter)', margin: 0 }}>PDF, XLSX up to 10MB</p>
             </div>
             <button
-              style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}
+              style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)'; }}
             ><Upload size={14} /> Upload Results</button>
           </div>
         </div>
@@ -685,76 +688,10 @@ export function ExamResultsSection() {
   );
 }
 
-export function EventsSection() {
-  return (
-    <div>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Events</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>University events and academic calendar</p>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CalendarCheck size={16} /> Upcoming Events
-            </h3>
-            <span style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}>View All</span>
-          </div>
-          <div style={{ padding: '18px 22px', fontSize: 13, color: 'var(--text-lighter)' }}>No events yet</div>
-        </div>
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CalendarDays size={16} /> Quick Actions
-            </h3>
-          </div>
-          <div style={{ padding: '18px 22px' }}>
-            <p style={{ fontSize: 12, color: 'var(--text-lighter)', margin: '0 0 16px 0' }}>Manage and create new events</p>
-            <button
-              style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}
-            ><Plus size={14} /> Create New Event</button>
-            <button
-              style={{ width: '100%', background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--secondary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--secondary-light)'; }}
-            ><CalendarDays size={14} /> View Calendar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+export { default as EventsSection } from '@/components/shared/EventsSection';
 
 export function LostFoundSection() {
-  return (
-    <div>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Lost & Found</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Report and browse lost and found items on campus</p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', flex: 1, minWidth: 200 }}>
-          <Search size={14} style={{ color: 'var(--text-light)' }} />
-          <input type="text" placeholder="Search items..." style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', width: '100%' }} />
-        </div>
-        <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, cursor: 'pointer', minWidth: 140 }}>
-          <option>All Status</option>
-          <option>Lost</option>
-          <option>Found</option>
-        </select>
-        <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, cursor: 'pointer', minWidth: 140 }}>
-          <option>All Locations</option>
-          <option>Library</option>
-          <option>CS Building</option>
-          <option>Cafeteria</option>
-        </select>
-        <button
-          style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}
-        ><Plus size={14} /> Report Item</button>
-      </div>
-      <div style={{ padding: '18px 22px', fontSize: 13, color: 'var(--text-lighter)', background: 'var(--surface-soft)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)' }}>No lost & found items yet</div>
-    </div>
-  );
+  return <LostFoundPage />;
 }
 
 
@@ -774,7 +711,7 @@ export function SettingsSection() {
       <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Settings</h1>
       <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Manage your account and preferences</p>
       <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--surface)' }}>
-        {['Profile', 'Notifications', 'Appearance'].map(t => (
+        {['Profile', 'Notifications', 'Appearance', 'Blocked'].map(t => (
           <button key={t} onClick={() => setSettingsTab(t)}
             style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: settingsTab === t ? 'var(--primary)' : 'var(--text-light)', cursor: 'pointer', borderBottom: '2.5px solid transparent', borderBottomColor: settingsTab === t ? 'var(--primary)' : 'transparent', background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>{t}</button>
         ))}
@@ -814,15 +751,15 @@ export function SettingsSection() {
               <button style={{ background: 'transparent', color: 'var(--text-light)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface)'; e.currentTarget.style.color = 'var(--primary)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-light)'; }}>Cancel</button>
-              <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}>Save Changes</button>
+              <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)'; }}>Save Changes</button>
             </div>
           </div>
         </div>
       ) : settingsTab === 'Appearance' ? (
         <ThemeSwitcher />
-      ) : (
+      ) : settingsTab === 'Notifications' ? (
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
           <div style={{ padding: '24px 28px' }}>
             <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', marginBottom: 16 }}>Notification Preferences</h3>
@@ -838,6 +775,15 @@ export function SettingsSection() {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      ) : (
+        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}><Ban size={16} /> Blocked Users</div>
+          </div>
+          <div style={{ padding: '16px 22px' }}>
+            <BlockedSection bare />
           </div>
         </div>
       )}

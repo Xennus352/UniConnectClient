@@ -51,7 +51,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
 
 export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
   const router = useRouter();
-  const { user: session } = useSession();
+  const { user: session, refresh } = useSession();
   const supabase = useSupabase();
   const me = session?.email ?? '';
 
@@ -123,6 +123,7 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
 
   const handleLogout = async () => {
     await backendLogout();
+    await refresh();
     router.replace('/');
   };
 
@@ -135,9 +136,12 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
         className="relative z-10 flex items-center gap-3 px-5 py-5 border-b"
         style={{ borderColor: 'var(--sidebar-border)' }}
       >
-        <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-[#CBDDE9] to-[#a8cce0] text-[#2872A1] font-extrabold text-xl shadow-[0_4px_12px_rgba(0,0,0,0.15)]">
-          U
-        </div>
+        <img
+          src="/icon.png"
+          alt="University logo"
+          className="w-10 h-10 rounded-xl object-cover shrink-0"
+          style={{ boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}
+        />
         <div>
           <div className="text-lg font-bold" style={{ color: 'var(--sidebar-content)' }}>UniConnect</div>
           <div className="text-[10px] font-medium" style={{ color: 'var(--sidebar-content)', opacity: 0.6 }}>University Network</div>
@@ -192,7 +196,7 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
           href={`${basePath}/profile`}
           className="flex items-center gap-2.5 flex-1 min-w-0"
         >
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#CBDDE9] to-[#8abbd4] flex items-center justify-center text-[#2872A1] font-bold text-xs">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#bae6fd] to-[#7dd3fc] flex items-center justify-center text-[#0369a1] font-bold text-xs">
             {session?.initials || 'U'}
           </div>
           <div className="flex-1 min-w-0">

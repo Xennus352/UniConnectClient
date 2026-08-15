@@ -1,12 +1,14 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import {
   MessageSquare, Send, Plus, Search, UserCheck, UserX, Ban, RotateCcw, Clock,
   Users, Check, Filter, Settings, UserMinus, Trash2, Paperclip, FileText,
-  FileSpreadsheet, File, Download, Loader2, Image as ImageIcon,
+  FileSpreadsheet, File, Download, Loader2, Image as ImageIcon, Share2,
 } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
+import type { Database } from '@/utils/supabase/types';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
 import { useSession } from './session';
 import { useUniversityPeople } from './useUniversityPeople';
@@ -32,6 +34,7 @@ interface ConvInfo {
   blockedBy: string;
   lastMessageAt: number;
   preview: string;
+  unread: number;
   isGroup: boolean;
   groupName: string;
   creatorEmail: string;
@@ -46,17 +49,46 @@ interface ChatAttachment {
   path: string;
 }
 
+interface SharedPostData {
+  id: string;
+  content: string;
+  author_name: string;
+  image?: string | null;
+  created_at?: number;
+  tags?: unknown;
+}
+
+type SharedPostEntry = { kind: 'post'; post: SharedPostData };
+type MessageAttachment = ChatAttachment | SharedPostEntry;
+
+function isSharedPost(a: MessageAttachment): a is SharedPostEntry {
+  return (a as { kind?: string }).kind === 'post';
+}
+
 interface ChatMessage {
   id: string;
   sender_email: string;
   sender_name: string;
   sender_initials?: string;
   content: string;
-  attachments?: ChatAttachment[];
+  attachments?: MessageAttachment[];
   created_at: number;
 }
 
 const ATTACH_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt,.csv,.zip';
+
+type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
+
+function toChatMessage(m: ChatMessageRow): ChatMessage {
+  return {
+    id: m.id,
+    sender_email: m.sender_email,
+    sender_name: m.sender_name,
+    content: m.content,
+    created_at: m.created_at,
+    attachments: (m.attachments as MessageAttachment[] | null) ?? undefined,
+  };
+}
 
 function formatBytes(b: number): string {
   if (b < 1024) return `${b} B`;
@@ -73,23 +105,29 @@ function fileIcon(mime: string, name: string) {
   return <File size={16} />;
 }
 
-function MessageAttachments({ convId, attachments, mine }: { convId: string; attachments: ChatAttachment[]; mine: boolean }) {
+function MessageAttachments({ convId, attachments, mine }: { convId: string; attachments: MessageAttachment[]; mine: boolean }) {
+  const postEntries = attachments.filter(isSharedPost);
+  const fileEntries = attachments.filter((a) => !isSharedPost(a)) as ChatAttachment[];
   const [urls, setUrls] = useState<Record<string, { url: string; downloadUrl: string }> | null>(null);
   const [error, setError] = useState(false);
-  const pathsKey = attachments.map((a) => a.path).join('\u0000');
+  const pathsKey = fileEntries.map((a) => a.path).join('\u0000');
   useEffect(() => {
+    if (fileEntries.length === 0) return;
     let cancelled = false;
-    fetch(`/api/conversations/${convId}/attachments?paths=${encodeURIComponent(JSON.stringify(attachments.map((a) => a.path)))}`)
+    fetch(`/api/conversations/${convId}/attachments?paths=${encodeURIComponent(JSON.stringify(fileEntries.map((a) => a.path)))}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load failed'))))
       .then((data) => { if (!cancelled) setUrls(data.urls ?? {}); })
       .catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [convId, pathsKey, attachments]);
+  }, [convId, pathsKey, fileEntries]);
 
   if (!attachments || attachments.length === 0) return null;
   return (
-    <div className="mt-2 space-y-1.5" style={{ maxWidth: 280 }}>
-      {attachments.map((a) => {
+    <div className="mt-2 space-y-1.5" style={{ maxWidth: 300 }}>
+      {postEntries.map((entry) => (
+        <SharedPostCard key={entry.post.id} data={entry.post} mine={mine} />
+      ))}
+      {fileEntries.map((a) => {
         const entry = urls?.[a.path];
         const isImage = a.mime.startsWith('image/');
         if (isImage) {
@@ -135,6 +173,54 @@ function MessageAttachments({ convId, attachments, mine }: { convId: string; att
   );
 }
 
+function SharedPostCard({ data, mine }: { data: SharedPostData; mine: boolean }) {
+  const { user: session } = useSession();
+  const href = `/${session?.role ?? ''}/feed?post=${data.id}`;
+  const tags = Array.isArray(data.tags) ? (data.tags as { label: string; emoji?: string }[]) : [];
+  return (
+    <Link
+      href={href}
+      className="block no-underline overflow-hidden"
+      style={{ borderRadius: 'var(--radius-sm)', border: `1px solid ${mine ? 'rgba(255,255,255,0.3)' : 'var(--surface-border)'}`, background: mine ? 'rgba(255,255,255,0.14)' : 'var(--surface-soft)' }}
+    >
+      <div
+        className="flex items-center gap-1.5 px-2.5 py-1.5"
+        style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: mine ? 'rgba(255,255,255,0.9)' : 'var(--primary)', borderBottom: `1px solid ${mine ? 'rgba(255,255,255,0.2)' : 'var(--surface)'}` }}
+      >
+        <Share2 size={11} /> Shared post
+      </div>
+      {data.image && (
+        <img
+          src={data.image}
+          alt=""
+          style={{ display: 'block', width: '100%', maxHeight: 160, objectFit: 'cover', background: 'var(--surface)' }}
+        />
+      )}
+      <div style={{ padding: '8px 10px 6px', fontSize: 12.5, lineHeight: 1.45, color: mine ? '#fff' : 'var(--text)' }}>
+        <div style={{ fontWeight: 700, fontSize: 11.5, marginBottom: 3, color: mine ? 'rgba(255,255,255,0.85)' : 'var(--text-light)' }}>
+          {data.author_name}
+        </div>
+        <div className="line-clamp-3" style={{ wordBreak: 'break-word' }}>{data.content}</div>
+        {tags.length > 0 && (
+          <div className="flex gap-1.5 mt-1.5 flex-wrap">
+            {tags.map((tag, i) => (
+              <span
+                key={i}
+                style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 999, border: `1px solid ${mine ? 'rgba(255,255,255,0.35)' : 'var(--surface-border)'}`, background: mine ? 'rgba(255,255,255,0.12)' : 'var(--divider)' }}
+              >
+                {tag.emoji ? `${tag.emoji} ` : ''}{tag.label}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+      <div style={{ padding: '0 10px 8px', fontSize: 10.5, fontWeight: 600, color: mine ? 'rgba(255,255,255,0.85)' : 'var(--primary)' }}>
+        View post →
+      </div>
+    </Link>
+  );
+}
+
 function timeLabel(ts: number): string {
   if (!ts) return '';
   const diff = Date.now() - ts;
@@ -156,6 +242,7 @@ export default function MessagesSection() {
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConvInfo[] | null>(null);
+  const [convTab, setConvTab] = useState<'direct' | 'group'>('direct');
   const [messages, setMessages] = useState<ChatMessage[] | null>(null);
   const [hasMoreMsgs, setHasMoreMsgs] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -215,6 +302,7 @@ export default function MessagesSection() {
           blockedBy: conv.blocked_by || '',
           lastMessageAt: conv.last_message_at || 0,
           preview: conv?.preview ?? '',
+          unread: ((conv.unread_map ?? {}) as Record<string, number>)[me] ?? 0,
           isGroup,
           groupName: groupEntry?.name || (isGroup ? `Group (${participants.length})` : ''),
           creatorEmail,
@@ -233,6 +321,16 @@ export default function MessagesSection() {
   }, [supabase, me]);
 
   useEffect(() => {
+    const conv = new URLSearchParams(window.location.search).get('conv');
+    if (!conv) return;
+    const t = setTimeout(() => {
+      setConvTab('direct');
+      setSelectedId(conv);
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
+
+  useEffect(() => {
     if (!selectedId) return;
     const load = async () => {
       const { data, error } = await supabase
@@ -242,7 +340,7 @@ export default function MessagesSection() {
         .order('created_at', { ascending: false })
         .limit(MESSAGE_PAGE);
       if (error) setMessages([]);
-      else { setMessages((data ?? []).slice().reverse()); setHasMoreMsgs((data?.length ?? 0) === MESSAGE_PAGE); }
+      else { setMessages((data ?? []).map(toChatMessage).reverse()); setHasMoreMsgs((data?.length ?? 0) === MESSAGE_PAGE); }
     };
     load();
     const ch = supabase
@@ -289,7 +387,7 @@ export default function MessagesSection() {
       .order('created_at', { ascending: false })
       .limit(MESSAGE_PAGE);
     if (!error && data) {
-      const batch: ChatMessage[] = (data ?? []).slice().reverse();
+      const batch: ChatMessage[] = (data ?? []).map(toChatMessage).reverse();
       setMessages((prev) => {
         const existing = new Set((prev ?? []).map((m) => m.id));
         return [...batch.filter((m) => !existing.has(m.id)), ...(prev ?? [])];
@@ -317,6 +415,12 @@ export default function MessagesSection() {
     : null;
   const iAmRequester = selected ? selected.requestedBy === me : false;
   const selectedIsCreator = selected ? selected.creatorEmail === me : false;
+
+  const directCount = (conversations ?? []).filter((c) => !c.isGroup).length;
+  const groupCount = (conversations ?? []).filter((c) => c.isGroup).length;
+  const visibleConvs = (conversations ?? []).filter((c) =>
+    convTab === 'group' ? c.isGroup : !c.isGroup
+  );
 
   const openGroupManage = () => {
     if (!selected) return;
@@ -619,10 +723,10 @@ export default function MessagesSection() {
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[18px]">
+    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[18px] h-full min-h-[520px]">
       <div
-        className="bg-base-100 backdrop-blur-xl flex flex-col"
-        style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', maxHeight: '72vh' }}
+        className="bg-base-100 backdrop-blur-xl flex flex-col max-h-[72vh] lg:max-h-none lg:h-full"
+        style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--surface)' }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -637,25 +741,71 @@ export default function MessagesSection() {
             <Plus size={15} />
           </button>
         </div>
+        <div style={{ display: 'flex', gap: 4, padding: '8px 14px 0', borderBottom: '1px solid var(--surface)' }}>
+          {([
+            ['direct', 'Direct', directCount, MessageSquare],
+            ['group', 'Groups', groupCount, Users],
+          ] as const).map(([key, label, count, Icon]) => (
+            <button
+              key={key}
+              onClick={() => setConvTab(key)}
+              style={{
+                padding: '9px 12px',
+                fontSize: 12.5,
+                fontWeight: 600,
+                cursor: 'pointer',
+                background: 'none',
+                color: convTab === key ? 'var(--primary)' : 'var(--text-light)',
+                border: 'none',
+                borderBottom: '2.5px solid',
+                borderBottomColor: convTab === key ? 'var(--primary)' : 'transparent',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                marginBottom: -1,
+              }}
+            >
+              <Icon size={13} />
+              {label}
+              <span
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  minWidth: 18,
+                  height: 18,
+                  padding: '0 5px',
+                  fontSize: 10.5,
+                  fontWeight: 700,
+                  background: convTab === key ? 'rgba(14, 165, 233,0.15)' : 'var(--surface-soft)',
+                  color: convTab === key ? 'var(--primary)' : 'var(--text-light)',
+                }}
+              >
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
         <div className="flex-1 overflow-y-auto">
           {!conversations && (
             <div className="text-center py-10 text-xs" style={{ color: 'var(--text-lighter)' }}>Loading...</div>
           )}
-          {conversations && conversations.length === 0 && (
+          {conversations && visibleConvs.length === 0 && (
             <div className="text-center py-10 px-4">
-              <p className="text-xs mb-4" style={{ color: 'var(--text-lighter)' }}>No conversations yet</p>
+              <p className="text-xs mb-4" style={{ color: 'var(--text-lighter)' }}>
+                {conversations.length === 0 ? 'No conversations yet' : convTab === 'group' ? 'No group chats yet' : 'No direct messages yet'}
+              </p>
               <button
                 onClick={() => setShowNewChat(true)}
                 className="btn btn-sm gap-1.5 border-none text-white cursor-pointer"
                 style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
               >
-                <Plus size={13} /> Find people
+                <Plus size={13} /> {convTab === 'group' ? 'Create group' : 'Find people'}
               </button>
             </div>
           )}
-          {conversations?.map((conv) => {
+          {visibleConvs.map((conv) => {
             const displayName = conv.isGroup ? conv.groupName : conv.other.name;
             const displayInitials = conv.isGroup ? conv.groupName.slice(0, 2).toUpperCase() : conv.other.initials;
+            const hasUnread = (conv.unread ?? 0) > 0;
             return (
               <button
                 key={conv.id}
@@ -663,7 +813,7 @@ export default function MessagesSection() {
                 className="w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer transition-colors"
                 style={{
                   borderBottom: '1px solid var(--surface)',
-                  background: selectedId === conv.id ? 'rgba(58,139,194,0.10)' : 'transparent',
+                  background: selectedId === conv.id ? 'rgba(14, 165, 233,0.10)' : 'transparent',
                 }}
               >
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 12 }}>
@@ -671,11 +821,24 @@ export default function MessagesSection() {
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--accent)' }}>{displayName}</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-lighter)' }}>{timeLabel(conv.lastMessageAt)}</span>
+                    <span style={{ fontSize: 13.5, fontWeight: hasUnread ? 700 : 600, color: 'var(--accent)' }}>{displayName}</span>
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      {hasUnread && (
+                        <span
+                          className="flex items-center justify-center rounded-full text-white font-bold"
+                          style={{ minWidth: 18, height: 18, padding: '0 5px', fontSize: 10.5, background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+                        >
+                          {conv.unread}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 11, color: 'var(--text-lighter)' }}>{timeLabel(conv.lastMessageAt)}</span>
+                    </span>
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <div className="text-xs truncate" style={{ color: 'var(--text-lighter)' }}>
+                    <div
+                      className="text-xs truncate"
+                      style={{ color: hasUnread ? 'var(--text)' : 'var(--text-lighter)', fontWeight: hasUnread ? 600 : 400 }}
+                    >
                       {conv.isGroup ? `${conv.members.length + 1} members \u2022 ` : ''}{conv.preview || 'No messages yet'}
                     </div>
                     {!conv.isGroup && statusBadge(conv.status)}
@@ -688,8 +851,8 @@ export default function MessagesSection() {
       </div>
 
       <div
-        className="bg-base-100 backdrop-blur-xl flex flex-col"
-        style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', maxHeight: '72vh' }}
+        className="bg-base-100 backdrop-blur-xl flex flex-col max-h-[72vh] lg:max-h-none lg:h-full"
+        style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}
       >
         {!selected ? (
           <div className="flex-1 flex flex-col items-center justify-center py-20" style={{ color: 'var(--text-lighter)' }}>
@@ -804,7 +967,7 @@ export default function MessagesSection() {
                       {m.content && <div>{m.content}</div>}
                       {m.attachments && m.attachments.length > 0 && (
                         <MessageAttachments
-                          key={m.attachments.map((a) => a.path).join('|')}
+                          key={m.attachments.map((a) => (isSharedPost(a) ? `post:${a.post.id}` : a.path)).join('|')}
                           convId={selectedId ?? ''}
                           attachments={m.attachments}
                           mine={mine}
@@ -998,7 +1161,7 @@ export default function MessagesSection() {
                         padding: '4px 10px',
                         borderRadius: 14,
                         border: `1.5px solid ${active ? 'var(--primary)' : 'var(--surface-border)'}`,
-                        background: active ? 'rgba(58,139,194,0.15)' : 'var(--divider)',
+                        background: active ? 'rgba(14, 165, 233,0.15)' : 'var(--divider)',
                         color: active ? 'var(--primary)' : 'var(--text)',
                       }}
                     >
@@ -1041,7 +1204,7 @@ export default function MessagesSection() {
                       key={p.email}
                       onClick={() => toggleMember(p.email)}
                       className="flex items-center gap-1 cursor-pointer"
-                      style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 12, background: 'rgba(58,139,194,0.15)', color: 'var(--primary)', border: 'none' }}
+                      style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 12, background: 'rgba(14, 165, 233,0.15)', color: 'var(--primary)', border: 'none' }}
                     >
                       {p.name} ✕
                     </button>
@@ -1075,7 +1238,7 @@ export default function MessagesSection() {
                     className="w-full flex items-center gap-3 px-5 py-3 text-left cursor-pointer transition-colors"
                     style={{
                       borderBottom: '1px solid var(--surface)',
-                      background: isSelected ? 'rgba(58,139,194,0.10)' : undefined,
+                      background: isSelected ? 'rgba(14, 165, 233,0.10)' : undefined,
                     }}
                     onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--surface-soft)'; }}
                     onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}

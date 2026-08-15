@@ -3,25 +3,25 @@
   themes: light --default, dark;
 }
 
-/* ---------- daisyUI light theme (blue & white) ---------- */
+/* ---------- daisyUI light theme (sky blue & grey) ---------- */
 @plugin "daisyui/theme" {
   name: "light";
   default: true;
   color-scheme: light;
 
-  --color-base-100: oklch(99% 0.004 240);
-  --color-base-200: oklch(95.5% 0.012 240);
-  --color-base-300: oklch(91% 0.02 240);
-  --color-base-content: oklch(32% 0.04 240);
-  --color-primary: oklch(55% 0.16 245);
+  --color-base-100: oklch(99.5% 0.005 250);
+  --color-base-200: oklch(96% 0.01 250);
+  --color-base-300: oklch(91% 0.02 250);
+  --color-base-content: oklch(38% 0.03 250);
+  --color-primary: oklch(70% 0.14 240);
   --color-primary-content: white;
-  --color-secondary: oklch(65% 0.11 245);
-  --color-secondary-content: white;
-  --color-accent: oklch(72% 0.09 220);
-  --color-accent-content: oklch(24% 0.03 240);
-  --color-neutral: oklch(38% 0.04 240);
+  --color-secondary: oklch(93% 0.04 240);
+  --color-secondary-content: oklch(40% 0.05 250);
+  --color-accent: oklch(58% 0.06 250);
+  --color-accent-content: white;
+  --color-neutral: oklch(55% 0.04 250);
   --color-neutral-content: white;
-  --color-info: oklch(60% 0.15 240);
+  --color-info: oklch(70% 0.14 240);
   --color-info-content: white;
   --color-success: oklch(65% 0.17 150);
   --color-success-content: white;
@@ -38,25 +38,25 @@
   --noise: 0;
 }
 
-/* ---------- daisyUI dark theme ---------- */
+/* ---------- daisyUI dark theme (dark blue & sky blue) ---------- */
 @plugin "daisyui/theme" {
   name: "dark";
   color-scheme: dark;
 
-  --color-base-100: oklch(0.14 0.03 260);
-  --color-base-200: oklch(0.11 0.03 260);
-  --color-base-300: oklch(0.09 0.03 260);
-  --color-base-content: oklch(0.85 0.02 260);
-  --color-primary: oklch(0.50 0.13 260);
-  --color-primary-content: oklch(0.98 0.01 260);
-  --color-secondary: oklch(0.30 0.06 260);
-  --color-secondary-content: oklch(0.85 0.02 260);
-  --color-accent: oklch(0.58 0.12 265);
-  --color-accent-content: oklch(0.98 0.01 260);
-  --color-neutral: oklch(0.18 0.04 260);
-  --color-neutral-content: oklch(0.85 0.02 260);
-  --color-info: oklch(0.50 0.13 260);
-  --color-info-content: oklch(0.98 0.01 260);
+  --color-base-100: oklch(0.20 0.035 260);
+  --color-base-200: oklch(0.16 0.035 260);
+  --color-base-300: oklch(0.13 0.035 260);
+  --color-base-content: oklch(0.86 0.03 250);
+  --color-primary: oklch(0.70 0.14 240);
+  --color-primary-content: oklch(0.15 0.02 250);
+  --color-secondary: oklch(0.30 0.05 260);
+  --color-secondary-content: oklch(0.86 0.03 250);
+  --color-accent: oklch(0.76 0.11 240);
+  --color-accent-content: oklch(0.15 0.02 250);
+  --color-neutral: oklch(0.25 0.04 260);
+  --color-neutral-content: oklch(0.86 0.03 250);
+  --color-info: oklch(0.70 0.14 240);
+  --color-info-content: oklch(0.15 0.02 250);
   --color-success: oklch(0.62 0.20 145);
   --color-success-content: oklch(0.98 0.01 260);
   --color-warning: oklch(0.75 0.15 80);
@@ -74,9 +74,9 @@
 
 /* ---------- theme-independent brand tokens ---------- */
 :root {
-  --primary: #3a8bc2;
-  --primary-dark: #2a7aaa;
-  --primary-darker: #1a5a8a;
+  --primary: #0ea5e9;
+  --primary-dark: #0284c7;
+  --primary-darker: #0369a1;
   --success: #22c55e;
   --warning: #f59e0b;
   --danger: #ef4444;
@@ -88,79 +88,103 @@
   --radius-xl: 24px;
 }
 
-/* ---------- light theme (blue & white) ---------- */
+/* ---------- light theme (sky blue & grey) ---------- */
 :root,
 [data-theme="light"] {
   color-scheme: light;
-  --secondary: #dce9f5;
-  --secondary-light: #e9f2fa;
-  --secondary-lighter: #f4f9fd;
-  --accent: #16324f;
-  --text: #2f4156;
-  --text-light: #5b7086;
-  --text-lighter: #8ba1b5;
+  --secondary: #e0f2fe;
+  --secondary-light: #dbeafe;
+  --secondary-lighter: #f0f9ff;
+  --accent: #334155;
+  --text: #475569;
+  --text-light: #64748b;
+  --text-lighter: #94a3b8;
   --white: #ffffff;
-  --shadow-sm: 0 4px 20px rgba(45, 110, 160, 0.08);
-  --shadow-md: 0 8px 32px rgba(45, 110, 160, 0.12);
-  --shadow-lg: 0 16px 48px rgba(45, 110, 160, 0.16);
+  --shadow-sm: 0 4px 20px rgba(15, 23, 42, 0.08);
+  --shadow-md: 0 8px 32px rgba(15, 23, 42, 0.12);
+  --shadow-lg: 0 16px 48px rgba(15, 23, 42, 0.16);
   --surface: #ffffff;
-  --surface-soft: #f7fafd;
-  --surface-strong: #dce9f5;
-  --surface-border: #d9e6f2;
-  --surface-hover: #f0f6fb;
-  --divider: #eef4fa;
-  --divider-soft: #f4f9fd;
+  --surface-soft: #f8fafc;
+  --surface-strong: rgba(2, 132, 199, 0.55);
+  --surface-border: rgba(2, 132, 199, 0.4);
+  --surface-hover: #f1f5f9;
+  --divider: #eef2f7;
+  --divider-soft: #f8fafc;
   --modal-bg: #ffffff;
-  --nav-bg: rgba(255, 255, 255, 0.9);
-  --login-panel: linear-gradient(160deg, #b9def2 0%, #d8eefb 50%, #a9d5ee 100%);
-  --login-panel-content: #16324f;
-  --sidebar-bg: linear-gradient(180deg, #c9e7f7 0%, #e4f3fc 40%, #bfe0f4 100%);
-  --sidebar-border: rgba(58, 139, 194, 0.25);
-  --sidebar-content: #16324f;
-  --sidebar-hover: rgba(255, 255, 255, 0.4);
-  --sidebar-active-bg: rgba(255, 255, 255, 0.6);
-  --sidebar-active-text: #16324f;
-  --sidebar-active-accent: #3a8bc2;
-  --sidebar-card-bg: rgba(255, 255, 255, 0.5);
-  --sidebar-card-border: rgba(255, 255, 255, 0.7);
-  --app-bg: linear-gradient(160deg, #eaf3fb 0%, #f2f8fd 30%, #e8f0fa 60%, #eef6fc 100%);
+  --nav-bg: rgba(255, 255, 255, 0.85);
+  --login-panel: linear-gradient(160deg, #7dd3fc 0%, #bae6fd 50%, #38bdf8 100%);
+  --login-panel-content: #0c4a6e;
+  --sidebar-bg: linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 45%, #c7e8fb 100%);
+  --sidebar-border: rgba(56, 189, 248, 0.3);
+  --sidebar-content: #1e293b;
+  --sidebar-hover: rgba(255, 255, 255, 0.5);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.7);
+  --sidebar-active-text: #0c4a6e;
+  --sidebar-active-accent: #0ea5e9;
+  --sidebar-card-bg: rgba(255, 255, 255, 0.55);
+  --sidebar-card-border: rgba(255, 255, 255, 0.8);
+  --app-bg: linear-gradient(160deg, #f1f5f9 0%, #f8fafc 35%, #eff6fb 65%, #f6f9fc 100%);
+  --tag-event-bg: rgba(34, 197, 94, 0.14);
+  --tag-event-text: #15803d;
+  --tag-event-border: rgba(34, 197, 94, 0.4);
+  --tag-general-bg: rgba(100, 116, 139, 0.14);
+  --tag-general-text: #475569;
+  --tag-general-border: rgba(100, 116, 139, 0.38);
+  --tag-lost-bg: rgba(245, 158, 11, 0.16);
+  --tag-lost-text: #b45309;
+  --tag-lost-border: rgba(245, 158, 11, 0.45);
+  --tag-announcement-bg: rgba(14, 165, 233, 0.14);
+  --tag-announcement-text: #0369a1;
+  --tag-announcement-border: rgba(14, 165, 233, 0.42);
 }
 
-/* ---------- dark theme (current design) ---------- */
+/* ---------- dark theme (dark blue & sky blue) ---------- */
 [data-theme="dark"] {
   color-scheme: dark;
-  --secondary: rgba(255, 255, 255, 0.08);
-  --secondary-light: rgba(255, 255, 255, 0.12);
-  --secondary-lighter: rgba(255, 255, 255, 0.04);
-  --accent: #c8d8e8;
-  --text: #d0dce8;
-  --text-light: #8a9aaa;
-  --text-lighter: #6a7a8a;
-  --white: rgba(255, 255, 255, 0.06);
-  --shadow-sm: 0 4px 20px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
-  --surface: rgba(255, 255, 255, 0.06);
-  --surface-soft: rgba(255, 255, 255, 0.03);
-  --surface-strong: rgba(255, 255, 255, 0.12);
-  --surface-border: rgba(255, 255, 255, 0.08);
-  --surface-hover: rgba(255, 255, 255, 0.15);
-  --divider: rgba(255, 255, 255, 0.04);
-  --divider-soft: rgba(255, 255, 255, 0.02);
-  --modal-bg: #0f1a2e;
-  --nav-bg: rgba(10, 20, 40, 0.85);
-  --login-panel: linear-gradient(160deg, var(--primary), var(--primary-darker));
-  --login-panel-content: #f0f7fc;
-  --sidebar-bg: linear-gradient(180deg, #0d1a30 0%, #10203a 50%, #0d1a30 100%);
-  --sidebar-border: rgba(255, 255, 255, 0.1);
-  --sidebar-content: #f0f6fc;
-  --sidebar-hover: rgba(255, 255, 255, 0.08);
-  --sidebar-active-bg: rgba(203, 221, 233, 0.14);
+  --secondary: rgba(56, 189, 248, 0.1);
+  --secondary-light: rgba(56, 189, 248, 0.16);
+  --secondary-lighter: rgba(56, 189, 248, 0.06);
+  --accent: #bae6fd;
+  --text: #cbd5e1;
+  --text-light: #94a3b8;
+  --text-lighter: #64748b;
+  --white: rgba(56, 189, 248, 0.08);
+  --shadow-sm: 0 4px 20px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --surface: #16223a;
+  --surface-soft: #0f1a2e;
+  --surface-strong: #22304e;
+  --surface-border: rgba(56, 189, 248, 0.14);
+  --surface-hover: #1e2c46;
+  --divider: rgba(56, 189, 248, 0.08);
+  --divider-soft: rgba(56, 189, 248, 0.05);
+  --modal-bg: #16223a;
+  --nav-bg: rgba(8, 16, 30, 0.85);
+  --login-panel: linear-gradient(160deg, #0ea5e9 0%, #0369a1 100%);
+  --login-panel-content: #e0f2fe;
+  --sidebar-bg: linear-gradient(180deg, #0a1526 0%, #10224a 50%, #0a1526 100%);
+  --sidebar-border: rgba(56, 189, 248, 0.18);
+  --sidebar-content: #bae6fd;
+  --sidebar-hover: rgba(56, 189, 248, 0.08);
+  --sidebar-active-bg: rgba(56, 189, 248, 0.16);
   --sidebar-active-text: #ffffff;
-  --sidebar-active-accent: #cbdde9;
-  --sidebar-card-bg: rgba(255, 255, 255, 0.08);
-  --sidebar-card-border: rgba(255, 255, 255, 0.12);
-  --app-bg: linear-gradient(160deg, #0a1628 0%, #0f2040 30%, #152545 60%, #0a1628 100%);
+  --sidebar-active-accent: #38bdf8;
+  --sidebar-card-bg: rgba(56, 189, 248, 0.1);
+  --sidebar-card-border: rgba(56, 189, 248, 0.2);
+  --app-bg: linear-gradient(160deg, #0a1628 0%, #0e1f3d 35%, #132a52 65%, #0a1628 100%);
+  --tag-event-bg: rgba(34, 197, 94, 0.18);
+  --tag-event-text: #4ade80;
+  --tag-event-border: rgba(74, 222, 128, 0.45);
+  --tag-general-bg: rgba(148, 163, 184, 0.15);
+  --tag-general-text: #94a3b8;
+  --tag-general-border: rgba(148, 163, 184, 0.35);
+  --tag-lost-bg: rgba(251, 191, 36, 0.16);
+  --tag-lost-text: #fbbf24;
+  --tag-lost-border: rgba(251, 191, 36, 0.45);
+  --tag-announcement-bg: rgba(56, 189, 248, 0.16);
+  --tag-announcement-text: #38bdf8;
+  --tag-announcement-border: rgba(56, 189, 248, 0.45);
 }
 
 html {
@@ -178,3 +202,48 @@ body {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--secondary); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--secondary-light); }
+
+/* Telegram-style blink highlight when arriving from a notification. */
+@keyframes notif-blink {
+  0%, 100% {
+    background-color: rgba(14, 165, 233, 0.14);
+    box-shadow: 0 0 0 2px var(--primary);
+  }
+  50% {
+    background-color: transparent;
+    box-shadow: 0 0 0 2px transparent;
+  }
+}
+.notif-blink {
+  border-radius: var(--radius-lg);
+  animation: notif-blink 0.55s ease-in-out 3;
+}
+
+/* Native dropdown lists must match the active theme (inline-styled <select>
+   elements inherit color-scheme from the root, but <option> popups need an
+   explicit background/color or the text is unreadable in some browsers). */
+select {
+  color-scheme: inherit;
+}
+
+select option {
+  background-color: var(--surface);
+  color: var(--text);
+}
+
+/* Bell shake while there are unread notifications. */
+@keyframes bell-shake {
+  0%, 100% { transform: rotate(0deg); }
+  10% { transform: rotate(14deg); }
+  20% { transform: rotate(-14deg); }
+  30% { transform: rotate(10deg); }
+  40% { transform: rotate(-10deg); }
+  50% { transform: rotate(6deg); }
+  60% { transform: rotate(-6deg); }
+  70% { transform: rotate(3deg); }
+  80% { transform: rotate(-3deg); }
+}
+.bell-shake {
+  animation: bell-shake 1.1s ease-in-out infinite;
+  transform-origin: center;
+}

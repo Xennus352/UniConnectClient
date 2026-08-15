@@ -1,13 +1,18 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { User, Save, Newspaper, BadgeCheck, Mail, Lock } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { User, Newspaper, BadgeCheck, Pencil, Trash2, Check, X, LogOut } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
 import { useSession } from './session';
 import { toast } from 'sonner';
-import { apiFetch } from './api';
+import { apiFetch, backendLogout } from './api';
 import type { UserRecord, StaffRecord, StudentRecord } from './api';
+import type { Database } from '@/utils/supabase/types';
+
+type Post = Database['public']['Tables']['posts']['Row'];
+type PostFilter = 'all' | 'approved' | 'pending_review' | 'rejected';
 
 const POST_STATUS_META: Record<string, { label: string; badge: string; color: string }> = {
   approved: { label: 'Published', badge: 'badge-success', color: 'var(--success)' },
@@ -15,6 +20,13 @@ const POST_STATUS_META: Record<string, { label: string; badge: string; color: st
   pending_ai: { label: 'AI Filtering', badge: 'badge-warning', color: 'var(--warning)' },
   rejected: { label: 'Rejected', badge: 'badge-error', color: 'var(--danger)' },
 };
+
+const FILTERS: { id: PostFilter; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'approved', label: 'Published' },
+  { id: 'pending_review', label: 'Pending' },
+  { id: 'rejected', label: 'Rejected' },
+];
 
 function timeAgo(ts: number): string {
   const diff = Date.now() - ts;
@@ -49,13 +61,31 @@ const EMPTY_PROFILE: BackendProfile = {
 };
 
 export default function ProfileSection() {
-  const { user: session } = useSession();
+  const router = useRouter();
+  const { user: session, refresh } = useSession();
   const supabase = useSupabase();
   const me = session?.email ?? '';
 
-  const [myPosts, setMyPosts] = useState<any[] | null>(null);
+  const [myPosts, setMyPosts] = useState<Post[] | null>(null);
+  const [filter, setFilter] = useState<PostFilter>('all');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [loggingOut, setLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    setLoggingOut(true);
+    try {
+      await backendLogout();
+      await refresh();
+    } catch {
+      // session clearing still proceeds on failure
+    }
+    router.replace('/');
+  };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial posts load
     if (!me) { setMyPosts([]); return; }
     const load = async () => {
       const { data, error } = await supabase
@@ -76,10 +106,6 @@ export default function ProfileSection() {
 
   const [profile, setProfile] = useState<BackendProfile>(EMPTY_PROFILE);
   const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
     if (!me) return;
@@ -112,7 +138,6 @@ export default function ProfileSection() {
         }
       }
       setProfile({ account, name, major, semester, rollNo, unit, phone });
-      setEmail(account.email);
     } catch {
       // university server unreachable
     } finally {
@@ -125,50 +150,83 @@ export default function ProfileSection() {
     load();
   }, [load]);
 
-  const handleSave = async () => {
-    setSaving(true);
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { all: 0, approved: 0, pending_review: 0, rejected: 0 };
+    for (const p of myPosts ?? []) {
+      c.all += 1;
+      if (c[p.status] !== undefined) c[p.status] += 1;
+    }
+    return c;
+  }, [myPosts]);
+
+  const visiblePosts = useMemo(() => {
+    if (!myPosts) return null;
+    if (filter === 'all') return myPosts;
+    return myPosts.filter((p) => p.status === filter);
+  }, [myPosts, filter]);
+
+  const saveEdit = async (postId: string, content: string) => {
+    const text = content.trim();
+    if (!text) return;
     try {
-      await apiFetch('/api/users/me', {
+      const res = await fetch(`/api/posts/${postId}`, {
         method: 'PATCH',
-        body: JSON.stringify({
-          email: email || undefined,
-          currentPassword: password ? currentPassword || undefined : undefined,
-          newPassword: password || undefined,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: text }),
       });
-      toast.success('Profile updated');
-      setPassword('');
-      setCurrentPassword('');
-      load();
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Edit failed' }))).message);
+      setMyPosts((prev) => prev?.map((p) => (p.id === postId ? { ...p, content: text, updated_at: Date.now() } : p)) ?? null);
+      setEditingId(null);
+      toast.success('Post updated');
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Failed to update profile');
-    } finally {
-      setSaving(false);
+      toast.error(err instanceof Error ? err.message : 'Could not update post');
     }
   };
 
-  const inputStyle: React.CSSProperties = {
-    width: '100%',
-    padding: '9px 12px',
-    fontSize: 13.5,
-    color: 'var(--text)',
-    background: 'var(--divider)',
-    border: '1.5px solid var(--surface-border)',
-    borderRadius: 'var(--radius-md)',
-    outline: 'none',
+  const deletePost = async (postId: string) => {
+    try {
+      const res = await fetch(`/api/posts/${postId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Delete failed' }))).message);
+      setMyPosts((prev) => prev?.filter((p) => p.id !== postId) ?? null);
+      setConfirmingDelete(null);
+      toast.success('Post deleted');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not delete post');
+    }
   };
 
+  const iconBtn: React.CSSProperties = {
+    padding: 4,
+    borderRadius: 'var(--radius-sm)',
+    color: 'var(--text-light)',
+    background: 'transparent',
+    border: 'none',
+    cursor: 'pointer',
+  };
+
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    padding: '6px 12px',
+    fontSize: 12.5,
+    fontWeight: 600,
+    borderRadius: 'var(--radius-sm)',
+    border: '1.5px solid',
+    borderColor: active ? 'var(--primary)' : 'var(--surface-border)',
+    background: active ? 'rgba(14, 165, 233,0.12)' : 'transparent',
+    color: active ? 'var(--primary)' : 'var(--text-light)',
+    cursor: 'pointer',
+  });
+
   return (
-    <div className="max-w-[900px] mx-auto">
+    <div className="w-full">
       <div className="flex items-center gap-2.5 mb-5">
         <User size={20} style={{ color: 'var(--primary)' }} />
         <h2 className="text-xl font-bold" style={{ color: 'var(--accent)' }}>My Profile</h2>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[18px]">
+      <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', alignSelf: 'start' }}>
-          <div className="flex flex-col items-center px-6 py-8" style={{ background: 'linear-gradient(160deg, rgba(58,139,194,0.12), transparent)' }}>
-            <div className="w-20 h-20 rounded-full flex items-center justify-center font-extrabold text-white mb-3" style={{ fontSize: 26, background: 'linear-gradient(to bottom right, #CBDDE9, #8abbd4)', color: '#2872A1', boxShadow: '0 6px 18px rgba(58,139,194,0.25)' }}>
+          <div className="flex flex-col items-center px-6 py-8" style={{ background: 'linear-gradient(160deg, rgba(14, 165, 233,0.12), transparent)' }}>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center font-extrabold text-white mb-3" style={{ fontSize: 26, background: 'linear-gradient(to bottom right, #bae6fd, #7dd3fc)', color: '#0369a1', boxShadow: '0 6px 18px rgba(14, 165, 233,0.25)' }}>
               {session?.initials || 'U'}
             </div>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>
@@ -177,7 +235,7 @@ export default function ProfileSection() {
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-lighter)' }}>{me}</div>
             <div className="flex items-center gap-1 mt-3">
               <BadgeCheck size={14} style={{ color: 'var(--primary)' }} />
-              <span className="badge badge-sm" style={{ background: 'rgba(58,139,194,0.12)', color: 'var(--primary)' }}>
+              <span className="badge badge-sm" style={{ background: 'rgba(14, 165, 233,0.12)', color: 'var(--primary)' }}>
                 {profile.account?.roleName === 'SYSTEM_ADMIN' ? 'admin' : profile.account?.roleName ? profile.account.roleName.toLowerCase() : session?.role || ''}
               </span>
             </div>
@@ -197,82 +255,140 @@ export default function ProfileSection() {
               </div>
             ))}
           </div>
+          <div className="px-6 pb-6" style={{ borderTop: '1px solid var(--surface)' }}>
+            <button
+              onClick={handleLogout}
+              disabled={loggingOut}
+              className="w-full flex items-center justify-center gap-2 border-none font-semibold disabled:opacity-60"
+              style={{ marginTop: 16, borderRadius: 'var(--radius-sm)', padding: '9px 16px', fontSize: 13, background: 'var(--danger)', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 14px rgba(220, 38, 38, 0.25)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.opacity = '0.9'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.opacity = '1'; }}
+            >
+              {loggingOut ? (
+                <>
+                  <span className="loading loading-spinner loading-sm" /> Logging out...
+                </>
+              ) : (
+                <>
+                  <LogOut size={15} /> Logout
+                </>
+              )}
+            </button>
+          </div>
         </div>
 
-        <div className="flex flex-col gap-[18px]">
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--surface)' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)' }}>Account Settings</div>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-semibold cursor-pointer border-none disabled:opacity-40"
-                style={{ borderRadius: 'var(--radius-sm)', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff' }}
-              >
-                <Save size={13} /> {saving ? 'Saving...' : 'Save Changes'}
+        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+          <div className="flex items-center gap-2 px-5 pt-4" style={{ borderBottom: '1px solid var(--surface)' }}>
+            <Newspaper size={16} style={{ color: 'var(--primary)' }} />
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)' }}>My Posts</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 px-5 py-3" style={{ borderBottom: '1px solid var(--surface)' }}>
+            {FILTERS.map((f) => (
+              <button key={f.id} onClick={() => setFilter(f.id)} style={tabStyle(filter === f.id)}>
+                {f.label} <span style={{ opacity: 0.75 }}>({counts[f.id]})</span>
               </button>
-            </div>
-            <div className="grid grid-cols-1 gap-4 p-5">
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-light)', display: 'block', marginBottom: 5 }}>
-                  <Mail size={12} style={{ verticalAlign: -2 }} /> Email
-                </label>
-                <input style={inputStyle} value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-light)', display: 'block', marginBottom: 5 }}>
-                  <Lock size={12} style={{ verticalAlign: -2 }} /> Current Password
-                </label>
-                <input style={inputStyle} type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Required to change password" />
-              </div>
-              <div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-light)', display: 'block', marginBottom: 5 }}>
-                  <Lock size={12} style={{ verticalAlign: -2 }} /> New Password
-                </label>
-                <input style={inputStyle} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Leave blank to keep current" />
-              </div>
-            </div>
+            ))}
           </div>
 
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '16px 20px', borderBottom: '1px solid var(--surface)' }}>
-              <Newspaper size={16} style={{ color: 'var(--primary)' }} />
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)' }}>My Posts</div>
+          {!myPosts && (
+            <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading...</div>
+          )}
+          {myPosts && myPosts.length === 0 && (
+            <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
+              You haven&apos;t posted anything yet.
             </div>
-            {!myPosts && (
-              <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading...</div>
-            )}
-            {myPosts && myPosts.length === 0 && (
-              <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
-                You haven&apos;t posted anything yet.
-              </div>
-            )}
-            {myPosts?.map((post) => {
-              const meta = POST_STATUS_META[post.status] ?? POST_STATUS_META.pending_review;
-              return (
-                <div key={post.id} className="px-5 py-4" style={{ borderBottom: '1px solid var(--surface)' }}>
-                  <div className="flex items-center justify-between gap-3 mb-1.5">
-                    <span className="badge badge-sm gap-1" style={{ background: meta.color, color: '#fff', border: 'none' }}>
-                      {meta.label}
-                    </span>
-                    <span className="text-xs" style={{ color: 'var(--text-lighter)' }}>{timeAgo(post.created_at)}</span>
+          )}
+          {myPosts && myPosts.length > 0 && visiblePosts?.length === 0 && (
+            <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
+              No posts in this filter.
+            </div>
+          )}
+          {visiblePosts?.map((post) => {
+            const meta = POST_STATUS_META[post.status] ?? POST_STATUS_META.pending_review;
+            const editing = editingId === post.id;
+            return (
+              <div key={post.id} className="px-5 py-4" style={{ borderBottom: '1px solid var(--surface)' }}>
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span className="badge badge-sm gap-1" style={{ background: meta.color, color: '#fff', border: 'none' }}>
+                    {meta.label}
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--text-lighter)' }}>{timeAgo(post.created_at)}</span>
+                  <div className="ml-auto flex items-center gap-1">
+                    <button
+                      onClick={() => { setEditingId(post.id); setEditText(post.content); setConfirmingDelete(null); }}
+                      title="Edit post"
+                      style={iconBtn}
+                      onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; }}
+                    >
+                      <Pencil size={13} />
+                    </button>
+                    {confirmingDelete === post.id ? (
+                      <span className="flex items-center gap-1.5" style={{ fontSize: 11, fontWeight: 600 }}>
+                        <span style={{ color: 'var(--error)' }}>Delete?</span>
+                        <button onClick={() => deletePost(post.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--error)', fontWeight: 700, fontSize: 11 }}>
+                          Yes
+                        </button>
+                        <button onClick={() => setConfirmingDelete(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--text-light)', fontWeight: 600, fontSize: 11 }}>
+                          No
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => { setConfirmingDelete(post.id); setEditingId(null); }}
+                        title="Delete post"
+                        style={iconBtn}
+                        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; }}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    )}
                   </div>
-                  <p className="text-sm" style={{ color: 'var(--text)', lineHeight: 1.6 }}>{post.content}</p>
-                  {post.image && (
-                    <img src={post.image} alt="" className="rounded-lg mt-2 w-full object-cover" style={{ maxHeight: 180 }} />
-                  )}
-                  {post.status === 'rejected' && (
-                    <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>
-                      {post.moderation_note ? `Reason: ${post.moderation_note}` : 'Rejected by moderation'}
-                    </p>
-                  )}
-                  {post.ai_flags && post.status === 'rejected' && (
-                    <p className="text-xs mt-1" style={{ color: 'var(--text-lighter)' }}>AI flags: {post.ai_flags}</p>
-                  )}
                 </div>
-              );
-            })}
-          </div>
+                {editing ? (
+                  <div className="mt-3">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      rows={3}
+                      className="w-full outline-none p-3"
+                      style={{ background: 'var(--divider)', borderRadius: 'var(--radius-md)', fontSize: 14, color: 'var(--text)', lineHeight: 1.6, fontFamily: 'inherit', resize: 'vertical' }}
+                    />
+                    <div className="flex items-center gap-2 mt-2">
+                      <button
+                        onClick={() => saveEdit(post.id, editText)}
+                        disabled={!editText.trim()}
+                        className="flex items-center gap-1.5 px-3 py-1.5 font-semibold border-none disabled:opacity-40 cursor-pointer"
+                        style={{ borderRadius: 'var(--radius-sm)', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', fontSize: 12 }}
+                      >
+                        <Check size={13} /> Save
+                      </button>
+                      <button
+                        onClick={() => setEditingId(null)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 font-semibold border-none cursor-pointer"
+                        style={{ borderRadius: 'var(--radius-sm)', background: 'var(--divider)', color: 'var(--text-light)', fontSize: 12 }}
+                      >
+                        <X size={13} /> Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-sm" style={{ color: 'var(--text)', lineHeight: 1.6 }}>{post.content}</p>
+                    {post.image && (
+                      <img src={post.image} alt="" className="rounded-lg mt-2 w-full object-cover" style={{ maxHeight: 180 }} />
+                    )}
+                    {post.status === 'rejected' && (
+                      <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>
+                        {post.moderation_note ? `Reason: ${post.moderation_note}` : 'Rejected by moderation'}
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>

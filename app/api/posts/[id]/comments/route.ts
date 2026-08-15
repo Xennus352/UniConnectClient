@@ -60,6 +60,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       recipient_email: post.author_email,
       type: 'comment',
       message: `${identity.name} commented on your post`,
+      post_id: id,
+      actor_email: identity.email,
+      actor_name: identity.name,
       created_at: now,
     });
   }

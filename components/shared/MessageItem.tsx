@@ -36,7 +36,7 @@ export default function MessageItem({ initials, color, name, preview, time, unre
       {unread && (
         <div
           className="w-2 h-2 rounded-full shrink-0"
-          style={{ backgroundColor: 'var(--primary)', boxShadow: '0 0 6px rgba(40,114,161,0.3)' }}
+          style={{ backgroundColor: 'var(--primary)', boxShadow: '0 0 6px rgba(2, 132, 199,0.3)' }}
         />
       )}
     </div>

@@ -33,7 +33,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   }
 
   if (body.status !== undefined || body.moderationNote !== undefined) {
-    if (identity.role !== 'admin') return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+    if (identity.role !== 'admin' && identity.role !== 'student-affair') return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
     if (body.status !== undefined) patch['status'] = body.status;
     if (body.moderationNote !== undefined) patch['moderation_note'] = body.moderationNote;
   }
@@ -59,6 +59,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         body.status === 'approved'
           ? 'Your post was approved and published'
           : `Your post was rejected${body.moderationNote ? `: ${body.moderationNote}` : ''}`,
+      post_id: id,
       created_at: Date.now(),
     });
   }

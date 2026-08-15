@@ -2,7 +2,6 @@
 
 import { useState, useCallback } from 'react';
 import Link from 'next/link';
-import { toast } from 'sonner';
 import { useSupabase } from '@/utils/supabase/client';
 import { useFeedPosts } from '@/lib/supabase/hooks';
 import WelcomeBar from '@/components/shared/WelcomeBar';
@@ -10,17 +9,21 @@ import StatCard from '@/components/shared/StatCard';
 import DataTable from '@/components/shared/DataTable';
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
 import FeedPost from '@/components/shared/FeedPost';
+import LostFoundPage from '@/components/shared/LostFoundSection';
 import { apiFetch } from '@/components/shared/api';
 import { useSession } from '@/components/shared/session';
 import type { StudentRecord, AttendanceRecord, ScheduleRecord, AcademicTermRecord, ResultDocumentRecord } from '@/components/shared/api';
 import { useUniversityData } from '@/components/shared/useUniversityData';
 import {
   GraduationCap, BookOpen, ClipboardCheck, CalendarCheck, CalendarDays,
-  Newspaper, FileText, Search, Plus, Check, X,
-  Clock, Users, Upload, ShieldCheck,
+  Newspaper, FileText, Plus, Check, X,
+  Clock, Users, Upload, ShieldCheck, Ban,
 } from 'lucide-react';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { default as InboxSection } from '@/components/shared/InboxSection';
+export { ExploreSection } from '@/components/admin/sections';
+import BlockedSection from '@/components/shared/BlockedSection';
 
 interface TimetableEntry {
   time: string;
@@ -331,81 +334,10 @@ export function RollCallSection() {
   );
 }
 
-export function EventsSection() {
-  return (
-    <div>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Events</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>University events and academic calendar</p>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <div className="bg-base-100 backdrop-blur-xl" style={cardStyle}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CalendarCheck size={16} /> Upcoming Events
-            </h3>
-            <span style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600 }}>View All</span>
-          </div>
-          <div style={{ padding: '18px 22px', fontSize: 12, color: 'var(--text-lighter)' }}>No events yet</div>
-        </div>
-        <div className="bg-base-100 backdrop-blur-xl" style={cardStyle}>
-          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <CalendarDays size={16} /> Quick Actions
-            </h3>
-          </div>
-          <div style={{ padding: '18px 22px' }}>
-            <p style={{ fontSize: 12, color: 'var(--text-lighter)', margin: '0 0 16px 0' }}>Manage your event registrations and reminders</p>
-            <button
-              style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 10 }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}
-            ><Plus size={14} /> Register for Event</button>
-            <button
-              style={{ width: '100%', background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--secondary)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--secondary-light)'; }}
-            ><CalendarDays size={14} /> View Calendar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+export { default as EventsSection } from '@/components/shared/EventsSection';
 
 export function LostFoundSection() {
-  return (
-    <div>
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Lost & Found</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Report and browse lost and found items on campus</p>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 18, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', flex: 1, minWidth: 200 }}>
-          <Search size={14} style={{ color: 'var(--text-light)' }} />
-          <input type="text" placeholder="Search items..." style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', width: '100%' }} />
-        </div>
-        <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, cursor: 'pointer', minWidth: 140 }}>
-          <option>All Status</option>
-          <option>Lost</option>
-          <option>Found</option>
-        </select>
-        <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, cursor: 'pointer', minWidth: 140 }}>
-          <option>All Locations</option>
-          <option>Library</option>
-          <option>CS Building</option>
-          <option>Cafeteria</option>
-        </select>
-        <button
-          onClick={() => toast.success('Report submitted to Student Affairs')}
-          style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}
-        ><Plus size={14} /> Report Item</button>
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', gridColumn: '1 / -1' }}>
-          <div style={{ padding: '24px 22px', fontSize: 12, color: 'var(--text-lighter)' }}>No lost &amp; found items yet</div>
-        </div>
-      </div>
-    </div>
-  );
+  return <LostFoundPage />;
 }
 
 export function SettingsSection() {
@@ -416,7 +348,7 @@ export function SettingsSection() {
       <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Settings</h1>
       <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Manage your account and preferences</p>
       <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--surface)' }}>
-        {['Profile', 'Security', 'Appearance'].map(t => (
+        {['Profile', 'Security', 'Appearance', 'Blocked'].map(t => (
           <button key={t} onClick={() => setSettingsTab(t)}
             style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: settingsTab === t ? 'var(--primary)' : 'var(--text-light)', cursor: 'pointer', borderBottom: '2.5px solid transparent', borderBottomColor: settingsTab === t ? 'var(--primary)' : 'transparent', background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>{t}</button>
         ))}
@@ -456,9 +388,9 @@ export function SettingsSection() {
               <button style={{ background: 'transparent', color: 'var(--text-light)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface)'; e.currentTarget.style.color = 'var(--primary)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-light)'; }}>Cancel</button>
-              <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(40,114,161,0.3)' }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(40,114,161,0.4)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(40,114,161,0.3)'; }}>Save Changes</button>
+              <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)' }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)'; }}>Save Changes</button>
             </div>
           </div>
         </div>
@@ -477,9 +409,18 @@ export function SettingsSection() {
             </div>
           </div>
         </div>
-      ) : (
+      ) : settingsTab === 'Appearance' ? (
         <div className="bg-base-100 backdrop-blur-xl" style={cardStyle}>
           <ThemeSwitcher bare />
+        </div>
+      ) : (
+        <div className="bg-base-100 backdrop-blur-xl" style={cardStyle}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}><Ban size={16} /> Blocked Users</div>
+          </div>
+          <div style={{ padding: '16px 22px' }}>
+            <BlockedSection bare />
+          </div>
         </div>
       )}
     </div>

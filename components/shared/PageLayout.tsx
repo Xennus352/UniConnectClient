@@ -54,11 +54,11 @@ export default function PageLayout({ role, children }: PageLayoutProps) {
         ref={drawerRef}
         defaultChecked={false}
       />
-      <div className="drawer-content flex flex-col">
+      <div className="drawer-content flex flex-col min-h-[100dvh]">
         <RealtimeAlerts />
         <Navbar onMenuToggle={toggleDrawer} basePath={basePath} />
         <main className="flex-1 overflow-y-auto p-4 lg:p-7">
-          <div className="max-w-[1280px] mx-auto">{children}</div>
+          <div className="max-w-[1280px] mx-auto h-full">{children}</div>
         </main>
       </div>
       <div className="drawer-side z-50">
