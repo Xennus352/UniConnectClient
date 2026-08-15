@@ -68,21 +68,31 @@ export async function DELETE(request: NextRequest, { params }: { params: Promise
 
 async function handle(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params;
-  const pathname = `/${path.join('/')}`;
+  const pathname = `/${path.join('/')}${request.nextUrl.search}`;
   const tokensRaw = request.cookies.get('uniconnect_backend')?.value;
   const responseHeaders: Record<string, string> = {};
 
-  const buildInit = async (token: string): Promise<RequestInit> => ({
+  // Buffer the raw body once so binary payloads (e.g. Excel uploads sent as
+  // multipart/form-data) survive the proxy intact, including a retry after a
+  // token refresh.
+  const rawBody =
+    request.method === 'GET' || request.method === 'HEAD'
+      ? undefined
+      : new Uint8Array(await request.arrayBuffer());
+
+  const buildInit = (token: string): RequestInit => ({
     method: request.method,
     headers: {
       Authorization: `Bearer ${token}`,
-      'Content-Type': request.headers.get('content-type') || 'application/json',
+      ...(request.headers.get('content-type')
+        ? { 'Content-Type': request.headers.get('content-type') as string }
+        : {}),
     },
-    body: request.method === 'GET' || request.method === 'HEAD' ? undefined : await request.text(),
+    body: rawBody,
   });
 
   const execute = async (token: string) => {
-    const res = await callSpring(pathname, await buildInit(token));
+    const res = await callSpring(pathname, buildInit(token));
     // The university server reports an expired/invalid access token as 403
     // (Spring's default entry point), so refresh on both 401 and 403.
     if ((res.status === 401 || res.status === 403) && tokensRaw) {
@@ -91,9 +101,13 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
         const refreshed = await refreshOnce(tokens.refreshToken).catch(() => null);
         if (refreshed) {
           responseHeaders['set-cookie'] = JSON.stringify({ ...tokens, ...refreshed });
-          return callSpring(pathname, await buildInit(refreshed.accessToken));
+          return callSpring(pathname, buildInit(refreshed.accessToken));
         }
       }
+      // Refresh failed (revoked/expired refresh token): the session is over,
+      // so drop the stored tokens instead of retrying every poll.
+      responseHeaders['clear-cookie'] = 'true';
+      return NextResponse.json({ message: 'Session expired' }, { status: 401 });
     }
     return res;
   };
@@ -107,11 +121,17 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
     const res = await execute(tokens.accessToken);
 
     const body = await res.text();
-    const response = new NextResponse(body, { status: res.status, headers: { 'content-type': res.headers.get('content-type') || 'application/json' } });
+    const nullBodyStatus = res.status === 204 || res.status === 205 || res.status === 304;
+    const response = new NextResponse(nullBodyStatus ? null : body, {
+      status: res.status,
+      headers: { 'content-type': res.headers.get('content-type') || 'application/json' },
+    });
 
     if (responseHeaders['set-cookie']) {
       const nextTokens = JSON.parse(responseHeaders['set-cookie']);
       response.cookies.set('uniconnect_backend', JSON.stringify(nextTokens), COOKIE_OPTS);
+    } else if (responseHeaders['clear-cookie']) {
+      response.cookies.set('uniconnect_backend', '', { ...COOKIE_OPTS, maxAge: 0 });
     }
     return response;
   } catch (e) {

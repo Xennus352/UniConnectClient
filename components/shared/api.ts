@@ -23,7 +23,7 @@ export interface StudentRecord {
   studentName: string;
   phoneNo: string | null;
   address: string | null;
-  birthYear: number | null;
+  batchYear: number | null;
 }
 
 export interface StaffRecord {
@@ -38,6 +38,7 @@ export interface StaffRecord {
   unitName: string;
   joinedAt: string | null;
   leftDate: string | null;
+  positions: string[];
 }
 
 export interface AttendanceRecord {
@@ -108,6 +109,11 @@ export interface OrganizationalUnitRecord {
 export interface SectionRecord {
   sectionId: string;
   sectionName: string;
+}
+
+export interface SemesterRecord {
+  semesterId: string;
+  semesterNo: number;
 }
 
 export interface AcademicTermRecord {
@@ -182,7 +188,13 @@ export async function backendLogout(): Promise<void> {
   await fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
 }
 
-const API_TIMEOUT_MS = 12000;
+const API_TIMEOUT_MS = 60000;
+// Bulk imports run one row at a time against the (remote) university server and
+// can take several minutes for large spreadsheets. The general 60s timeout would
+// abort the request while the server keeps inserting rows, leaving the UI to
+// report a failure even though every row was actually created. Uploads therefore
+// use a much larger budget so the response is awaited to completion.
+const UPLOAD_TIMEOUT_MS = 20 * 60 * 1000;
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const { signal: callerSignal, ...initRest } = init ?? {};
@@ -197,11 +209,19 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
       signal,
       headers: { 'Content-Type': 'application/json', ...(initRest.headers || {}) },
     });
+    if (res.status === 401) {
+      await backendLogout();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+      throw new Error('Session expired — please sign in again');
+    }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err?.message || `Request failed (${res.status})`);
     }
-    return res.json() as Promise<T>;
+    const text = await res.text();
+    return text ? (JSON.parse(text) as T) : (undefined as T);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       throw new Error('Request timed out — please try again');
@@ -210,6 +230,88 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export interface ImportErrorRow {
+  row: number;
+  message: string;
+}
+
+export interface ImportResult {
+  created: number;
+  errors: ImportErrorRow[];
+}
+
+export async function uploadExcel<T = ImportResult>(path: string, file: File): Promise<T> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS);
+  try {
+    const res = await fetch(`/api/backend${path}`, {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    });
+    if (res.status === 401) {
+      await backendLogout();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/';
+      }
+      throw new Error('Session expired — please sign in again');
+    }
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.message || `Upload failed (${res.status})`);
+    }
+    const text = await res.text();
+    return text ? (JSON.parse(text) as T) : (undefined as T);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Upload timed out — please try again');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+export function bulkDeleteUsers(userIds: string[]): Promise<void> {
+  return apiFetch<void>('/api/users/bulk-delete', {
+    method: 'POST',
+    body: JSON.stringify({ userIds }),
+  });
+}
+
+export function deleteUser(userId: string): Promise<void> {
+  return apiFetch<void>(`/api/users/${userId}`, {
+    method: 'DELETE',
+  });
+}
+
+export function updateUser(
+  userId: string,
+  fields: { email?: string; isActive?: boolean },
+): Promise<UserRecord> {
+  return apiFetch(`/api/users/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(fields),
+  });
+}
+
+const STAFF_IMPORT_TYPES: Record<string, string> = {
+  lecturers: 'LECTURER',
+  'student-affairs': 'STUDENT_AFFAIRS',
+  finance: 'FINANCE',
+  'administrative-officers': 'ADMINISTRATIVE',
+};
+
+export function importUsersExcel(target: string, file: File): Promise<ImportResult> {
+  if (target === 'students') {
+    return uploadExcel('/api/students/import', file);
+  }
+  const importType = STAFF_IMPORT_TYPES[target] ?? target;
+  return uploadExcel(`/api/staff/import?type=${encodeURIComponent(importType)}`, file);
 }
 
 export interface MarkAttendanceEntry {

@@ -33,6 +33,7 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   ShieldCheck: Icons.ShieldCheck,
   User: Icons.User,
   UserCog: Icons.UserCog,
+  Landmark: Icons.Landmark,
 };
 
 interface SidebarProps {

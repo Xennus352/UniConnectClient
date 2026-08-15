@@ -115,11 +115,21 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       ],
     },
     {
+      section: 'ADMINISTRATIVE',
+      items: [
+        { icon: 'ShieldCheck', label: 'Student Affairs', id: 'student-affairs' },
+        { icon: 'Coins', label: 'Finance', id: 'finance' },
+        { icon: 'Landmark', label: 'Administrative', id: 'administrative' },
+      ],
+    },
+    {
       section: 'User Management',
       items: [
         { icon: 'GraduationCap', label: 'User \u2013 Students', id: 'user-students' },
         { icon: 'Presentation', label: 'User \u2013 Lecturers', id: 'user-lecturers' },
         { icon: 'ShieldCheck', label: 'User \u2013 Student Affairs', id: 'user-student-affairs' },
+        { icon: 'Coins', label: 'User \u2013 Finance', id: 'user-finance' },
+        { icon: 'Landmark', label: 'User \u2013 Administrative Officers', id: 'user-administrative-officers' },
         { icon: 'UserCog', label: 'User \u2013 Admins', id: 'user-admins' },
       ],
     },
