@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { Heart, MessageCircle, Share2, CircleCheck, Send, Pencil, Trash2, X, Check } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
@@ -53,6 +54,7 @@ export default function FeedPost({ post }: FeedPostProps) {
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const commentInputRef = useRef<HTMLInputElement>(null);
   const submittingRef = useRef(false);
+  const [likePulse, setLikePulse] = useState(0);
 
   const isMine = post.author_email === me;
   const isEdited = (post.updated_at ?? 0) > (post.created_at ?? 0);
@@ -72,6 +74,7 @@ export default function FeedPost({ post }: FeedPostProps) {
     e.stopPropagation();
     if (!me) return;
     const next = !isLiked;
+    setLikePulse((c) => c + 1);
     setOptimisticLiked(next);
     setOptimisticLikes((c) => (next ? (c ?? 0) + 1 : (c ?? 0) - 1));
     try {
@@ -342,7 +345,16 @@ export default function FeedPost({ post }: FeedPostProps) {
               if (!isLiked) { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }
             }}
           >
-            <Heart size={14} fill={isLiked ? 'currentColor' : 'none'} /> {likesCount ?? '—'}
+            <motion.span
+              key={likePulse}
+              initial={{ scale: 1 }}
+              animate={{ scale: [1, 1.35, 1] }}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
+              className="inline-flex"
+            >
+              <Heart size={14} fill={isLiked ? 'currentColor' : 'none'} />
+            </motion.span>
+            {' '}{likesCount ?? '—'}
           </button>
           <button
             onClick={() => { setShowComments(prev => !prev); setTimeout(() => commentInputRef.current?.focus(), 50); }}
@@ -365,13 +377,27 @@ export default function FeedPost({ post }: FeedPostProps) {
         </div>
 
         {shareMsg && (
-          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(14, 165, 233,0.1)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}>
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9, y: -4 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: -4 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 26 }}
+            style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(14, 165, 233,0.1)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}
+          >
             {shareMsg}
-          </div>
+          </motion.div>
         )}
 
-        {showComments && (
-          <div className="mt-3 pt-3" style={{ borderTop: '1px solid var(--divider)' }}>
+        <AnimatePresence initial={false}>
+          {showComments && (
+          <motion.div
+            initial={{ opacity: 0, height: 0, y: -10 }}
+            animate={{ opacity: 1, height: 'auto', y: 0 }}
+            exit={{ opacity: 0, height: 0, y: -8 }}
+            transition={{ type: 'spring', stiffness: 380, damping: 32 }}
+            className="mt-3 pt-3 overflow-hidden"
+            style={{ borderTop: '1px solid var(--divider)' }}
+          >
             {(comments ?? []).map((c) => (
               <CommentRow key={c.id} comment={c} me={me} meInitials={meInitials} onEdit={editComment} onDelete={deleteComment} />
             ))}
@@ -410,8 +436,9 @@ export default function FeedPost({ post }: FeedPostProps) {
                 </button>
               </div>
             </div>
-          </div>
-        )}
+          </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       <ShareModal

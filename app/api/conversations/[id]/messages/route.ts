@@ -20,11 +20,44 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ message: 'Not a participant' }, { status: 403 });
   }
 
-  await supabase
-    .from('chat_messages')
-    .update({ is_read: true })
-    .eq('conversation_id', id)
-    .neq('sender_email', identity.email);
+  const participantMeta = (conv.participant_meta as Array<{ email?: string }> | null) ?? [];
+  const isGroup = (conv.participant_ids?.length ?? 0) > 2 || participantMeta.some((m) => m.email === '__GROUP__');
+  const now = Date.now();
+
+  if (isGroup) {
+    const { data: msgs, error: mErr } = await supabase
+      .from('chat_messages')
+      .select('id')
+      .eq('conversation_id', id)
+      .neq('sender_email', identity.email);
+    if (mErr) return NextResponse.json({ message: mErr.message }, { status: 500 });
+    if (msgs && msgs.length > 0) {
+      await supabase
+        .from('message_reads')
+        .upsert(
+          msgs.map((msg) => ({
+            message_id: msg.id,
+            conversation_id: id,
+            reader_email: identity.email,
+            read_at: now,
+          })),
+          { onConflict: 'message_id,reader_email', ignoreDuplicates: true }
+        );
+    }
+    await supabase
+      .from('chat_messages')
+      .update({ is_read: true })
+      .eq('conversation_id', id)
+      .neq('sender_email', identity.email)
+      .eq('is_read', false);
+  } else {
+    await supabase
+      .from('chat_messages')
+      .update({ is_read: true })
+      .eq('conversation_id', id)
+      .neq('sender_email', identity.email)
+      .eq('is_read', false);
+  }
 
   const unreadMap = { ...((conv.unread_map ?? {}) as Record<string, number>) };
   unreadMap[identity.email] = 0;
@@ -59,9 +92,10 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const identity = await getSessionIdentity();
   if (!identity) return NextResponse.json({ message: 'Not authenticated' }, { status: 401 });
   const { id } = await params;
-  const { content, attachments } = (await request.json().catch(() => ({ content: '', attachments: undefined }))) as {
+  const { content, attachments, mentions } = (await request.json().catch(() => ({ content: '', attachments: undefined }))) as {
     content?: string;
     attachments?: { name: string; size: number; mime: string; path: string }[];
+    mentions?: string[];
   };
   const text = (content ?? '').trim();
 
@@ -98,6 +132,38 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   }
 
   const now = Date.now();
+  const participantMeta = (conv.participant_meta as Array<{ email?: string; name?: string }> | null) ?? [];
+  const nameByEmail = new Map<string, string>();
+  for (const p of participantMeta) {
+    if (p.email) nameByEmail.set(p.email.toLowerCase(), p.name || p.email.split('@')[0]);
+  }
+  const derived = new Set<string>();
+  const mentionPattern = (() => {
+    const names = [...new Set([...nameByEmail.values(), 'everyone'])].filter(Boolean).sort((a, b) => b.length - a.length);
+    if (names.length === 0) return null;
+    const escaped = names.map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+    return new RegExp(`@(${escaped})(?=\\s|$|[.,!?;:…])`, 'gi');
+  })();
+  if (mentionPattern) {
+    for (const match of text.match(mentionPattern) ?? []) {
+      const name = match.slice(1).toLowerCase();
+      if (name === 'everyone') derived.add('everyone');
+      else {
+        for (const [email, n] of nameByEmail) {
+          if (n.toLowerCase() === name) derived.add(email);
+        }
+      }
+    }
+  }
+  const mentionSet = new Set<string>(derived);
+  for (const m of mentions ?? []) {
+    const email = (m ?? '').trim().toLowerCase();
+    if (!email) continue;
+    if (email === 'everyone') mentionSet.add('everyone');
+    else if ((conv.participant_ids as string[]).some((e) => e.toLowerCase() === email)) mentionSet.add(email);
+  }
+  const finalMentions = [...mentionSet];
+
   const { data: message, error } = await supabase
     .from('chat_messages')
     .insert({
@@ -106,6 +172,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       sender_name: identity.name,
       content: text,
       attachments: atts.length > 0 ? atts : undefined,
+      mentions: finalMentions.length > 0 ? finalMentions : undefined,
       created_at: now,
     })
     .select()
@@ -124,9 +191,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     })
     .eq('id', id);
 
-  if (others.length > 0) {
+  const notifyEmails = finalMentions.includes('everyone')
+    ? others
+    : others.filter((e) => finalMentions.includes(e.toLowerCase()));
+  if (notifyEmails.length > 0) {
     await supabase.from('notifications').insert(
-      others.map((email) => ({
+      notifyEmails.map((email) => ({
         recipient_email: email,
         type: 'message',
         message: `New message from ${identity.name}`,

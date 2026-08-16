@@ -131,6 +131,7 @@ export interface Database {
           last_message_at: number;
           preview: string | null;
           unread_map: Json | null;
+          hidden_map: Json | null;
         };
         Insert: {
           participant_ids: string[];
@@ -142,6 +143,7 @@ export interface Database {
           last_message_at?: number | null;
           preview?: string | null;
           unread_map?: Json | null;
+          hidden_map?: Json | null;
         };
         Update: {
           status?: string | null;
@@ -151,6 +153,7 @@ export interface Database {
           participant_meta?: Json | null;
           preview?: string | null;
           unread_map?: Json | null;
+          hidden_map?: Json | null;
         };
         Relationships: [];
       };
@@ -162,6 +165,7 @@ export interface Database {
           sender_name: string;
           content: string;
           attachments: Json | null;
+          mentions: Json | null;
           created_at: number;
           is_read: boolean;
         };
@@ -171,10 +175,11 @@ export interface Database {
           sender_name: string;
           content: string;
           attachments?: Json | null;
+          mentions?: Json | null;
           created_at?: number | null;
           is_read?: boolean | null;
         };
-        Update: { is_read?: boolean | null; attachments?: Json | null };
+        Update: { is_read?: boolean | null; attachments?: Json | null; mentions?: Json | null };
         Relationships: [];
       };
       notifications: {
@@ -248,6 +253,20 @@ export interface Database {
           created_at?: number;
         };
         Update: Record<string, never>;
+        Relationships: [];
+      };
+      user_presence: {
+        Row: {
+          email: string;
+          last_seen: number;
+          updated_at: number;
+        };
+        Insert: {
+          email: string;
+          last_seen?: number | null;
+          updated_at?: number | null;
+        };
+        Update: { last_seen?: number | null; updated_at?: number | null };
         Relationships: [];
       };
     };

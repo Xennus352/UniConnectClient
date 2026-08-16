@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Toaster from "@/components/shared/Toaster";
 import { SessionProvider } from "@/components/shared/SessionProvider";
+import { PresenceProvider } from "@/components/shared/PresenceProvider";
 
 export const metadata: Metadata = {
   title: "UniConnect - University Communication Platform",
@@ -29,7 +30,9 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       </head>
       <body className="min-h-screen" style={{ fontFamily: "'Poppins', sans-serif" }}>
-        <SessionProvider>{children}</SessionProvider>
+        <SessionProvider>
+          <PresenceProvider>{children}</PresenceProvider>
+        </SessionProvider>
         <Toaster />
       </body>
     </html>

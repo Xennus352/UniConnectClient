@@ -134,6 +134,32 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ ok: true });
   }
 
+  if (action === 'hide' || action === 'unhide') {
+    const hiddenMap = { ...((conv.hidden_map ?? {}) as Record<string, number>) };
+    if (action === 'hide') hiddenMap[identity.email] = Date.now();
+    else delete hiddenMap[identity.email];
+    const { error } = await supabase.from('conversations').update({ hidden_map: hiddenMap }).eq('id', id);
+    if (error) return NextResponse.json({ message: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
+  if (action === 'leave') {
+    if (!isGroup) return NextResponse.json({ message: 'Not a group conversation' }, { status: 400 });
+    if (isCreator) {
+      return NextResponse.json({ message: 'The group creator cannot leave — delete the group instead' }, { status: 400 });
+    }
+    const participant_ids = (conv.participant_ids as string[]).filter((e) => e !== identity.email);
+    const newMeta = meta.filter((m) => m.email !== identity.email);
+    if (participant_ids.length === 0) {
+      const { error } = await supabase.from('conversations').delete().eq('id', id);
+      if (error) return NextResponse.json({ message: error.message }, { status: 500 });
+      return NextResponse.json({ ok: true });
+    }
+    const { error } = await supabase.from('conversations').update({ participant_ids, participant_meta: newMeta }).eq('id', id);
+    if (error) return NextResponse.json({ message: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   return NextResponse.json({ message: 'Unknown action' }, { status: 400 });
 }
 

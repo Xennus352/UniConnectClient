@@ -1,17 +1,24 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
+import type { ReactNode } from 'react';
+import type { RealtimeChannel } from '@supabase/supabase-js';
 import Link from 'next/link';
 import {
   MessageSquare, Send, Plus, Search, UserCheck, UserX, Ban, RotateCcw, Clock,
   Users, Check, Filter, Settings, UserMinus, Trash2, Paperclip, FileText,
-  FileSpreadsheet, File, Download, Loader2, Image as ImageIcon, Share2,
+  FileSpreadsheet, File, Download, Loader2, Image as ImageIcon, Share2, LogOut,
+  Ellipsis, Pencil, X, CheckCheck,
 } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import type { Database } from '@/utils/supabase/types';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
 import { useSession } from './session';
-import { useUniversityPeople } from './useUniversityPeople';
+import { usePresence } from './PresenceProvider';
+import { useUniversityPeople, useUniversityRaw } from './useUniversityPeople';
+import { apiFetch, type AcademicTermRecord } from './api';
 import { toast } from 'sonner';
 
 type ConvStatus = 'pending' | 'active' | 'blocked';
@@ -38,6 +45,7 @@ interface ConvInfo {
   isGroup: boolean;
   groupName: string;
   creatorEmail: string;
+  hiddenAt?: number;
   other: { email: string; name: string; initials: string };
   members: { email: string; name: string; initials: string }[];
 }
@@ -61,8 +69,33 @@ interface SharedPostData {
 type SharedPostEntry = { kind: 'post'; post: SharedPostData };
 type MessageAttachment = ChatAttachment | SharedPostEntry;
 
+type RawAttachment = Record<string, unknown>;
+
+function normalizeAttachments(raw: unknown): MessageAttachment[] | undefined {
+  if (!Array.isArray(raw) || raw.length === 0) return undefined;
+  return raw.map((entry) => {
+    const a = (entry ?? {}) as RawAttachment;
+    if (a.kind === 'post' || a.post || a.post_data) {
+      const post = ((a.post ?? a.post_data) ?? {}) as RawAttachment;
+      return {
+        kind: 'post',
+        post: {
+          id: (post.id ?? a.feed_post_id ?? '') as string,
+          content: (post.content ?? a.shared_content ?? '') as string,
+          author_name: (post.author_name ?? '') as string,
+          image: (post.image ?? null) as string | null,
+          created_at: post.created_at as number | undefined,
+          tags: post.tags as unknown,
+        },
+      } as SharedPostEntry;
+    }
+    return a as unknown as ChatAttachment;
+  });
+}
+
 function isSharedPost(a: MessageAttachment): a is SharedPostEntry {
-  return (a as { kind?: string }).kind === 'post';
+  const x = a as { kind?: string; post?: unknown; post_data?: unknown };
+  return x.kind === 'post' || !!x.post || !!x.post_data;
 }
 
 interface ChatMessage {
@@ -73,6 +106,10 @@ interface ChatMessage {
   content: string;
   attachments?: MessageAttachment[];
   created_at: number;
+  editedAt?: number | null;
+  isDeleted?: boolean;
+  is_read?: boolean;
+  pending?: boolean;
 }
 
 const ATTACH_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.txt,.csv,.zip';
@@ -80,13 +117,25 @@ const ATTACH_ACCEPT = 'image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.odt,.ods,.
 type ChatMessageRow = Database['public']['Tables']['chat_messages']['Row'];
 
 function toChatMessage(m: ChatMessageRow): ChatMessage {
-  return {
+  const row = m as unknown as RawAttachment;
+  let attachments = normalizeAttachments(m.attachments);
+  if ((!attachments || attachments.length === 0) && (row.post_data || row.feed_post_id || row.shared_content)) {
+    attachments = normalizeAttachments([
+      { kind: 'post', post: row.post_data ?? {}, feed_post_id: row.feed_post_id, shared_content: row.shared_content },
+    ]);
+  }
+  const rawEdited = row.edited_at as number | string | null | undefined;
+    const editedAt = typeof rawEdited === 'string' ? Date.parse(rawEdited) : (rawEdited ?? null);
+    return {
     id: m.id,
     sender_email: m.sender_email,
     sender_name: m.sender_name,
     content: m.content,
     created_at: m.created_at,
-    attachments: (m.attachments as MessageAttachment[] | null) ?? undefined,
+    editedAt: Number.isNaN(editedAt) ? null : editedAt,
+    isDeleted: (row.is_deleted as boolean | undefined) ?? false,
+    is_read: m.is_read,
+    attachments,
   };
 }
 
@@ -233,12 +282,71 @@ function timeLabel(ts: number): string {
   return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
+function lastSeenLabel(ts: number): string {
+  if (!ts) return '';
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(ts).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function extractMentionTokens(text: string, memberNames: string[] = []): string[] {
+  const re = buildMentionRegex([...new Set([...memberNames, 'everyone'])].filter(Boolean));
+  if (!re) return [];
+  return text.match(re)?.map((t) => t.slice(1).toLowerCase()) ?? [];
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function buildMentionRegex(memberNames: string[]): RegExp | null {
+  const names = [...new Set(memberNames.map((n) => n.trim()).filter(Boolean))]
+    .sort((a, b) => b.length - a.length);
+  if (names.length === 0) return null;
+  return new RegExp(`(@(?:${names.map(escapeRegex).join('|')}))(?=\\s|$|[.,!?;:…])`, 'gi');
+}
+
+interface MentionRenderOpts {
+  regex: RegExp | null;
+  onMention: (name: string) => void;
+}
+
+function renderMentionedContent(content: string, opts: MentionRenderOpts): ReactNode {
+  if (!opts.regex) return content;
+  const parts = content.split(opts.regex);
+  return (
+    <>
+      {parts.map((part, i) => {
+        if (!part.startsWith('@') || part.length === 1) return part;
+        return (
+          <span
+            key={i}
+            className="italic underline decoration-accent decoration-2 underline-offset-2 text-accent font-semibold cursor-pointer hover:text-accent-focus hover:opacity-80 transition-colors"
+            title={`View ${part}'s profile`}
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              opts.onMention(part.slice(1));
+            }}
+          >
+            {part}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 export default function MessagesSection() {
   const supabase = useSupabase();
   const { user: session } = useSession();
   const me = session?.email ?? '';
-  const myName = session?.name ?? me;
-  const myInitials = session?.initials ?? me.slice(0, 2).toUpperCase();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<ConvInfo[] | null>(null);
@@ -264,15 +372,57 @@ export default function MessagesSection() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const msgScrollRef = useRef<HTMLDivElement>(null);
+  const [isTyping, setIsTyping] = useState(false);
+  const typingChanRef = useRef<RealtimeChannel | null>(null);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTypingSentRef = useRef(0);
+  const draftInputRef = useRef<HTMLTextAreaElement>(null);
+  const caretRef = useRef(0);
+  const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [deletingMsg, setDeletingMsg] = useState(false);
+  type MentionProfile = { kind: 'member'; email: string; name: string; initials: string } | { kind: 'group' };
+  const [selectedMentionUser, setSelectedMentionUser] = useState<MentionProfile | null>(null);
+  const isProfileModalOpen = selectedMentionUser !== null;
+  type ConfirmState = { kind: 'hide'; conv: ConvInfo } | { kind: 'leave' } | { kind: 'deleteMsg'; messageId: string };
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  const [sendPulse, setSendPulse] = useState(0);
+  const [readMap, setReadMap] = useState<Record<string, { email: string; readAt: number }[]>>({});
+  const [readOpenFor, setReadOpenFor] = useState<string | null>(null);
   const MESSAGE_PAGE = 20;
   const [prevSelectedId, setPrevSelectedId] = useState<string | null>(selectedId);
   if (prevSelectedId !== selectedId) {
     setPrevSelectedId(selectedId);
     setMessages(null);
     setHasMoreMsgs(false);
+    setMentionQuery(null);
   }
 
+  const lastReadMarkRef = useRef(0);
+  const markMessagesRead = useCallback(() => {
+    if (!selectedId || !me) return;
+    fetch(`/api/conversations/${selectedId}/messages`, { method: 'PATCH' }).catch(() => {});
+  }, [selectedId, me]);
+
   const { people, loading: peopleLoading, error: peopleError, refresh: peopleRefresh } = useUniversityPeople();
+  const { users, students, staff } = useUniversityRaw();
+
+  const [termMap, setTermMap] = useState<Record<string, string> | null>(null);
+  useEffect(() => {
+    if (!isProfileModalOpen || termMap) return;
+    let cancelled = false;
+    apiFetch<AcademicTermRecord[]>('/api/terms')
+      .then((rows) => {
+        if (cancelled) return;
+        const map: Record<string, string> = {};
+        for (const t of rows) map[t.termId] = `Academic Year ${t.academicYear}`;
+        setTermMap(map);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [isProfileModalOpen, termMap]);
 
   useEffect(() => {
     if (!me) return;
@@ -284,7 +434,7 @@ export default function MessagesSection() {
         .order('last_message_at', { ascending: false });
       if (error) { console.error(error); setConversations([]); return; }
       const enriched: ConvInfo[] = (data ?? []).map((conv) => {
-        const meta = (conv.participant_meta as any[]) || [];
+        const meta = (conv.participant_meta as Array<{ email: string; name: string; initials: string }>) || [];
         const participants = (conv.participant_ids as string[]) || [];
         const groupEntry = meta.find((m) => m.email === GROUP_META_EMAIL);
         const isGroup = participants.length > 2 || !!groupEntry;
@@ -303,6 +453,7 @@ export default function MessagesSection() {
           lastMessageAt: conv.last_message_at || 0,
           preview: conv?.preview ?? '',
           unread: ((conv.unread_map ?? {}) as Record<string, number>)[me] ?? 0,
+          hiddenAt: ((conv.hidden_map ?? {}) as Record<string, number>)[me],
           isGroup,
           groupName: groupEntry?.name || (isGroup ? `Group (${participants.length})` : ''),
           creatorEmail,
@@ -344,33 +495,137 @@ export default function MessagesSection() {
     };
     load();
     const ch = supabase
-      .channel(uniqueChannelName(`public:chat_messages:conv:${selectedId}`))
+      .channel(uniqueChannelName(`chat-room:${selectedId}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'chat_messages', filter: `conversation_id=eq.${selectedId}` }, (payload) => {
         setMessages((prev) => {
           if (!prev) return prev;
           if (payload.eventType === 'INSERT') {
-            const m = payload.new as ChatMessage;
-            if (prev.some((x) => x.id === m.id)) return prev;
+            const m = toChatMessage(payload.new as ChatMessageRow);
+            const existing = prev.find((x) => x.id === m.id);
+            if (existing) {
+              return prev.map((x) => (x.id === m.id ? { ...x, ...m, pending: false } : x));
+            }
             if (m.sender_email !== me) {
-              fetch(`/api/conversations/${selectedId}/messages`, { method: 'PATCH' }).catch(() => {});
+              markMessagesRead();
             }
             return [...prev, m];
           }
-          if (payload.eventType === 'DELETE') return prev.filter((m) => m.id !== (payload.old as ChatMessage).id);
-          return prev.map((m) => (m.id === (payload.new as ChatMessage)?.id ? (payload.new as ChatMessage) : m));
+          if (payload.eventType === 'DELETE') return prev.filter((m) => m.id !== (payload.old as ChatMessageRow).id);
+          const updated = toChatMessage(payload.new as ChatMessageRow);
+          return prev.map((m) =>
+            m.id === updated.id
+              ? { ...m, ...updated, attachments: updated.attachments ?? m.attachments }
+              : m
+          );
         });
       })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'message_reads', filter: `conversation_id=eq.${selectedId}` }, (payload) => {
+        const nr = payload.new as { message_id: string; reader_email: string; read_at: number };
+        if (!nr?.message_id || !nr.reader_email) return;
+        setReadMap((prev) => {
+          const list = [...(prev[nr.message_id] ?? []).filter((r) => r.email !== nr.reader_email), { email: nr.reader_email, readAt: nr.read_at }];
+          return { ...prev, [nr.message_id]: list };
+        });
+        setMessages((prev) => prev?.map((m) => (m.id === nr.message_id ? { ...m, is_read: true } : m)) ?? prev);
+      })
       .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [supabase, selectedId]);
+    fetch(`/api/conversations/${selectedId}/messages/reads`)
+      .then((r) => (r.ok ? r.json() : []))
+      .then((rows: { message_id: string; reader_email: string; read_at: number }[]) => {
+        const map: Record<string, { email: string; readAt: number }[]> = {};
+        for (const r of rows) {
+          (map[r.message_id] ??= []).push({ email: r.reader_email, readAt: r.read_at });
+        }
+        setReadMap(map);
+      })
+      .catch(() => {});
+    return () => {
+      supabase.removeChannel(ch);
+    };
+  }, [supabase, selectedId, me, markMessagesRead]);
 
   useEffect(() => {
     if (!selectedId || !me) return;
     const t = setTimeout(() => {
-      fetch(`/api/conversations/${selectedId}/messages`, { method: 'PATCH' }).catch(() => {});
+      markMessagesRead();
     }, 400);
     return () => clearTimeout(t);
-  }, [selectedId, me]);
+  }, [selectedId, me, markMessagesRead]);
+
+  useEffect(() => {
+    if (!selectedId || !me) return;
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') markMessagesRead();
+    };
+    window.addEventListener('focus', onVisible);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', onVisible);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [selectedId, me, markMessagesRead]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset typing state on conversation switch
+    setIsTyping(false);
+    setReadOpenFor(null);
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+      typingTimerRef.current = null;
+    }
+    if (!selectedId || !me) return;
+    const ch = supabase
+      .channel(`typing:conv:${selectedId}`, { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'typing' }, ({ payload }) => {
+        if (!payload || payload.sender === me) return;
+        setIsTyping(true);
+        if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = setTimeout(() => setIsTyping(false), 2500);
+      })
+      .subscribe();
+    typingChanRef.current = ch;
+    return () => {
+      supabase.removeChannel(ch);
+      typingChanRef.current = null;
+      if (typingTimerRef.current) {
+        clearTimeout(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+    };
+  }, [supabase, selectedId, me]);
+
+  const broadcastTyping = useCallback(() => {
+    const ch = typingChanRef.current;
+    if (!ch || ch.state !== 'joined' || !me) return;
+    const now = Date.now();
+    if (now - lastTypingSentRef.current < 900) return;
+    lastTypingSentRef.current = now;
+    ch.send({ type: 'broadcast', event: 'typing', payload: { sender: me } }).catch(() => {});
+  }, [me]);
+
+  const conversationsRef = useRef(conversations);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  useEffect(() => {
+    if (!me) return;
+    const ch = supabase
+      .channel(uniqueChannelName('public:chat_messages:incoming'))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `sender_email=neq.${me}` }, async (payload) => {
+        const row = payload.new as ChatMessageRow;
+        const conv = (conversationsRef.current ?? []).find((c) => c.id === row.conversation_id);
+        if (!conv?.hiddenAt) return;
+        fetch(`/api/conversations/${row.conversation_id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'unhide' }),
+        }).catch(() => {});
+        setConversations((prev) => prev?.map((c) => (c.id === row.conversation_id ? { ...c, hiddenAt: undefined } : c)) ?? prev);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [supabase, me]);
 
   const loadOlder = useCallback(async () => {
     if (!selectedId || loadingOlder || !hasMoreMsgs || !messages || messages.length === 0) return;
@@ -404,7 +659,12 @@ export default function MessagesSection() {
   const handleMsgScroll = useCallback(() => {
     const el = msgScrollRef.current;
     if (el && el.scrollTop < 40) loadOlder();
-  }, [loadOlder]);
+    const now = Date.now();
+    if (now - lastReadMarkRef.current > 2000) {
+      lastReadMarkRef.current = now;
+      markMessagesRead();
+    }
+  }, [loadOlder, markMessagesRead]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -416,11 +676,234 @@ export default function MessagesSection() {
   const iAmRequester = selected ? selected.requestedBy === me : false;
   const selectedIsCreator = selected ? selected.creatorEmail === me : false;
 
+  const { presence } = usePresence();
+  const otherPresence = selected && !selected.isGroup ? presence[selected.other.email] : undefined;
+  const otherOnline = !!otherPresence?.online;
+  const [dbLastSeenByConv, setDbLastSeenByConv] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!selected || selected.isGroup) return;
+    if (otherPresence?.online || otherPresence?.last_seen) return;
+    if (dbLastSeenByConv[selected.id]) return;
+    let cancelled = false;
+    fetch(`/api/presence?email=${encodeURIComponent(selected.other.email)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled || !d?.last_seen) return;
+        setDbLastSeenByConv((prev) => (prev[selected.id] ? prev : { ...prev, [selected.id]: d.last_seen }));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [selected?.id, selected?.isGroup, otherPresence?.online, otherPresence?.last_seen, dbLastSeenByConv, selected]);
+  const displayLastSeen = otherPresence?.last_seen ?? (selected ? dbLastSeenByConv[selected.id] : undefined) ?? null;
+
   const directCount = (conversations ?? []).filter((c) => !c.isGroup).length;
   const groupCount = (conversations ?? []).filter((c) => c.isGroup).length;
   const visibleConvs = (conversations ?? []).filter((c) =>
-    convTab === 'group' ? c.isGroup : !c.isGroup
+    convTab === 'group' ? c.isGroup && !c.hiddenAt : !c.isGroup && !c.hiddenAt
   );
+
+  const hideConversation = async (convId: string) => {
+    try {
+      const res = await fetch(`/api/conversations/${convId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'hide' }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not delete chat' }))).message);
+      setConversations((prev) => prev?.map((c) => (c.id === convId ? { ...c, hiddenAt: Date.now() } : c)) ?? prev);
+      if (selectedId === convId) setSelectedId(null);
+      setConfirmState(null);
+    } catch (e) {
+      setConfirmState(null);
+      toast.error(e instanceof Error ? e.message : 'Could not delete chat');
+    }
+  };
+
+  const leaveGroup = async () => {
+    if (!selectedId || !selected?.isGroup) return;
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'leave' }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not leave group' }))).message);
+      toast.success('You left the group');
+      setSelectedId(null);
+      setConfirmState(null);
+      setShowManage(false);
+    } catch (e) {
+      setConfirmState(null);
+      toast.error(e instanceof Error ? e.message : 'Could not leave group');
+    }
+  };
+
+  const startEditMessage = (m: ChatMessage) => {
+    if (m.isDeleted) return;
+    setEditingId(m.id);
+    setEditText(m.content);
+  };
+
+  const cancelEditMessage = () => {
+    setEditingId(null);
+    setEditText('');
+  };
+
+  const saveEditMessage = async () => {
+    if (!editingId || !selectedId || savingEdit) return;
+    const content = editText.trim();
+    if (!content) return;
+    const msgId = editingId;
+    setSavingEdit(true);
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/messages/${msgId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not edit message' }))).message);
+      cancelEditMessage();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not edit message');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const deleteMessage = async () => {
+    if (!selectedId || confirmState?.kind !== 'deleteMsg' || deletingMsg) return;
+    const msgId = confirmState.messageId;
+    setDeletingMsg(true);
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/messages/${msgId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not delete message' }))).message);
+      setMessages((prev) => prev?.map((m) => (m.id === msgId ? { ...m, isDeleted: true, content: '' } : m)) ?? prev);
+      setConfirmState(null);
+    } catch (e) {
+      setConfirmState(null);
+      toast.error(e instanceof Error ? e.message : 'Could not delete message');
+    } finally {
+      setDeletingMsg(false);
+    }
+  };
+
+  const normalizeName = (raw: string) => raw.toLowerCase().replace(/\s+/g, ' ').trim();
+
+  const handleMentionClick = (rawName: string) => {
+    if (!selected) return;
+    const token = normalizeName(rawName);
+    if (token === 'everyone') { setSelectedMentionUser({ kind: 'group' }); return; }
+    const member =
+      selected.members.find((m) => normalizeName(m.name) === token) ??
+      people.find((p) => normalizeName(p.name) === token);
+    if (member) setSelectedMentionUser({ kind: 'member', email: member.email, name: member.name, initials: member.initials });
+  };
+
+  const mentionMember = selectedMentionUser?.kind === 'member' ? selectedMentionUser : null;
+  const mentionPerson = mentionMember ? people.find((p) => p.email === mentionMember.email) : undefined;
+  const mentionStudent = mentionMember ? students.find((s) => s.email.toLowerCase() === mentionMember.email.toLowerCase()) : undefined;
+  const mentionUserRec = mentionMember ? users.find((u) => u.email.toLowerCase() === mentionMember.email.toLowerCase()) : undefined;
+  const mentionStaff = mentionMember && mentionUserRec ? staff.find((s) => s.userId === mentionUserRec.userId) : undefined;
+  const profileColumns: { title: string; rows: [string, string][] }[] = [
+    {
+      title: 'Academic Profile',
+      rows: [
+        ['Roll Number', mentionStudent?.rollNo ?? ''],
+        ['Batch Year', mentionStudent?.batchYear != null ? String(mentionStudent.batchYear) : mentionStaff?.batchYear != null ? String(mentionStaff.batchYear) : ''],
+        ['Address', mentionStudent?.address ?? mentionStaff?.address ?? ''],
+      ],
+    },
+    {
+      title: 'Contact & Status',
+      rows: [
+        ['Email', mentionMember?.email ?? ''],
+        ['Phone Number', mentionStudent?.phoneNo ?? mentionStaff?.phoneNo ?? ''],
+        ['Academic Term', mentionStudent?.termId ? (termMap?.[mentionStudent.termId] ?? '') : ''],
+      ],
+    },
+    {
+      title: 'Program Details',
+      rows: [
+        ['Major', mentionStudent?.majorCode ?? ''],
+        ['Semester', mentionStudent ? `Semester ${mentionStudent.semesterNo}` : ''],
+        ['Section', mentionStudent?.sectionName ?? ''],
+      ],
+    },
+  ];
+  const mentionMemberOnline = mentionMember ? !!presence[mentionMember.email]?.online : false;
+  const mentionMemberLastSeen = mentionMember ? (presence[mentionMember.email]?.last_seen ?? 0) : 0;
+  const mentionGroupOnlineCount = selectedMentionUser?.kind === 'group'
+    ? (selected?.members ?? []).filter((m) => presence[m.email]?.online).length
+    : 0;
+
+  const mentionRegex = buildMentionRegex([...(selected?.members ?? []).map((m) => m.name), 'everyone']);
+
+  const mentionCandidates = (() => {
+    if (!selected?.isGroup) return [] as { key: string; token: string; name: string; sub: string; everyone?: boolean }[];
+    const q = (mentionQuery ?? '').toLowerCase();
+    const out: { key: string; token: string; name: string; sub: string; everyone?: boolean }[] = [];
+    if (q === '' || 'everyone'.startsWith(q)) {
+      out.push({ key: 'everyone', token: 'everyone', name: '@everyone', sub: 'Notify all members', everyone: true });
+    }
+    const seen = new Set<string>();
+    for (const m of selected.members) {
+      if (m.email === me) continue;
+      if (!m.name.toLowerCase().includes(q) && !m.email.toLowerCase().includes(q)) continue;
+      if (seen.has(m.email)) continue;
+      seen.add(m.email);
+      out.push({ key: m.email, token: m.name, name: `@${m.name}`, sub: m.email });
+    }
+    return out.slice(0, 8);
+  })();
+
+  const handleDraftChange = (value: string, caret: number) => {
+    caretRef.current = caret;
+    const before = value.slice(0, caret);
+    const m = /(?:^|\s)@([\w.\-]*)$/.exec(before);
+    if (m && selected?.isGroup) {
+      setMentionQuery(m[1]);
+    } else if (selected?.isGroup) {
+      const at = before.lastIndexOf('@');
+      const prev = at > 0 ? before[at - 1] : ' ';
+      if (at !== -1 && (at === 0 || /\s/.test(prev))) {
+        const tail = before.slice(at + 1);
+        if (!tail.includes('\n')) setMentionQuery(tail);
+        else setMentionQuery(null);
+      } else {
+        setMentionQuery(null);
+      }
+    } else {
+      setMentionQuery(null);
+    }
+    setDraft(value);
+    if (value.trim()) broadcastTyping();
+  };
+
+  const insertMention = (token: string) => {
+    const caret = caretRef.current;
+    const before = draft.slice(0, caret);
+    const after = draft.slice(caret);
+    const m = /(?:^|\s)@([\w.\-]*)$/.exec(before);
+    let start = -1;
+    if (m) {
+      start = caret - m[1].length - 1;
+    } else {
+      const at = before.lastIndexOf('@');
+      if (at !== -1 && (at === 0 || /\s/.test(before[at - 1]))) start = at;
+    }
+    if (start < 0) { setMentionQuery(null); return; }
+    const next = `${draft.slice(0, start)}@${token} ${after}`;
+    setDraft(next);
+    setMentionQuery(null);
+    requestAnimationFrame(() => {
+      const el = draftInputRef.current;
+      if (el) {
+        el.focus();
+        const pos = start + token.length + 2;
+        el.setSelectionRange(pos, pos);
+      }
+    });
+  };
 
   const openGroupManage = () => {
     if (!selected) return;
@@ -523,10 +1006,32 @@ export default function MessagesSection() {
       const res = await fetch(`/api/conversations/${selectedId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content, attachments }),
+        body: JSON.stringify({
+          content,
+          attachments,
+          mentions: selected?.isGroup
+            ? [...new Set(extractMentionTokens(draft, (selected?.members ?? []).map((m) => m.name)).map((t) => {
+                if (t === 'everyone') return 'everyone';
+                return (selected?.members ?? []).find((m) => m.name.toLowerCase() === t)?.email ?? '';
+              }).filter(Boolean))]
+            : undefined,
+        }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not send message' }))).message);
+      setSendPulse((c) => c + 1);
+      const sentRow = (await res.json()) as ChatMessageRow;
+      setMessages((prev) => {
+        const base = prev ?? [];
+        if (base.some((x) => x.id === sentRow.id)) {
+          return base.map((x) => (x.id === sentRow.id ? { ...x, ...toChatMessage(sentRow), pending: false } : x));
+        }
+        return [...base, { ...toChatMessage(sentRow), pending: true }];
+      });
+      lastTypingSentRef.current = 0;
       setDraft('');
+      setMentionQuery(null);
+      const ta = draftInputRef.current;
+      if (ta) ta.style.height = 'auto';
       setPendingFiles((prev) => {
         prev.forEach((p) => { if (p.preview) URL.revokeObjectURL(p.preview); });
         return [];
@@ -723,12 +1228,12 @@ export default function MessagesSection() {
   );
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[18px] h-full min-h-[520px]">
+    <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[18px] h-full min-h-0">
       <div
-        className="bg-base-100 backdrop-blur-xl flex flex-col max-h-[72vh] lg:max-h-none lg:h-full"
+        className="bg-base-100 backdrop-blur-xl flex flex-col max-h-[72vh] lg:max-h-none lg:h-full lg:min-h-0"
         style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--surface)' }}>
+        <div className="flex-shrink-0" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--surface)' }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
             <MessageSquare size={16} style={{ color: 'var(--primary)' }} /> Messages
           </div>
@@ -741,7 +1246,7 @@ export default function MessagesSection() {
             <Plus size={15} />
           </button>
         </div>
-        <div style={{ display: 'flex', gap: 4, padding: '8px 14px 0', borderBottom: '1px solid var(--surface)' }}>
+        <div className="flex-shrink-0" style={{ display: 'flex', gap: 4, padding: '8px 14px 0', borderBottom: '1px solid var(--surface)' }}>
           {([
             ['direct', 'Direct', directCount, MessageSquare],
             ['group', 'Groups', groupCount, Users],
@@ -784,7 +1289,7 @@ export default function MessagesSection() {
             </button>
           ))}
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 min-h-0 overflow-y-auto">
           {!conversations && (
             <div className="text-center py-10 text-xs" style={{ color: 'var(--text-lighter)' }}>Loading...</div>
           )}
@@ -802,56 +1307,81 @@ export default function MessagesSection() {
               </button>
             </div>
           )}
-          {visibleConvs.map((conv) => {
-            const displayName = conv.isGroup ? conv.groupName : conv.other.name;
-            const displayInitials = conv.isGroup ? conv.groupName.slice(0, 2).toUpperCase() : conv.other.initials;
-            const hasUnread = (conv.unread ?? 0) > 0;
-            return (
-              <button
-                key={conv.id}
-                onClick={() => setSelectedId(conv.id)}
-                className="w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer transition-colors"
-                style={{
-                  borderBottom: '1px solid var(--surface)',
-                  background: selectedId === conv.id ? 'rgba(14, 165, 233,0.10)' : 'transparent',
-                }}
-              >
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 12 }}>
-                  {conv.isGroup ? <Users size={16} /> : displayInitials}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between gap-2">
-                    <span style={{ fontSize: 13.5, fontWeight: hasUnread ? 700 : 600, color: 'var(--accent)' }}>{displayName}</span>
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      {hasUnread && (
-                        <span
-                          className="flex items-center justify-center rounded-full text-white font-bold"
-                          style={{ minWidth: 18, height: 18, padding: '0 5px', fontSize: 10.5, background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
-                        >
-                          {conv.unread}
-                        </span>
-                      )}
-                      <span style={{ fontSize: 11, color: 'var(--text-lighter)' }}>{timeLabel(conv.lastMessageAt)}</span>
-                    </span>
+          <AnimatePresence initial={false}>
+            {visibleConvs.map((conv) => {
+              const displayName = conv.isGroup ? conv.groupName : conv.other.name;
+              const displayInitials = conv.isGroup ? conv.groupName.slice(0, 2).toUpperCase() : conv.other.initials;
+              const hasUnread = (conv.unread ?? 0) > 0;
+              const isConvUserOnline = !conv.isGroup && !!presence[conv.other.email]?.online;
+              return (
+                <motion.div
+                  key={conv.id}
+                  layout
+                  initial={{ opacity: 0, x: -40 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -100, height: 0 }}
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  className="relative group"
+                >
+                <button
+                  onClick={() => setSelectedId(conv.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer transition-colors"
+                  style={{
+                    borderBottom: '1px solid var(--surface)',
+                    background: selectedId === conv.id ? 'rgba(14, 165, 233,0.10)' : 'transparent',
+                  }}
+                >
+                  <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 12 }}>
+                    {conv.isGroup ? <Users size={16} /> : displayInitials}
+                    {isConvUserOnline && (
+                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-success rounded-full ring-2 ring-base-100" />
+                    )}
                   </div>
-                  <div className="flex items-center justify-between gap-2 mt-0.5">
-                    <div
-                      className="text-xs truncate"
-                      style={{ color: hasUnread ? 'var(--text)' : 'var(--text-lighter)', fontWeight: hasUnread ? 600 : 400 }}
-                    >
-                      {conv.isGroup ? `${conv.members.length + 1} members \u2022 ` : ''}{conv.preview || 'No messages yet'}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span style={{ fontSize: 13.5, fontWeight: hasUnread ? 700 : 600, color: 'var(--accent)' }}>{displayName}</span>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        {hasUnread && (
+                          <span
+                            className="flex items-center justify-center rounded-full text-white font-bold"
+                            style={{ minWidth: 18, height: 18, padding: '0 5px', fontSize: 10.5, background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+                          >
+                            {conv.unread}
+                          </span>
+                        )}
+                        <span style={{ fontSize: 11, color: 'var(--text-lighter)' }}>{timeLabel(conv.lastMessageAt)}</span>
+                      </span>
                     </div>
-                    {!conv.isGroup && statusBadge(conv.status)}
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <div
+                        className="text-xs truncate"
+                        style={{ color: hasUnread ? 'var(--text)' : 'var(--text-lighter)', fontWeight: hasUnread ? 600 : 400 }}
+                      >
+                        {conv.isGroup ? `${conv.members.length + 1} members \u2022 ` : ''}{conv.preview || 'No messages yet'}
+                      </div>
+                      {!conv.isGroup && statusBadge(conv.status)}
+                    </div>
                   </div>
+                </button>
+                <div className="absolute bottom-2 right-2 z-10">
+                  <button
+                    onClick={() => setConfirmState({ kind: 'hide', conv })}
+                    className="btn btn-ghost btn-xs btn-circle text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Delete chat"
+                    style={selectedId === conv.id ? { opacity: 1 } : undefined}
+                  >
+                    <Trash2 size={13} />
+                  </button>
                 </div>
-              </button>
+              </motion.div>
             );
           })}
+        </AnimatePresence>
         </div>
       </div>
 
       <div
-        className="bg-base-100 backdrop-blur-xl flex flex-col max-h-[72vh] lg:max-h-none lg:h-full"
+        className="bg-base-100 backdrop-blur-xl flex flex-col max-h-[72vh] lg:max-h-none lg:h-full lg:min-h-0"
         style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}
       >
         {!selected ? (
@@ -868,18 +1398,32 @@ export default function MessagesSection() {
           </div>
         ) : (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--surface)' }}>
-              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 12 }}>
+            <div className="flex-shrink-0" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--surface)' }}>
+              <div className="relative w-9 h-9 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 12 }}>
                 {selected.isGroup ? <Users size={15} /> : selected.other.initials}
+                {!selected.isGroup && otherOnline && (
+                  <span className="absolute bottom-0 right-0 w-3 h-3 bg-success rounded-full ring-2 ring-base-100" />
+                )}
               </div>
               <div className="flex-1">
                 <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>
                   {selected.isGroup ? selected.groupName : selected.other.name}
                 </div>
-                <div style={{ fontSize: 11.5, color: 'var(--text-lighter)' }}>
-                  {selected.isGroup
-                    ? `${selected.members.length} members`
-                    : statusBadge(selected.status) ?? 'UniConnect'}
+                <div className="flex items-center gap-1.5" style={{ fontSize: 11.5, color: 'var(--text-lighter)' }}>
+                  {!selected.isGroup && selected.status === 'active' && isTyping ? (
+                    <>
+                      typing
+                      <span className="loading loading-dots loading-xs text-primary" />
+                    </>
+                  ) : !selected.isGroup && selected.status === 'active' && otherOnline ? (
+                    <span className="text-success font-semibold">Online</span>
+                  ) : !selected.isGroup && selected.status === 'active' && displayLastSeen ? (
+                    `Last seen ${lastSeenLabel(displayLastSeen)}`
+                  ) : selected.isGroup ? (
+                    `${selected.members.length} members`
+                  ) : (
+                    statusBadge(selected.status) ?? 'UniConnect'
+                  )}
                 </div>
               </div>
               {selected.isGroup && selectedIsCreator && (
@@ -890,6 +1434,15 @@ export default function MessagesSection() {
                   title="Manage group"
                 >
                   <Settings size={14} /> Manage
+                </button>
+              )}
+              {selected.isGroup && !selectedIsCreator && (
+                <button
+                  onClick={() => setConfirmState({ kind: 'leave' })}
+                  className="btn btn-error btn-outline btn-xs gap-1.5"
+                  title="Leave group"
+                >
+                  <LogOut size={12} /> Leave Group
                 </button>
               )}
               {!selected.isGroup && selected.status === 'active' && (
@@ -932,7 +1485,7 @@ export default function MessagesSection() {
               )}
             </div>
 
-            <div ref={msgScrollRef} onScroll={handleMsgScroll} className="flex-1 overflow-y-auto px-5 py-4" style={{ minHeight: 320 }}>
+            <div ref={msgScrollRef} onScroll={handleMsgScroll} className="flex-1 min-h-0 overflow-y-auto px-5 py-4">
               {loadingOlder && (
                 <div className="text-center py-2 text-[11px]" style={{ color: 'var(--text-lighter)' }}>
                   Loading earlier messages...
@@ -941,47 +1494,242 @@ export default function MessagesSection() {
               {!messages && (
                 <div className="text-center py-10 text-xs" style={{ color: 'var(--text-lighter)' }}>Loading...</div>
               )}
+              <AnimatePresence initial={false}>
               {messages?.map((m) => {
                 const mine = m.sender_email === me;
                 const showSender = !mine && selected.isGroup;
+                const isEditing = editingId === m.id;
                 return (
-                  <div key={m.id} className={`flex mb-3 ${mine ? 'justify-end' : 'justify-start'}`}>
+                  <motion.div
+                    key={m.id}
+                    layout
+                    initial={{ scale: 0.9, opacity: 0, y: 15 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.9, y: -6 }}
+                    transition={{ type: 'spring', stiffness: 420, damping: 28 }}
+                    className={`flex mb-3 group ${mine ? 'justify-end' : 'justify-start'}`}
+                  >
                     {showSender && (
                       <div className="w-7 h-7 rounded-full bg-gradient-to-br from-secondary to-primary flex items-center justify-center text-white font-bold shrink-0 mr-2 mt-1" style={{ fontSize: 9 }}>
                         {(m.sender_name || m.sender_email).slice(0, 2).toUpperCase()}
                       </div>
                     )}
-                    <div
-                      className="max-w-[75%] px-4 py-2.5"
-                      style={{
-                        borderRadius: mine ? 'var(--radius-md) 0 var(--radius-md) var(--radius-md)' : '0 var(--radius-md) var(--radius-md) var(--radius-md)',
-                        background: mine ? 'linear-gradient(var(--primary), var(--primary-dark))' : 'var(--divider)',
-                        color: mine ? '#fff' : 'var(--text)',
-                        fontSize: 13.5,
-                        lineHeight: 1.5,
-                      }}
-                    >
-                      {showSender && (
-                        <div className="text-[10.5px] font-semibold mb-0.5" style={{ color: 'var(--primary)' }}>{m.sender_name || m.sender_email}</div>
+                    <div className="relative max-w-[75%]">
+                      {mine && !m.isDeleted && (
+                        <div className="absolute -top-2 -right-2 z-20 dropdown dropdown-end">
+                          <button
+                            tabIndex={0}
+                            className="btn btn-circle btn-ghost btn-xs opacity-0 group-hover:opacity-100 focus-within:opacity-100 bg-base-100/80 shadow-md transition-opacity"
+                            title="Message options"
+                          >
+                            <Ellipsis size={14} />
+                          </button>
+                          <ul
+                            tabIndex={0}
+                            className="dropdown-content menu menu-xs bg-base-100 rounded-box z-50 w-32 shadow-lg border"
+                            style={{ borderColor: 'var(--surface-border)' }}
+                          >
+                            <li>
+                              <button onClick={() => startEditMessage(m)}>
+                                <Pencil size={12} /> Edit
+                              </button>
+                            </li>
+                            <li>
+                              <button
+                                onClick={() => setConfirmState({ kind: 'deleteMsg', messageId: m.id })}
+                                className="text-error"
+                              >
+                                <Trash2 size={12} /> Delete
+                              </button>
+                            </li>
+                          </ul>
+                        </div>
                       )}
-                      {m.content && <div>{m.content}</div>}
-                      {m.attachments && m.attachments.length > 0 && (
-                        <MessageAttachments
-                          key={m.attachments.map((a) => (isSharedPost(a) ? `post:${a.post.id}` : a.path)).join('|')}
-                          convId={selectedId ?? ''}
-                          attachments={m.attachments}
-                          mine={mine}
-                        />
-                      )}
-                      <div className="text-[10px] mt-1" style={{ opacity: 0.7 }}>{timeLabel(m.created_at)}</div>
+                      <div
+                        className="px-4 py-2.5"
+                        style={{
+                          borderRadius: mine ? 'var(--radius-md) 0 var(--radius-md) var(--radius-md)' : '0 var(--radius-md) var(--radius-md) var(--radius-md)',
+                          background: mine ? 'linear-gradient(var(--primary), var(--primary-dark))' : 'var(--divider)',
+                          color: mine ? '#fff' : 'var(--text)',
+                          fontSize: 13.5,
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {m.isDeleted ? (
+                          <div className="italic" style={{ opacity: 0.6, fontSize: 12.5 }}>
+                            This message was deleted
+                          </div>
+                        ) : isEditing ? (
+                          <div>
+                            <textarea
+                              autoFocus
+                              value={editText}
+                              onChange={(e) => setEditText(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void saveEditMessage(); }
+                                if (e.key === 'Escape') cancelEditMessage();
+                              }}
+                              rows={2}
+                              className="w-full outline-none resize-none"
+                              style={{
+                                background: 'rgba(255,255,255,0.14)',
+                                border: '1.5px solid rgba(255,255,255,0.3)',
+                                borderRadius: 'var(--radius-sm)',
+                                padding: '6px 10px',
+                                fontSize: 13,
+                                color: '#fff',
+                                lineHeight: 1.5,
+                                fontFamily: 'inherit',
+                              }}
+                            />
+                            <div className="flex items-center gap-2 mt-1.5">
+                              <button
+                                onClick={() => void saveEditMessage()}
+                                disabled={!editText.trim() || savingEdit}
+                                className="flex items-center gap-1 px-2.5 py-1 font-semibold border-none disabled:opacity-40 cursor-pointer"
+                                style={{ borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.2)', color: '#fff', fontSize: 11.5 }}
+                              >
+                                {savingEdit ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />} {savingEdit ? 'Saving…' : 'Save'}
+                              </button>
+                              <button
+                                onClick={cancelEditMessage}
+                                className="flex items-center gap-1 px-2.5 py-1 font-semibold border-none cursor-pointer"
+                                style={{ borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.1)', color: '#fff', fontSize: 11.5 }}
+                              >
+                                <X size={12} /> Cancel
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {showSender && (
+                              <div className="text-[10.5px] font-semibold mb-0.5" style={{ color: 'var(--primary)' }}>{m.sender_name || m.sender_email}</div>
+                            )}
+                            {m.content && (
+                              <div style={{ whiteSpace: 'pre-wrap' }}>
+                                {renderMentionedContent(m.content, {
+                                  regex: mentionRegex,
+                                  onMention: handleMentionClick,
+                                })}
+                              </div>
+                            )}
+                            {m.attachments && m.attachments.length > 0 && (
+                              <MessageAttachments
+                                key={m.attachments.map((a) => (isSharedPost(a) ? `post:${a.post.id}` : a.path)).join('|')}
+                                convId={selectedId ?? ''}
+                                attachments={m.attachments}
+                                mine={mine}
+                              />
+                            )}
+                          </>
+                        )}
+                        <div className="text-[10px] mt-1 flex items-center gap-1.5" style={{ opacity: 0.7 }}>
+                          <span>{timeLabel(m.created_at)}</span>
+                          {m.editedAt && <span className="italic">(edited)</span>}
+                          {mine && !m.isDeleted && !isEditing && (
+                            selected.isGroup ? (
+                              <span className="relative inline-flex">
+                                <button
+                                  onClick={() => setReadOpenFor(readOpenFor === m.id ? null : m.id)}
+                                  className="inline-flex items-center cursor-pointer border-none bg-transparent p-0"
+                                  title="Read by members"
+                                >
+                                  {m.pending ? (
+                                    <Clock size={11} />
+                                  ) : (readMap[m.id] ?? []).length > 0 ? (
+                                    <CheckCheck size={11} style={{ color: '#7dd3fc' }} />
+                                  ) : (
+                                    <Check size={11} />
+                                  )}
+                                </button>
+                                {readOpenFor === m.id && (
+                                  <motion.div
+                                    initial={{ opacity: 0, scale: 0.9, y: 6 }}
+                                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                                    exit={{ opacity: 0, scale: 0.95, y: 4 }}
+                                    transition={{ type: 'spring', stiffness: 400, damping: 28 }}
+                                    className="absolute bottom-full right-0 mb-1.5 z-40 w-60 rounded-xl bg-base-100 shadow-xl border p-3"
+                                    style={{ borderColor: 'var(--surface-border)' }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    {(() => {
+                                      const readers = (readMap[m.id] ?? []).filter((r) => r.email !== me);
+                                      return (
+                                        <>
+                                          <div className="text-xs font-bold mb-2" style={{ color: 'var(--accent)' }}>
+                                            {readers.length > 0
+                                              ? `Read by ${readers.length} ${readers.length === 1 ? 'member' : 'members'}`
+                                              : 'Not read by anyone yet'}
+                                          </div>
+                                          {readers.map((r) => {
+                                            const member = selected.members.find((mm) => mm.email === r.email);
+                                            return (
+                                              <div key={r.email} className="flex items-center gap-2 mb-1.5 last:mb-0">
+                                                <div className="w-6 h-6 rounded-full bg-gradient-to-br from-secondary to-primary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 8 }}>
+                                                  {member?.initials ?? r.email.slice(0, 2).toUpperCase()}
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                  <div className="truncate" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--text)' }}>
+                                                    {member?.name ?? r.email}
+                                                  </div>
+                                                  <div style={{ fontSize: 10, opacity: 0.6, color: 'var(--text-lighter)' }}>
+                                                    Read {timeLabel(r.readAt)}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </>
+                                      );
+                                    })()}
+                                  </motion.div>
+                                )}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-0.5">
+                                {m.pending ? (
+                                  <Clock size={11} />
+                                ) : m.is_read ? (
+                                  <CheckCheck size={11} style={{ color: '#7dd3fc' }} />
+                                ) : (
+                                  <Check size={11} />
+                                )}
+                              </span>
+                            )
+                          )}
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  </motion.div>
                 );
               })}
+            </AnimatePresence>
               <div ref={endRef} />
             </div>
 
-            <div style={{ borderTop: '1px solid var(--surface)' }}>
+            <div className="flex-shrink-0 relative" style={{ borderTop: '1px solid var(--surface)' }}>
+              {mentionQuery !== null && mentionCandidates.length > 0 && (
+                <div className="absolute bottom-full left-3 right-3 z-30 mb-1">
+                  <ul
+                    className="menu menu-sm bg-base-100 rounded-box w-full max-h-52 overflow-y-auto shadow-lg border"
+                    style={{ borderColor: 'var(--surface-border)' }}
+                  >
+                    {mentionCandidates.map((opt) => (
+                      <li key={opt.key}>
+                        <button onClick={() => insertMention(opt.token)}>
+                          <span
+                            className="font-bold"
+                            style={{ color: opt.everyone ? 'var(--warning)' : 'var(--primary)' }}
+                          >
+                            {opt.name}
+                          </span>
+                          <span className="text-xs opacity-70">{opt.sub}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
               {!composerDisabledReason && pendingFiles.length > 0 && (
                 <div className="flex flex-wrap items-end gap-2 px-3 pt-2.5">
                   {pendingFiles.map((p, i) =>
@@ -1014,14 +1762,29 @@ export default function MessagesSection() {
                   </div>
                 ) : (
                   <div className="flex-1 flex items-center gap-2" style={{ background: 'var(--divider)', borderRadius: 'var(--radius-md)', padding: '4px 4px 4px 14px', border: '1.5px solid var(--surface-border)' }}>
-                    <input
-                      type="text"
+                    <textarea
+                      ref={draftInputRef}
                       value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleSend(); }}
-                      placeholder="Type a message..."
-                      className="flex-1 bg-transparent outline-none"
-                      style={{ fontSize: 13.5, color: 'var(--text)', border: 'none' }}
+                      rows={1}
+                      onChange={(e) => {
+                        handleDraftChange(e.target.value, e.target.selectionStart ?? e.target.value.length);
+                        const el = draftInputRef.current;
+                        if (el) {
+                          el.style.height = 'auto';
+                          el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+                          el.style.overflowY = el.scrollHeight > 120 ? 'auto' : 'hidden';
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Escape') { setMentionQuery(null); return; }
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      placeholder={selected.isGroup ? 'Type a message... (use @ to mention)' : 'Type a message...'}
+                      className="flex-1 bg-transparent outline-none resize-none leading-snug py-1.5"
+                      style={{ fontSize: 13.5, color: 'var(--text)', border: 'none', maxHeight: 120 }}
                     />
                     <input
                       ref={fileInputRef}
@@ -1046,7 +1809,17 @@ export default function MessagesSection() {
                       className="flex items-center justify-center cursor-pointer border-none disabled:opacity-30"
                       style={{ width: 32, height: 32, borderRadius: 'var(--radius-sm)', color: '#fff', background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
                     >
-                      {sending ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                      {sending ? <Loader2 size={14} className="animate-spin" /> : (
+                        <motion.span
+                          key={sendPulse}
+                          initial={{ y: 0, scale: 1 }}
+                          animate={{ y: [0, -4, 0], scale: [1, 1.25, 1] }}
+                          transition={{ duration: 0.35, ease: 'easeOut' }}
+                          className="inline-flex"
+                        >
+                          <Send size={14} />
+                        </motion.span>
+                      )}
                     </button>
                   </div>
                 )}
@@ -1403,6 +2176,148 @@ export default function MessagesSection() {
             </div>
           </div>
         </div>
+      )}
+
+      {confirmState && (
+        <dialog className="modal modal-open" onClick={(e) => { if (e.target === e.currentTarget) setConfirmState(null); }}>
+          <div className="modal-box">
+            <h3 className="font-bold text-lg" style={{ color: 'var(--accent)' }}>
+              {confirmState.kind === 'hide' ? 'Delete chat?' : confirmState.kind === 'leave' ? 'Leave group?' : 'Delete message?'}
+            </h3>
+            <p className="py-4 text-sm leading-relaxed" style={{ color: 'var(--text)' }}>
+              {confirmState.kind === 'hide'
+                ? 'Hide this conversation? Messages will remain saved, and the chat will reopen if a new message arrives.'
+                : confirmState.kind === 'leave'
+                  ? `Are you sure you want to leave "${selected?.groupName ?? 'this group'}"? You will no longer see this group chat.`
+                  : 'This message will be deleted for everyone in this chat. This cannot be undone.'}
+            </p>
+            <div className="modal-action">
+              <button className="btn btn-ghost btn-sm" onClick={() => setConfirmState(null)}>
+                Cancel
+              </button>
+              <button
+                className="btn btn-error btn-sm"
+                disabled={confirmState.kind === 'deleteMsg' && deletingMsg}
+                onClick={() => {
+                  if (confirmState.kind === 'hide') void hideConversation(confirmState.conv.id);
+                  else if (confirmState.kind === 'leave') void leaveGroup();
+                  else void deleteMessage();
+                }}
+              >
+                {confirmState.kind === 'hide' ? <><Trash2 size={13} /> Delete</> : confirmState.kind === 'leave' ? <><LogOut size={13} /> Leave Group</> : <>{deletingMsg ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />} {deletingMsg ? 'Deleting…' : 'Delete'}</>}
+              </button>
+            </div>
+          </div>
+          <form method="dialog" className="modal-backdrop" onClick={() => setConfirmState(null)}>
+            <button onClick={() => setConfirmState(null)}>close</button>
+          </form>
+        </dialog>
+      )}
+
+      {isProfileModalOpen && createPortal(
+        <AnimatePresence>
+          {selectedMentionUser && (
+          <motion.dialog
+            open
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="modal modal-open z-[999] p-4 border-none"
+            style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
+            onClick={() => setSelectedMentionUser(null)}
+            onCancel={(e) => { e.preventDefault(); setSelectedMentionUser(null); }}
+          >
+          <motion.div
+            initial={{ opacity: 0, scale: 0.85, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.9, y: 8 }}
+            transition={{ type: 'spring', stiffness: 340, damping: 26 }}
+            className="w-[92vw] max-w-md md:max-w-4xl lg:max-w-5xl bg-[#0d131f]/90 backdrop-blur-xl border border-cyan-500/30 rounded-3xl shadow-[0_0_30px_rgba(6,182,212,0.15)] max-h-[90vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {selectedMentionUser.kind === 'member' ? (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 pt-6 pb-5 rounded-t-3xl" style={{ background: 'linear-gradient(160deg, rgba(6,182,212,0.14), transparent)' }}>
+                  <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 20, boxShadow: '0 0 18px rgba(6,182,212,0.35)' }}>
+                    {selectedMentionUser.initials}
+                    {mentionMemberOnline && (
+                      <span className="absolute bottom-0 right-0 w-4 h-4 bg-success rounded-full ring-2 ring-[#0d131f]" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="truncate font-bold text-lg" style={{ color: '#f1f5f9' }}>{selectedMentionUser.name}</span>
+                      {mentionPerson?.role && (
+                        <span className="badge badge-info badge-sm shrink-0">{mentionPerson.role}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${mentionMemberOnline ? 'bg-success shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-slate-500'}`} />
+                      <span className="text-xs font-semibold" style={{ color: mentionMemberOnline ? '#4ade80' : '#94a3b8' }}>
+                        {mentionMemberOnline
+                          ? 'Online'
+                          : mentionMemberLastSeen
+                            ? `Last seen ${lastSeenLabel(mentionMemberLastSeen)}`
+                            : 'Offline'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 divide-y md:divide-y-0 md:divide-x divide-base-content/10 p-6">
+                  {profileColumns.map((col) => (
+                    <div key={col.title} className="min-w-0 space-y-4">
+                      <div className="text-xs font-semibold text-cyan-300/80 uppercase tracking-wider">{col.title}</div>
+                      {col.rows.map(([label, value]) => (
+                        <div key={label} className="min-w-0">
+                          <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">{label}</div>
+                          <div className="text-sm font-medium text-slate-100 break-words">{value || 'N/A'}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-center gap-3 px-6 pb-6 pt-2">
+                  <button className="btn btn-ghost btn-sm text-slate-300 rounded-xl px-6" onClick={() => setSelectedMentionUser(null)}>Close</button>
+                  <button
+                    className="btn btn-info btn-sm text-white shadow-md shadow-cyan-500/20 rounded-xl px-6 gap-1.5"
+                    onClick={() => {
+                      const p = selectedMentionUser;
+                      setSelectedMentionUser(null);
+                      openChat({ email: p.email, name: p.name, initials: p.initials });
+                    }}
+                  >
+                    <MessageSquare size={13} /> Direct Message
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 pt-6 pb-5 rounded-t-3xl">
+                  <div className="w-16 h-16 rounded-full bg-gradient-to-br from-cyan-500 to-blue-700 flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 20 }}>
+                    <Users size={24} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate font-bold text-lg" style={{ color: '#f1f5f9' }}>{selected?.groupName ?? 'Group'}</div>
+                    <div className="text-xs mt-1" style={{ color: '#94a3b8' }}>
+                      {(selected?.members.length ?? 0) + 1} members
+                    </div>
+                    <div className="text-xs mt-1 font-medium" style={{ color: mentionGroupOnlineCount > 0 ? '#4ade80' : '#94a3b8' }}>
+                      {mentionGroupOnlineCount > 0 ? `${mentionGroupOnlineCount} online` : 'Offline'}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-center gap-3 px-6 pb-6 pt-2">
+                  <button className="btn btn-ghost btn-sm text-slate-300 rounded-xl px-6" onClick={() => setSelectedMentionUser(null)}>Close</button>
+                </div>
+              </>
+            )}
+          </motion.div>
+        </motion.dialog>
+          )}
+        </AnimatePresence>,
+        document.body
       )}
     </div>
   );
