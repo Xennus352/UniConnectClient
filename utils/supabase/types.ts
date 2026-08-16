@@ -303,8 +303,11 @@ export interface Database {
           file_url: string;
           storage_path: string;
           created_at: number;
+          batch_id: string | null;
+          student_name: string | null;
         };
         Insert: {
+          id?: string;
           user_id?: string | null;
           recipient_email: string;
           roll_number: string;
@@ -314,8 +317,51 @@ export interface Database {
           file_url: string;
           storage_path: string;
           created_at?: number | null;
+          batch_id?: string | null;
+          student_name?: string | null;
         };
-        Update: Record<string, never>;
+        Update: { batch_id?: string | null; student_name?: string | null };
+        Relationships: [
+          {
+            foreignKeyName: 'exam_results_batch_id_fkey';
+            columns: ['batch_id'];
+            isOneToOne: false;
+            referencedRelation: 'exam_result_batches';
+            referencedColumns: ['id'];
+          }
+        ];
+      };
+      exam_result_batches: {
+        Row: {
+          id: string;
+          exam_type: string;
+          semester: string;
+          academic_year: string;
+          total_files: number;
+          status: string;
+          created_by: string | null;
+          created_at: number;
+        };
+        Insert: {
+          id?: string;
+          exam_type: string;
+          semester: string;
+          academic_year: string;
+          total_files?: number;
+          status?: string;
+          created_by?: string | null;
+          created_at?: number | null;
+        };
+        Update: {
+          id?: string;
+          exam_type?: string;
+          semester?: string;
+          academic_year?: string;
+          total_files?: number;
+          status?: string;
+          created_by?: string | null;
+          created_at?: number | null;
+        };
         Relationships: [];
       };
     };

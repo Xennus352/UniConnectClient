@@ -219,20 +219,33 @@ export function ExamResultsSection() {
   const [viewer, setViewer] = useState<ExamResultRecord | null>(null);
   const seenRef = useRef<Set<string>>(new Set());
 
+  const load = useCallback(async () => {
+    const { data: batches } = await supabase
+      .from('exam_result_batches')
+      .select('id')
+      .eq('status', 'PUBLISHED');
+    const published = ((batches ?? []) as Array<{ id: string }>).map((b) => b.id);
+
+    let query = supabase
+      .from('exam_results')
+      .select('id, roll_number, year, semester, file_name, file_url, storage_path, created_at')
+      .eq('recipient_email', me)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (published.length > 0) {
+      query = query.or(`batch_id.in.(${published.join(',')}),batch_id.is.null`);
+    } else {
+      query = query.is('batch_id', null);
+    }
+    const { data } = await query;
+    setResults((data as unknown as ExamResultRecord[] | null) ?? []);
+  }, [supabase, me]);
+
   useEffect(() => {
     if (!me) return;
-    let cancelled = false;
-    (async () => {
-      const { data } = await supabase
-        .from('exam_results')
-        .select('id, roll_number, year, semester, file_name, file_url, storage_path, created_at')
-        .eq('recipient_email', me)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (!cancelled) setResults((data as unknown as ExamResultRecord[] | null) ?? []);
-    })();
-    return () => { cancelled = true; };
-  }, [supabase, me]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch, setState only after await
+    void load();
+  }, [me, load]);
 
   useEffect(() => {
     if (!me) return;
@@ -245,12 +258,17 @@ export function ExamResultsSection() {
           const rec = payload.new as unknown as ExamResultRecord;
           if (!rec || seenRef.current.has(rec.id)) return;
           seenRef.current.add(rec.id);
-          setResults((prev) => (prev ? [rec, ...prev] : prev));
+          void load();
         }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'exam_result_batches' },
+        () => { void load(); }
       )
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [supabase, me]);
+  }, [supabase, me, load]);
 
   const grouped = useMemo(() => {
     const groups = new Map<string, ExamResultRecord[]>();

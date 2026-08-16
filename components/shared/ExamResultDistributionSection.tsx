@@ -1,14 +1,16 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, Settings, FileText, GraduationCap, Send, Loader2,
-  X, Check, FileWarning, Filter,
+  X, Check, FileWarning, Filter, Eye, Download, Rocket,
+  Archive, Trash2, History, Layers,
 } from 'lucide-react';
-import { apiFetch, type StudentRecord, type AcademicTermRecord, type ResultBatchRecord } from './api';
+import { apiFetch, type StudentRecord, type AcademicTermRecord } from './api';
 import { useUniversityData } from './useUniversityData';
 import { useUniversityRaw, clearUniversityRawCache } from './useUniversityPeople';
-import DataTable from './DataTable';
 import { toast } from 'sonner';
 import { useSupabase } from '@/utils/supabase/client';
 
@@ -31,8 +33,31 @@ interface DistributeResult {
   error?: string;
 }
 
-const semesterLabel = (n: number) =>
-  `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
+interface ExamBatchRow {
+  id: string;
+  exam_type: string;
+  semester: string;
+  academic_year: string;
+  total_files: number;
+  status: string;
+  created_by: string | null;
+  created_at: number;
+}
+
+interface HistoryRow {
+  id: string;
+  user_id: string | null;
+  recipient_email: string;
+  roll_number: string;
+  year: string;
+  semester: string;
+  file_name: string;
+  file_url: string;
+  storage_path: string;
+  created_at: number;
+  batch_id: string | null;
+  student_name: string | null;
+}
 
 const initialsOf = (name: string) =>
   name.trim().split(/\s+/).slice(0, 2).map((w) => (w[0] || '').toUpperCase()).join('');
@@ -45,6 +70,24 @@ const filterOptions = [
 
 type FilterId = (typeof filterOptions)[number]['id'];
 
+type TabId = 'upload' | 'batches' | 'history';
+
+const EXAM_TYPES = ['Mid Term', 'Final Term', 'Quiz', 'Assignment'];
+
+const statusBadge = (status: string) => {
+  const s = status.toUpperCase();
+  if (s === 'PUBLISHED') {
+    return <span className="badge badge-success badge-sm" style={{ fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase' }}>Published</span>;
+  }
+  if (s === 'UPLOADED') {
+    return <span className="badge badge-warning badge-sm" style={{ fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: 'rgba(245,158,11,0.15)', color: '#b45309', border: 'none' }}>Uploaded</span>;
+  }
+  if (s === 'ARCHIVED') {
+    return <span className="badge badge-sm" style={{ fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: 'var(--divider-soft)', color: 'var(--text-light)', border: 'none' }}>Archived</span>;
+  }
+  return <span className="badge badge-ghost badge-sm" style={{ fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase' }}>Draft</span>;
+};
+
 export default function ExamResultDistributionSection() {
   const supabase = useSupabase();
   const { students, loading: studentsLoading, refresh } = useUniversityRaw();
@@ -55,9 +98,17 @@ export default function ExamResultDistributionSection() {
   const [sending, setSending] = useState(false);
   const [sentCount, setSentCount] = useState(0);
   const [lastResults, setLastResults] = useState<DistributeResult[] | null>(null);
-  const [examTab, setExamTab] = useState('Upload');
+  const [tab, setTab] = useState<TabId>('upload');
   const [filePage, setFilePage] = useState(1);
   const [resultPage, setResultPage] = useState(1);
+
+  const [batches, setBatches] = useState<ExamBatchRow[] | null>(null);
+  const [history, setHistory] = useState<HistoryRow[] | null>(null);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
+  const [historyBatch, setHistoryBatch] = useState('all');
+  const [viewer, setViewer] = useState<HistoryRow | null>(null);
 
   const { data: terms } = useUniversityData<AcademicTermRecord[]>(
     useCallback(() => apiFetch<AcademicTermRecord[]>('/api/terms'), [])
@@ -70,6 +121,7 @@ export default function ExamResultDistributionSection() {
 
   const [year, setYear] = useState<string>('');
   const [semester, setSemester] = useState<string>('');
+  const [examType, setExamType] = useState<string>(EXAM_TYPES[0]);
 
   const effectiveYear = year || yearOptions[0] || '2025-2026';
 
@@ -101,6 +153,135 @@ export default function ExamResultDistributionSection() {
     })();
     return () => { cancelled = true; };
   }, [supabase]);
+
+  const loadBatches = useCallback(async () => {
+    const { data } = await supabase
+      .from('exam_result_batches')
+      .select('id, exam_type, semester, academic_year, total_files, status, created_by, created_at')
+      .order('created_at', { ascending: false })
+      .limit(200);
+    if (data) setBatches(data as unknown as ExamBatchRow[]);
+  }, [supabase]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch, setState only after await
+    void loadBatches();
+  }, [loadBatches]);
+
+  const historyIdsRef = useRef<Set<string>>(new Set());
+
+  const loadHistory = useCallback(async () => {
+    const batchFilter = historyBatch === 'all' ? null : historyBatch;
+    let query = supabase
+      .from('exam_results')
+      .select('id, user_id, recipient_email, roll_number, year, semester, file_name, file_url, storage_path, created_at, batch_id, student_name', { count: 'exact' })
+      .order('created_at', { ascending: false });
+    if (batchFilter) query = query.eq('batch_id', batchFilter);
+    const from = (historyPage - 1) * historyPageSize;
+    const { data, count } = await query.range(from, from + historyPageSize - 1);
+    if (data) {
+      historyIdsRef.current = new Set((data as unknown as HistoryRow[]).map((r) => r.id));
+      setHistory(data as unknown as HistoryRow[]);
+      setHistoryTotal(count ?? 0);
+    }
+  }, [supabase, historyPage, historyPageSize, historyBatch]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch, setState only after await
+    void loadHistory();
+  }, [loadHistory]);
+
+  const historyBatchRef = useRef('all');
+  useEffect(() => {
+    historyBatchRef.current = historyBatch;
+  }, [historyBatch]);
+
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-exam-results-sync')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'exam_result_batches' },
+        (payload) => {
+          const rec = payload.new as unknown as ExamBatchRow;
+          setBatches((prev) => (prev && !prev.some((b) => b.id === rec.id) ? [rec, ...prev] : prev));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'exam_result_batches' },
+        (payload) => {
+          const rec = payload.new as unknown as ExamBatchRow;
+          setBatches((prev) => (prev ? prev.map((b) => (b.id === rec.id ? rec : b)) : prev));
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'exam_result_batches' },
+        (payload) => {
+          const old = payload.old as { id: string };
+          setBatches((prev) => (prev ? prev.filter((b) => b.id !== old.id) : prev));
+          if (historyBatchRef.current === old.id) setHistoryBatch('all');
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'exam_results' },
+        (payload) => {
+          const rec = payload.new as unknown as HistoryRow;
+          if (historyBatchRef.current !== 'all' && rec.batch_id !== historyBatchRef.current) return;
+          if (historyIdsRef.current.has(rec.id)) return;
+          historyIdsRef.current.add(rec.id);
+          setHistory((prev) => (prev ? [rec, ...prev] : prev));
+          setHistoryTotal((t) => t + 1);
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'exam_results' },
+        (payload) => {
+          const rec = payload.new as unknown as HistoryRow;
+          const filter = historyBatchRef.current;
+          const present = historyIdsRef.current.has(rec.id);
+          const matches = filter === 'all' || rec.batch_id === filter;
+          if (present && matches) {
+            setHistory((prev) => (prev ? prev.map((r) => (r.id === rec.id ? rec : r)) : prev));
+          } else if (!present && matches) {
+            historyIdsRef.current.add(rec.id);
+            setHistory((prev) => (prev ? [rec, ...prev] : prev));
+            setHistoryTotal((t) => t + 1);
+          } else if (present && !matches) {
+            historyIdsRef.current.delete(rec.id);
+            setHistory((prev) => (prev ? prev.filter((r) => r.id !== rec.id) : prev));
+            setHistoryTotal((t) => Math.max(0, t - 1));
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'exam_results' },
+        (payload) => {
+          const old = payload.old as { id: string };
+          if (!historyIdsRef.current.has(old.id)) return;
+          historyIdsRef.current.delete(old.id);
+          setHistory((prev) => (prev ? prev.filter((r) => r.id !== old.id) : prev));
+          setHistoryTotal((t) => Math.max(0, t - 1));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase]);
+
+  const batchLabel = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const b of batches ?? []) map.set(b.id, `${b.exam_type} • ${b.semester} • ${b.academic_year}`);
+    return map;
+  }, [batches]);
+
+  const batchOptions = useMemo(
+    () => (batches ?? []).map((b) => ({ id: b.id, label: `${b.exam_type} • ${b.semester} • ${b.academic_year}` })),
+    [batches]
+  );
 
   const studentByRoll = useMemo(() => {
     const map = new Map<string, StudentRecord>();
@@ -230,6 +411,7 @@ export default function ExamResultDistributionSection() {
         body: JSON.stringify({
           year: effectiveYear,
           semester: effectiveSemester,
+          examType,
           files: matched.map((f) => ({
             fileName: f.fileName,
             rollNo: f.rollNo,
@@ -242,7 +424,7 @@ export default function ExamResultDistributionSection() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data?.message || 'Distribution failed');
+        toast.error(data?.message || 'Batch creation failed');
         return;
       }
       const results: DistributeResult[] = Array.isArray(data?.results) ? data.results : [];
@@ -255,7 +437,7 @@ export default function ExamResultDistributionSection() {
       if (failed.length > 0) {
         toast.error(`${failed.length} file${failed.length > 1 ? 's' : ''} failed — see details`);
       } else {
-        toast.success(`${data.sent ?? 0} exam result${(data.sent ?? 0) === 1 ? '' : 's'} delivered to students`);
+        toast.success(`Batch published — ${data.sent ?? 0} results delivered to students`);
       }
     } catch {
       toast.error('Network error — could not reach the server');
@@ -264,41 +446,109 @@ export default function ExamResultDistributionSection() {
     }
   };
 
-  const { data: batchesData, loading, error } = useUniversityData<ExamBatchRow[]>(
-    useCallback(() => apiFetch<ResultBatchRecord[]>('/api/result-batches').then((batches) =>
-      batches.map((b) => ({
-        examType: b.examTypeName,
-        semester: semesterLabel(b.semesterNo),
-        academicYear: String(b.academicYear),
-        totalFiles: String(b.totalFiles),
-        status: b.status,
-      }))
-    ), []),
-  );
-  const batches = batchesData ?? [];
+  const runBatchAction = async (batch: ExamBatchRow, action: 'publish' | 'archive' | 'unarchive') => {
+    try {
+      const res = await fetch(`/api/exam-results/batches/${batch.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.message || 'Action failed');
+        return;
+      }
+      if (action === 'publish') {
+        toast.success(`Batch published — ${data.notified ?? 0} students notified`);
+      } else if (action === 'archive') {
+        toast.success('Batch archived — results hidden from students');
+      } else {
+        toast.success('Batch restored — results visible to students again');
+      }
+      void loadBatches();
+      void loadHistory();
+    } catch {
+      toast.error('Network error — could not reach the server');
+    }
+  };
+
+  const deleteBatch = async (batch: ExamBatchRow) => {
+    if (!window.confirm(`Delete batch "${batch.exam_type} • ${batch.semester} • ${batch.academic_year}" and its ${batch.total_files} files? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`/api/exam-results/batches/${batch.id}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data?.message || 'Delete failed');
+        return;
+      }
+      toast.success(`Batch deleted — ${data.deleted ?? 0} files removed`);
+      if (historyBatch === batch.id) setHistoryBatch('all');
+      void loadBatches();
+      void loadHistory();
+    } catch {
+      toast.error('Network error — could not reach the server');
+    }
+  };
+
+  const viewBatchDetails = (batch: ExamBatchRow) => {
+    setHistoryBatch(batch.id);
+    setHistoryPage(1);
+    setTab('history');
+  };
+
+  const historyTotalPages = Math.max(1, Math.ceil(historyTotal / historyPageSize));
+  const historyPageSafe = Math.min(historyPage, historyTotalPages);
+
+  const downloadHref = (r: HistoryRow) =>
+    `${r.file_url}${r.file_url.includes('?') ? '&' : '?'}download=${encodeURIComponent(r.file_name)}`;
+
+  const displayName = (r: HistoryRow) => r.student_name ?? r.recipient_email.split('@')[0];
 
   return (
     <div>
       <div style={{ background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 50%, var(--primary-darker) 100%)', borderRadius: 'var(--radius-xl)', padding: '26px 32px', color: '#fff', marginBottom: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: 'var(--shadow-lg)', position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'relative', zIndex: 1 }}>
           <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: '-0.5px' }}>Exam Results</h1>
-          <p style={{ margin: '6px 0 0', opacity: 0.85, fontSize: 13.5, fontWeight: 400 }}>Upload, match & deliver to students</p>
+          <p style={{ margin: '6px 0 0', opacity: 0.85, fontSize: 13.5, fontWeight: 400 }}>Upload, batch, publish & audit student results</p>
         </div>
         <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>
           <div style={{ fontSize: 32, fontWeight: 800 }}>{sentCount}</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>SENT</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>TOTAL SENT</div>
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--surface)' }}>
-        {['Upload', 'Batches'].map((t) => (
-          <button key={t} onClick={() => setExamTab(t)} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: examTab === t ? 'var(--primary)' : 'var(--text-light)', cursor: 'pointer', borderBottom: examTab === t ? '2.5px solid var(--primary)' : '2.5px solid transparent', background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-            {t === 'Upload' && <Upload size={14} />}{t === 'Batches' && <GraduationCap size={14} />}{t}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--surface)', flexWrap: 'wrap' }}>
+        {([
+          { id: 'upload', label: 'Upload & Send', icon: Upload },
+          { id: 'batches', label: 'Result Batches', icon: Layers },
+          { id: 'history', label: 'Sent History', icon: History },
+        ] as Array<{ id: TabId; label: string; icon: typeof Upload }>).map((t) => (
+          <button
+            key={t.id}
+            onClick={() => setTab(t.id)}
+            className="flex items-center gap-2"
+            style={{
+              padding: '12px 16px', fontSize: 13, fontWeight: 600,
+              color: tab === t.id ? 'var(--primary)' : 'var(--text-light)',
+              cursor: 'pointer',
+              borderBottom: tab === t.id ? '2.5px solid var(--primary)' : '2.5px solid transparent',
+              background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            <t.icon size={14} />
+            {t.label}
+            {t.id === 'batches' && batches && batches.length > 0 && (
+              <span className="badge badge-sm" style={{ background: 'var(--divider-soft)', color: 'var(--text-light)', border: 'none', fontSize: 10.5 }}>{batches.length}</span>
+            )}
+            {t.id === 'history' && (
+              <span className="badge badge-sm" style={{ background: 'var(--divider-soft)', color: 'var(--text-light)', border: 'none', fontSize: 10.5 }}>{historyTotal}</span>
+            )}
           </button>
         ))}
       </div>
 
-      {examTab === 'Upload' && (
+      {tab === 'upload' && (
         <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-[18px]">
           <div>
             <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
@@ -473,10 +723,16 @@ export default function ExamResultDistributionSection() {
             <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <Settings size={16} /> Settings
+                  <Settings size={16} /> Batch Settings
                 </div>
               </div>
               <div style={{ padding: '16px 22px' }}>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Exam Type</label>
+                  <select value={examType} onChange={(e) => setExamType(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}>
+                    {EXAM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Academic Year</label>
                   <select value={effectiveYear} onChange={(e) => { setYear(e.target.value); setSemester(''); }} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}>
@@ -490,7 +746,7 @@ export default function ExamResultDistributionSection() {
                   </select>
                 </div>
                 <div style={{ marginBottom: 16, fontSize: 12.5, color: 'var(--text-light)', lineHeight: 1.5 }}>
-                  Files are stored under <code style={{ background: 'var(--divider-soft)', padding: '2px 6px', borderRadius: 6, fontSize: 11.5 }}>{effectiveYear}/{effectiveSemester}/UCSTGO-XXXX_exam_result.pdf</code> and delivered to each student&apos;s Exam Results page in real time.
+                  Files are stored under <code style={{ background: 'var(--divider-soft)', padding: '2px 6px', borderRadius: 6, fontSize: 11.5 }}>{effectiveYear}/{effectiveSemester}/UCSTGO-XXXX_exam_result.pdf</code>. Uploading creates a batch and delivers the results to students immediately — you can re-notify students anytime from Result Batches.
                 </div>
 
                 {studentsLoading && (
@@ -515,14 +771,14 @@ export default function ExamResultDistributionSection() {
                   }}
                 >
                   {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
-                  {sending ? 'Sending…' : `Send Exam Results (${matchedCount})`}
+                  {sending ? 'Creating batch…' : `Create Batch (${matchedCount})`}
                 </button>
 
                 {lastResults && lastResults.length > 0 && (
                   <div style={{ marginTop: 14, fontSize: 12.5 }}>
                     <div style={{ marginBottom: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>
-                        {lastResults.filter((r) => r.ok).length} sent • {lastResults.filter((r) => !r.ok).length} failed
+                        {lastResults.filter((r) => r.ok).length} uploaded • {lastResults.filter((r) => !r.ok).length} failed
                       </span>
                       <span style={{ fontSize: 11, color: 'var(--text-lighter)' }}>
                         Showing {pageResults.length} of {lastResults.length}
@@ -535,7 +791,7 @@ export default function ExamResultDistributionSection() {
                           : <X size={13} style={{ color: '#dc2626', flexShrink: 0 }} />}
                         <span className="truncate" style={{ color: 'var(--text)' }}>{r.fileName}</span>
                         <span style={{ marginLeft: 'auto', color: r.ok ? '#166534' : '#b91c1c', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                          {r.ok ? 'Sent' : r.error ?? 'Failed'}
+                          {r.ok ? 'Uploaded' : r.error ?? 'Failed'}
                         </span>
                       </div>
                     ))}
@@ -560,48 +816,244 @@ export default function ExamResultDistributionSection() {
         </div>
       )}
 
-      {examTab === 'Batches' && (
-        <>
-          {loading && !batchesData && <div style={{ fontSize: 13, color: 'var(--text-light)', marginBottom: 12 }}>Loading…</div>}
-          {error && !batchesData && <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>University server unreachable — retrying…</div>}
-          {!loading && !error && batches.length === 0 && (
-            <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
-              No result batches yet
+      {tab === 'batches' && (
+        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Layers size={16} /> Result Batches
+            </div>
+            {batches && batches.length > 0 && (
+              <span className="badge badge-primary badge-sm">{batches.length}</span>
+            )}
+          </div>
+          {batches === null && (
+            <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
+              <Loader2 size={20} className="animate-spin mx-auto mb-2" /> Loading batches…
             </div>
           )}
-          {batches.length > 0 && (
-            <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-                <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <FileText size={16} /> Result Batches
+          {batches !== null && batches.length === 0 && (
+            <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
+              No batches yet — upload files in the Upload & Send tab to create one.
+            </div>
+          )}
+          {batches && batches.length > 0 && (
+            <div className="overflow-x-auto">
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    {['Exam Type', 'Semester', 'Academic Year', 'Total Files', 'Status', 'Created', 'Actions'].map((h) => (
+                      <th key={h} style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, textTransform: 'uppercase', color: 'var(--text-light)', fontWeight: 700, letterSpacing: '0.5px', borderBottom: '1.5px solid var(--secondary)', backgroundColor: 'var(--secondary-lighter)' }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {batches.map((b) => (
+                    <tr key={b.id} className="hover:[&>td]:bg-[var(--divider-soft)]">
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)' }}>
+                        <span className="flex items-center gap-2 font-semibold" style={{ fontSize: 13.5, color: 'var(--accent)' }}>
+                          <GraduationCap size={15} style={{ color: 'var(--primary)' }} />
+                          {b.exam_type}
+                        </span>
+                      </td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)', fontSize: 13.5 }}>{b.semester}</td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)', fontSize: 13.5 }}>{b.academic_year}</td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)' }}>
+                        <span className="badge badge-sm" style={{ background: 'var(--divider-soft)', color: 'var(--text-light)', border: 'none', fontWeight: 700 }}>{b.total_files}</span>
+                      </td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)' }}>{statusBadge(b.status)}</td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)', fontSize: 12.5, color: 'var(--text-light)' }}>
+                        {new Date(b.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                      </td>
+                      <td style={{ padding: '14px 18px', borderBottom: '1px solid var(--divider)' }}>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {b.status === 'ARCHIVED' ? (
+                            <button onClick={() => void runBatchAction(b, 'unarchive')} className="btn btn-primary btn-xs gap-1.5 border-none text-white" title="Restore batch — results visible to students again">
+                              <Rocket size={12} /> Unarchive
+                            </button>
+                          ) : (
+                            <button onClick={() => void runBatchAction(b, 'publish')} className="btn btn-success btn-xs gap-1.5 border-none text-white" title={b.status === 'PUBLISHED' ? 'Send a new notification to all students' : 'Publish Batch — notifies all students'}>
+                              <Rocket size={12} /> {b.status === 'PUBLISHED' ? 'Notify Again' : 'Publish'}
+                            </button>
+                          )}
+                          <button onClick={() => viewBatchDetails(b)} className="btn btn-primary btn-xs gap-1.5 border-none text-white">
+                            <Eye size={12} /> View Details
+                          </button>
+                          {b.status !== 'ARCHIVED' && (
+                            <button onClick={() => void runBatchAction(b, 'archive')} className="btn btn-ghost btn-xs gap-1.5" style={{ border: '1.5px solid var(--surface-border)' }}>
+                              <Archive size={12} /> Archive
+                            </button>
+                          )}
+                          <button onClick={() => void deleteBatch(b)} className="btn btn-ghost btn-xs gap-1.5" style={{ border: '1.5px solid var(--surface-border)', color: 'var(--danger)' }}>
+                            <Trash2 size={12} /> Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'history' && (
+        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)', gap: 12, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <History size={16} /> Sent History
+            </div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <select value={historyBatch} onChange={(e) => { setHistoryBatch(e.target.value); setHistoryPage(1); }} style={{ padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 12.5, color: 'var(--text)', maxWidth: 280 }}>
+                <option value="all">All batches</option>
+                {batchOptions.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
+              </select>
+              <select value={historyPageSize} onChange={(e) => { setHistoryPageSize(Number(e.target.value)); setHistoryPage(1); }} style={{ padding: '8px 12px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 12.5, color: 'var(--text)' }}>
+                {[10, 25, 50].map((n) => <option key={n} value={n}>{n} rows / page</option>)}
+              </select>
+            </div>
+          </div>
+          {history === null && (
+            <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
+              <Loader2 size={20} className="animate-spin mx-auto mb-2" /> Loading history…
+            </div>
+          )}
+          {history !== null && history.length === 0 && (
+            <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
+              No sent results yet.
+            </div>
+          )}
+          {history && history.length > 0 && (
+            <>
+              <div className="overflow-x-auto">
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead>
+                    <tr>
+                      {['Uploaded At', 'Student', 'Roll No', 'Batch', 'PDF File', 'Actions'].map((h) => (
+                        <th key={h} style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, textTransform: 'uppercase', color: 'var(--text-light)', fontWeight: 700, letterSpacing: '0.5px', borderBottom: '1.5px solid var(--secondary)', backgroundColor: 'var(--secondary-lighter)' }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.map((r) => (
+                      <tr key={r.id} className="hover:[&>td]:bg-[var(--divider-soft)]">
+                        <td style={{ padding: '13px 18px', borderBottom: '1px solid var(--divider)', fontSize: 12.5, color: 'var(--text-light)', whiteSpace: 'nowrap' }}>
+                          {new Date(r.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                        </td>
+                        <td style={{ padding: '13px 18px', borderBottom: '1px solid var(--divider)' }}>
+                          <span className="flex items-center gap-2.5">
+                            <span className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 11 }}>
+                              {initialsOf(displayName(r))}
+                            </span>
+                            <span className="min-w-0">
+                              <span className="block truncate font-semibold" style={{ color: 'var(--accent)', maxWidth: 180 }}>{displayName(r)}</span>
+                              <span className="block truncate text-xs" style={{ color: 'var(--text-lighter)', maxWidth: 200 }}>{r.recipient_email}</span>
+                            </span>
+                          </span>
+                        </td>
+                        <td style={{ padding: '13px 18px', borderBottom: '1px solid var(--divider)' }}>
+                          <code style={{ background: 'var(--divider-soft)', padding: '3px 8px', borderRadius: 6, fontSize: 12, fontWeight: 600 }}>{r.roll_number}</code>
+                        </td>
+                        <td style={{ padding: '13px 18px', borderBottom: '1px solid var(--divider)', fontSize: 12.5 }}>
+                          {r.batch_id && batchLabel.has(r.batch_id) ? (
+                            <span className="flex items-center gap-1.5" style={{ color: 'var(--text)' }}>
+                              <GraduationCap size={13} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                              <span className="truncate" style={{ maxWidth: 200 }}>{batchLabel.get(r.batch_id)}</span>
+                            </span>
+                          ) : (
+                            <span style={{ color: 'var(--text-light)' }}>{r.semester} • {r.year}</span>
+                          )}
+                        </td>
+                        <td style={{ padding: '13px 18px', borderBottom: '1px solid var(--divider)', fontSize: 13 }}>
+                          <span className="flex items-center gap-1.5 truncate" style={{ maxWidth: 220 }}>
+                            <FileText size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                            {r.file_name}
+                          </span>
+                        </td>
+                        <td style={{ padding: '13px 18px', borderBottom: '1px solid var(--divider)' }}>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => setViewer(r)} className="btn btn-primary btn-xs gap-1.5 border-none text-white">
+                              <Eye size={12} /> Preview
+                            </button>
+                            <a href={downloadHref(r)} download={r.file_name} className="btn btn-ghost btn-xs gap-1.5" style={{ border: '1.5px solid var(--surface-border)' }}>
+                              <Download size={12} /> Download
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex items-center justify-between px-5 py-3" style={{ borderTop: '1px solid var(--divider)', flexWrap: 'wrap', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--text-light)' }}>
+                  {historyTotal} record{historyTotal === 1 ? '' : 's'} • Page {historyPageSafe} of {historyTotalPages}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button onClick={() => setHistoryPage((p) => Math.max(1, p - 1))} disabled={historyPageSafe <= 1} className="btn btn-xs btn-ghost" style={{ border: '1.5px solid var(--surface-border)', opacity: historyPageSafe <= 1 ? 0.4 : 1 }}>
+                    Previous
+                  </button>
+                  <button onClick={() => setHistoryPage((p) => Math.min(historyTotalPages, p + 1))} disabled={historyPageSafe >= historyTotalPages} className="btn btn-xs btn-ghost" style={{ border: '1.5px solid var(--surface-border)', opacity: historyPageSafe >= historyTotalPages ? 0.4 : 1 }}>
+                    Next
+                  </button>
                 </div>
               </div>
-              <div style={{ padding: '16px 22px' }}>
-                <DataTable
-                  columns={[
-                    { key: 'examType', label: 'Exam Type' },
-                    { key: 'semester', label: 'Semester' },
-                    { key: 'academicYear', label: 'Academic Year' },
-                    { key: 'totalFiles', label: 'Total Files' },
-                    { key: 'status', label: 'Status', render: (v: string) => (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: v === 'PUBLISHED' || v === 'ready' ? 'rgba(34,197,94,0.15)' : 'rgba(146,64,14,0.15)', color: v === 'PUBLISHED' || v === 'ready' ? '#166534' : '#92400e' }}>{v}</span>
-                    )},
-                  ]}
-                  data={batches}
-                />
-              </div>
-            </div>
+            </>
           )}
-        </>
+        </div>
+      )}
+
+      {viewer && createPortal(
+        <AnimatePresence>
+          <motion.dialog
+            open
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="modal modal-open z-[999] p-4 border-none"
+            style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
+            onClick={() => setViewer(null)}
+            onCancel={(e) => { e.preventDefault(); setViewer(null); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+              className="w-[94vw] max-w-3xl bg-base-100 rounded-2xl overflow-hidden"
+              style={{ border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-lg)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid var(--surface)' }}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', color: '#fff' }}>
+                  <FileText size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-semibold text-sm" style={{ color: 'var(--accent)' }}>{viewer.file_name}</div>
+                  <div className="text-xs mt-0.5" style={{ color: 'var(--text-lighter)' }}>
+                    {displayName(viewer)} • {viewer.roll_number} • {viewer.semester} • {viewer.year}
+                  </div>
+                </div>
+                <button onClick={() => setViewer(null)} className="btn btn-ghost btn-circle btn-sm" title="Close">
+                  <X size={16} />
+                </button>
+              </div>
+              <iframe src={viewer.file_url} title={viewer.file_name} className="w-full" style={{ height: '68vh', border: 'none', background: '#fff' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--surface)' }}>
+                <a href={downloadHref(viewer)} download={viewer.file_name} className="btn btn-primary gap-1.5 border-none text-white" style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}>
+                  <Download size={15} /> Download PDF
+                </a>
+                <button onClick={() => setViewer(null)} className="btn btn-ghost">Close</button>
+              </div>
+            </motion.div>
+          </motion.dialog>
+        </AnimatePresence>,
+        document.body
       )}
     </div>
   );
-}
-
-interface ExamBatchRow {
-  examType: string;
-  semester: string;
-  academicYear: string;
-  totalFiles: string;
-  status: string;
 }

@@ -50,6 +50,7 @@ export async function POST(request: Request) {
   const body = await request.json().catch(() => null);
   const year = typeof body?.year === 'string' ? sanitizeFolder(body.year) : '';
   const semester = typeof body?.semester === 'string' ? sanitizeFolder(body.semester) : '';
+  const examType = typeof body?.examType === 'string' ? sanitizeFolder(body.examType) : 'Exam';
   const files: DistributeFile[] = Array.isArray(body?.files) ? body.files : [];
 
   if (!year || !semester) {
@@ -85,6 +86,8 @@ export async function POST(request: Request) {
   }
 
   const results: FileResult[] = [];
+  const insertedIds: string[] = [];
+  const sentEmails: string[] = [];
   let sent = 0;
 
   for (const file of files) {
@@ -102,26 +105,25 @@ export async function POST(request: Request) {
       const fileUrl = supabase.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl;
 
       const now = Date.now();
-      const { error: recErr } = await supabase.from('exam_results').insert({
-        user_id: file.studentUserId || null,
-        recipient_email: file.studentEmail,
-        roll_number: file.rollNo.toUpperCase(),
-        year,
-        semester,
-        file_name: file.fileName,
-        file_url: fileUrl,
-        storage_path: objectPath,
-        created_at: now,
-      });
-      if (recErr) throw new Error(recErr.message);
-
-      await supabase.from('notifications').insert({
-        recipient_email: file.studentEmail,
-        type: 'exam-result',
-        message: `Your Exam Results for ${semester} (${year}) have been published!`,
-        created_at: now,
-        read: false,
-      });
+      const { data: row, error: recErr } = await supabase
+        .from('exam_results')
+        .insert({
+          user_id: file.studentUserId || null,
+          recipient_email: file.studentEmail,
+          roll_number: file.rollNo.toUpperCase(),
+          year,
+          semester,
+          file_name: file.fileName,
+          file_url: fileUrl,
+          storage_path: objectPath,
+          student_name: file.studentName || null,
+          created_at: now,
+        })
+        .select('id')
+        .single();
+      if (recErr || !row) throw new Error(recErr?.message ?? 'Insert failed');
+      insertedIds.push(row.id);
+      sentEmails.push(file.studentEmail);
 
       sent += 1;
       results.push({ fileName: file.fileName, rollNo: file.rollNo, ok: true });
@@ -135,5 +137,47 @@ export async function POST(request: Request) {
     }
   }
 
-  return NextResponse.json({ sent, results });
+  if (sent === 0) {
+    return NextResponse.json({ sent: 0, results, message: 'No files uploaded — batch not created' }, { status: 400 });
+  }
+
+  const { data: batch, error: batchErr } = await supabase
+    .from('exam_result_batches')
+    .insert({
+      exam_type: examType || 'Exam',
+      semester,
+      academic_year: year,
+      total_files: sent,
+      status: 'PUBLISHED',
+      created_by: identity.email ?? null,
+    })
+    .select('id, exam_type, semester, academic_year, total_files, status, created_by, created_at')
+    .single();
+
+  if (batchErr || !batch) {
+    return NextResponse.json({ sent: 0, results, message: 'Batch creation failed' }, { status: 500 });
+  }
+
+  const { error: linkErr } = await supabase
+    .from('exam_results')
+    .update({ batch_id: batch.id })
+    .in('id', insertedIds);
+
+  if (linkErr) {
+    return NextResponse.json({ sent: 0, results, message: 'Batch linking failed' }, { status: 500 });
+  }
+
+  const now = Date.now();
+  const notifications = [...new Set(sentEmails)].map((email) => ({
+    recipient_email: email,
+    type: 'exam-result',
+    message: `Your ${batch.exam_type} results (${semester}, ${year}) have been published!`,
+    created_at: now,
+    read: false,
+  }));
+  if (notifications.length > 0) {
+    await supabase.from('notifications').insert(notifications);
+  }
+
+  return NextResponse.json({ batchId: batch.id, sent, results });
 }
