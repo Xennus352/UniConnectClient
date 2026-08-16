@@ -98,6 +98,10 @@ export function useUniversityPeople() {
   return { people: data ?? [], loading, error, refresh };
 }
 
+export function clearUniversityRawCache(): void {
+  rawCache = null;
+}
+
 export function useUniversityRaw() {
   const fetcher = useCallback((): Promise<UniversityRawData> => fetchRawData(), []);
   const { data, loading, error, refresh } = useUniversityData<UniversityRawData>(fetcher);

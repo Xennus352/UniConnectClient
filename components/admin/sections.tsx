@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { apiFetch, markAttendance } from '@/components/shared/api';
 import type {
   StudentRecord, StaffRecord, AttendanceRecord,
-  ClassSessionRecord, ScheduleRecord, AcademicTermRecord, ResultBatchRecord,
+  ClassSessionRecord, ScheduleRecord, AcademicTermRecord,
   UserRecord,
 } from '@/components/shared/api';
 import { useUniversityData } from '@/components/shared/useUniversityData';
@@ -21,10 +21,10 @@ import { useSupabase } from '@/utils/supabase/client';
 import { useFeedPosts, useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from '@/components/shared/session';
 import {
-  Users, GraduationCap, FileText,
+  Users, GraduationCap,
   ClipboardCheck, CalendarDays, CalendarCheck,
-  Coins, Search, Settings, MessageSquare, Newspaper,
-  Mail, Upload, Filter, Plus, Download,
+  Coins, Search, MessageSquare, Newspaper,
+  Upload, Filter, Plus, Download,
   Check, X, Eye, BookOpen, Bell, MessageCircle, User, Ban,
 } from 'lucide-react';
 import type {
@@ -399,7 +399,6 @@ export function ExploreSection() {
   );
 }
 
-export { default as InboxSection } from '@/components/shared/InboxSection';
 
 export function StudentsSection() {
   const { data, loading, error } = useUniversityData<StudentData[]>(
@@ -685,129 +684,7 @@ export function StaffSection() {
   );
 }
 
-interface ExamBatchRow {
-  examType: string;
-  semester: string;
-  academicYear: string;
-  totalFiles: string;
-  status: string;
-}
-
-export function ExamResultsSection() {
-  const [examTab, setExamTab] = useState('Upload');
-  const examTabs = ['Upload', 'Students'];
-
-  const { data, loading, error } = useUniversityData<ExamBatchRow[]>(
-    useCallback(() => apiFetch<ResultBatchRecord[]>('/api/result-batches').then((batches) =>
-      batches.map((b) => ({
-        examType: b.examTypeName,
-        semester: semesterLabel(b.semesterNo),
-        academicYear: String(b.academicYear),
-        totalFiles: String(b.totalFiles),
-        status: b.status,
-      }))
-    ), []),
-  );
-  const batches = data ?? [];
-
-  return (
-    <div>
-      <div style={{ background: 'linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 50%, var(--primary-darker) 100%)', borderRadius: 'var(--radius-xl)', padding: '26px 32px', color: '#fff', marginBottom: 22, display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: 'var(--shadow-lg)', position: 'relative', overflow: 'hidden' }}>
-        <div style={{ position: 'relative', zIndex: 1 }}>
-          <h1 style={{ fontSize: 24, fontWeight: 700, margin: 0, letterSpacing: '-0.5px' }}>Exam Results</h1>
-          <p style={{ margin: '6px 0 0', opacity: 0.85, fontSize: 13.5, fontWeight: 400 }}>Upload, match & deliver to students</p>
-        </div>
-        <div style={{ textAlign: 'right', position: 'relative', zIndex: 1 }}>
-          <div style={{ fontSize: 32, fontWeight: 800 }}>0</div>
-          <div style={{ fontSize: 12, opacity: 0.8 }}>SENT</div>
-        </div>
-      </div>
-      <div style={{ display: 'flex', gap: 4, marginBottom: 18, borderBottom: '1px solid var(--surface)' }}>
-        {examTabs.map((t) => (
-          <button key={t} onClick={() => setExamTab(t)} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: examTab === t ? 'var(--primary)' : 'var(--text-light)', cursor: 'pointer', borderBottom: examTab === t ? '2.5px solid var(--primary)' : '2.5px solid transparent', background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none', display: 'flex', alignItems: 'center', gap: 4 }}>
-            {t === 'Upload' && <Upload size={14} />}{t === 'Students' && <GraduationCap size={14} />}{t}
-          </button>
-        ))}
-      </div>
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-[18px]">
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Upload size={16} /> Upload PDFs
-            </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: 'rgba(30,64,175,0.15)', color: '#1e40af' }}>All</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: 'rgba(34,197,94,0.15)', color: '#166534' }}>1st</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: 'rgba(34,197,94,0.15)', color: '#166534' }}>2nd</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: 'rgba(34,197,94,0.15)', color: '#166534' }}>3rd</span>
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: 'rgba(34,197,94,0.15)', color: '#166534' }}>4th</span>
-            </div>
-          </div>
-          <div style={{ padding: '16px 22px' }}>
-            <div style={{ border: '2px dashed var(--secondary)', borderRadius: 'var(--radius-lg)', padding: '48px 24px', textAlign: 'center', background: 'var(--secondary-lighter)', cursor: 'pointer' }}>
-              <div style={{ fontSize: 40, color: 'var(--text-lighter)', marginBottom: 12 }}>
-                <Upload size={40} style={{ display: 'inline' }} />
-              </div>
-              <h4 style={{ fontSize: 16, color: 'var(--accent)', marginBottom: 6 }}>Drop PDFs here or <span style={{ color: 'var(--primary)' }}>browse</span></h4>
-              <p style={{ fontSize: 13, color: 'var(--text-light)' }}>Name files with roll number (xxxx) or student name</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Settings size={16} /> Settings
-            </div>
-          </div>
-          <div style={{ padding: '16px 22px' }}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Academic Year</label>
-              <select style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}><option>2025-2026</option><option>2024-2025</option></select>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Semester</label>
-              <select style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}><option>Semester 1</option><option>Semester 2</option></select>
-            </div>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Exam Type</label>
-              <select style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}><option>Final Exam</option><option>Midterm</option><option>Quiz</option></select>
-            </div>
-          </div>
-        </div>
-      </div>
-      {loading && !data && <div style={{ fontSize: 13, color: 'var(--text-light)', marginBottom: 12 }}>Loading...</div>}
-      {error && !data && <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>University server unreachable — retrying…</div>}
-      {!loading && !error && batches.length === 0 && (
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
-          No result batches yet
-        </div>
-      )}
-      {batches.length > 0 && (
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <FileText size={16} /> Result Batches
-            </div>
-          </div>
-          <div style={{ padding: '16px 22px' }}>
-            <DataTable
-              columns={[
-                { key: 'examType', label: 'Exam Type' },
-                { key: 'semester', label: 'Semester' },
-                { key: 'academicYear', label: 'Academic Year' },
-                { key: 'totalFiles', label: 'Total Files' },
-                { key: 'status', label: 'Status', render: (v: string) => (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: v === 'PUBLISHED' || v === 'ready' ? 'rgba(34,197,94,0.15)' : 'rgba(146,64,14,0.15)', color: v === 'PUBLISHED' || v === 'ready' ? '#166534' : '#92400e' }}>{v}</span>
-                )},
-              ]}
-              data={batches}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+export { default as ExamResultsSection } from '@/components/shared/ExamResultDistributionSection';
 
 export function RollCallSection() {
   const [rollTab, setRollTab] = useState('Live');

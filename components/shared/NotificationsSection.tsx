@@ -109,7 +109,7 @@ export default function NotificationsSection() {
       return;
     }
     if (n.type === 'exam-result') {
-      router.push(`${base}/inbox`);
+      router.push(`${base}/exam-results`);
     }
   };
 

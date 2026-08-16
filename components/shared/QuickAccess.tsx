@@ -2,13 +2,13 @@
 
 import { FileText, ClipboardCheck, CalendarDays, Coins } from 'lucide-react';
 
-export default function QuickAccess() {
+export default function QuickAccess({ role }: { role?: string }) {
   const items = [
-    { icon: FileText, label: 'Exam Results' },
-    { icon: ClipboardCheck, label: 'Roll Call' },
-    { icon: CalendarDays, label: 'Timetable' },
-    { icon: Coins, label: 'Finance' },
-  ];
+    { icon: FileText, label: 'Exam Results', roles: ['admin', 'student-affair'] },
+    { icon: ClipboardCheck, label: 'Roll Call', roles: null },
+    { icon: CalendarDays, label: 'Timetable', roles: null },
+    { icon: Coins, label: 'Finance', roles: null },
+  ].filter((item) => !item.roles || item.roles.includes(role ?? ''));
 
   return (
     <div className="grid grid-cols-2 gap-[10px]">

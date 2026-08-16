@@ -236,3 +236,38 @@ create table public.event_registrations (
 );
 create unique index idx_event_registrations_unique on public.event_registrations (event_id, user_email);
 create index idx_event_registrations_event on public.event_registrations (event_id);
+
+------------------------------------------------------------
+-- Exam Result distribution: system inbox messages
+------------------------------------------------------------
+alter table public.chat_messages
+  add column if not exists sender_id uuid,
+  add column if not exists recipient_id uuid,
+  add column if not exists recipient_email text,
+  add column if not exists message_type text not null default 'text',
+  add column if not exists file_url text,
+  add column if not exists file_name text,
+  add column if not exists roll_number text;
+
+create index if not exists idx_chat_messages_recipient_type
+  on public.chat_messages (recipient_email, message_type, created_at desc);
+
+------------------------------------------------------------
+-- Exam Results distribution: dedicated published-results table
+------------------------------------------------------------
+create table if not exists public.exam_results (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid,
+  recipient_email text not null,
+  roll_number     text not null,
+  year            text not null,
+  semester        text not null,
+  file_name       text not null,
+  file_url        text not null,
+  storage_path    text not null,
+  created_at      bigint not null default (extract(epoch from now()) * 1000)
+);
+create index if not exists idx_exam_results_recipient
+  on public.exam_results (recipient_email, created_at desc);
+
+grant select, insert on public.exam_results to anon, authenticated;

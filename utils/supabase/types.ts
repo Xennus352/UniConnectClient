@@ -160,26 +160,48 @@ export interface Database {
       chat_messages: {
         Row: {
           id: string;
-          conversation_id: string;
+          conversation_id: string | null;
+          sender_id: string | null;
+          recipient_id: string | null;
+          recipient_email: string | null;
           sender_email: string;
           sender_name: string;
           content: string;
           attachments: Json | null;
           mentions: Json | null;
+          message_type: string;
+          file_url: string | null;
+          file_name: string | null;
+          roll_number: string | null;
           created_at: number;
           is_read: boolean;
         };
         Insert: {
-          conversation_id: string;
+          conversation_id?: string | null;
+          sender_id?: string | null;
+          recipient_id?: string | null;
+          recipient_email?: string | null;
           sender_email: string;
           sender_name: string;
           content: string;
           attachments?: Json | null;
           mentions?: Json | null;
+          message_type?: string | null;
+          file_url?: string | null;
+          file_name?: string | null;
+          roll_number?: string | null;
           created_at?: number | null;
           is_read?: boolean | null;
         };
-        Update: { is_read?: boolean | null; attachments?: Json | null; mentions?: Json | null };
+        Update: {
+          is_read?: boolean | null;
+          attachments?: Json | null;
+          mentions?: Json | null;
+          message_type?: string | null;
+          file_url?: string | null;
+          file_name?: string | null;
+          roll_number?: string | null;
+        };
         Relationships: [];
       };
       notifications: {
@@ -267,6 +289,33 @@ export interface Database {
           updated_at?: number | null;
         };
         Update: { last_seen?: number | null; updated_at?: number | null };
+        Relationships: [];
+      };
+      exam_results: {
+        Row: {
+          id: string;
+          user_id: string | null;
+          recipient_email: string;
+          roll_number: string;
+          year: string;
+          semester: string;
+          file_name: string;
+          file_url: string;
+          storage_path: string;
+          created_at: number;
+        };
+        Insert: {
+          user_id?: string | null;
+          recipient_email: string;
+          roll_number: string;
+          year: string;
+          semester: string;
+          file_name: string;
+          file_url: string;
+          storage_path: string;
+          created_at?: number | null;
+        };
+        Update: Record<string, never>;
         Relationships: [];
       };
     };

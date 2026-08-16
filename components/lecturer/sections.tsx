@@ -15,7 +15,7 @@ import { useSession } from '@/components/shared/session';
 import { toast } from 'sonner';
 import {
   BookOpen, ClipboardList, Megaphone, CalendarCheck,
-  GraduationCap, FileText, CalendarDays,
+  CalendarDays,
   Search, MessageSquare, Newspaper, Upload,
   Filter, Download, Plus, Check, X, Eye, Users, Ban,
 } from 'lucide-react';
@@ -23,7 +23,7 @@ import type { StudentData, RollCallData } from '@/components/shared/types';
 import { apiFetch, markAttendance } from '@/components/shared/api';
 import type {
   AcademicTermRecord, AttendanceRecord, ClassSessionRecord,
-  ResultBatchRecord, ScheduleRecord, StudentRecord,
+  ScheduleRecord, StudentRecord,
 } from '@/components/shared/api';
 import { useUniversityData } from '@/components/shared/useUniversityData';
 export { default as FeedSection } from '@/components/shared/FeedSection';
@@ -146,7 +146,7 @@ export function Dashboard() {
               <div style={{ padding: '18px 22px', fontSize: 13, color: 'var(--text-lighter)' }}>No messages yet</div>
             )}
           </div>
-          <QuickAccess />
+          <QuickAccess role={session?.role} />
         </div>
       </div>
     </div>
@@ -596,97 +596,6 @@ export function TimetableSection() {
   );
 }
 
-export function ExamResultsSection() {
-  const batches = useUniversityData<ResultBatchRecord[]>(
-    useCallback(() => apiFetch<ResultBatchRecord[]>('/api/result-batches'), [])
-  );
-  const showBatches = batches.data && batches.data.length > 0;
-
-  return (
-    <div>
-      {batches.error && !batches.data && (
-        <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>
-          University server unreachable — retrying…
-        </div>
-      )}
-      {batches.loading && !batches.data && <div style={{ fontSize: 13, color: 'var(--text-light)', marginBottom: 12 }}>Loading...</div>}
-      <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Exam Results</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Upload and manage examination results</p>
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-5">
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <Upload size={16} /> Upload Results
-            </h3>
-          </div>
-          <div style={{ padding: '18px 22px' }}>
-            <p style={{ fontSize: 12, color: 'var(--text-lighter)', marginBottom: 16, margin: '0 0 16px 0' }}>Upload PDF or Excel files with student results</p>
-            <div
-              style={{ border: '2px dashed var(--secondary)', borderRadius: 'var(--radius-lg)', padding: 32, textAlign: 'center', cursor: 'pointer', background: 'var(--secondary-lighter)', transition: 'all 0.2s', marginBottom: 16 }}
-              onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = 'rgba(2, 132, 199,0.04)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--secondary)'; e.currentTarget.style.background = 'var(--secondary-lighter)'; }}
-            >
-              <Upload size={32} style={{ color: 'var(--text-lighter)', margin: '0 auto 8px', display: 'block' }} />
-              <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-light)', margin: '0 0 4px 0' }}>Drop files here or click to browse</p>
-              <p style={{ fontSize: 11, color: 'var(--text-lighter)', margin: 0 }}>PDF, XLSX up to 10MB</p>
-            </div>
-            <button
-              style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)'; }}
-            ><Upload size={14} /> Upload Results</button>
-          </div>
-        </div>
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <FileText size={16} /> Recent Uploads
-            </h3>
-          </div>
-          <div style={{ padding: '18px 22px' }}>
-            <p style={{ fontSize: 12, color: 'var(--text-lighter)', margin: '0 0 14px 0' }}>Previously uploaded result files</p>
-            <div style={{ fontSize: 13, color: 'var(--text-lighter)' }}>No uploads yet</div>
-          </div>
-        </div>
-      </div>
-      <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <GraduationCap size={16} /> Course Results Overview
-          </h3>
-        </div>
-        <div style={{ padding: '0 22px' }}>
-          {showBatches ? (
-            <DataTable
-              columns={[
-                { key: 'examType', label: 'Exam Type', render: (v: string) => <span style={{ fontSize: 12.5, fontWeight: 600 }}>{v}</span> },
-                { key: 'semester', label: 'Semester', render: (v: string) => <span style={{ fontSize: 12.5, fontWeight: 500 }}>{v}</span> },
-                { key: 'academicYear', label: 'Academic Year', render: (v: string) => <span style={{ fontSize: 12.5, fontWeight: 500 }}>{v}</span> },
-                { key: 'totalFiles', label: 'Total Files', render: (v: number) => <span style={{ fontSize: 12.5, fontWeight: 600 }}>{v}</span> },
-                { key: 'status', label: 'Status', render: (v: string) => (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase',
-                    color: v === 'PUBLISHED' ? 'var(--success)' : 'var(--warning)',
-                    backgroundColor: v === 'PUBLISHED' ? '#dcfce7' : '#fef9c3',
-                  }}>{v}</span>
-                )},
-              ]}
-              data={(batches.data || []).map((b) => ({
-                examType: b.examTypeName,
-                semester: `Sem ${b.semesterNo}`,
-                academicYear: `${b.academicYear}`,
-                totalFiles: b.totalFiles,
-                status: b.status,
-              }))}
-            />
-          ) : (
-            <div style={{ padding: '18px 22px', fontSize: 13, color: 'var(--text-lighter)' }}>No result batches yet</div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export { default as EventsSection } from '@/components/shared/EventsSection';
 

@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
 import { useSupabase } from '@/utils/supabase/client';
-import { useFeedPosts } from '@/lib/supabase/hooks';
+import { useFeedPosts, uniqueChannelName } from '@/lib/supabase/hooks';
 import WelcomeBar from '@/components/shared/WelcomeBar';
 import StatCard from '@/components/shared/StatCard';
 import DataTable from '@/components/shared/DataTable';
@@ -12,16 +14,15 @@ import FeedPost from '@/components/shared/FeedPost';
 import LostFoundPage from '@/components/shared/LostFoundSection';
 import { apiFetch } from '@/components/shared/api';
 import { useSession } from '@/components/shared/session';
-import type { StudentRecord, AttendanceRecord, ScheduleRecord, AcademicTermRecord, ResultDocumentRecord } from '@/components/shared/api';
+import type { StudentRecord, AttendanceRecord, ScheduleRecord, AcademicTermRecord } from '@/components/shared/api';
 import { useUniversityData } from '@/components/shared/useUniversityData';
 import {
   GraduationCap, BookOpen, ClipboardCheck, CalendarCheck, CalendarDays,
-  Newspaper, FileText, Plus, Check, X,
-  Clock, Users, Upload, ShieldCheck, Ban,
+  Newspaper, FileText, X,
+  Clock, Users, Upload, ShieldCheck, Ban, Download, Eye,
 } from 'lucide-react';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
-export { default as InboxSection } from '@/components/shared/InboxSection';
 export { ExploreSection } from '@/components/admin/sections';
 import BlockedSection from '@/components/shared/BlockedSection';
 
@@ -210,62 +211,183 @@ export function TimetableSection() {
 }
 
 export function ExamResultsSection() {
+  const supabase = useSupabase();
   const { user: session } = useSession();
   const me = session?.email ?? '';
-  const { data: results, loading, error } = useUniversityData<ResultDocumentRecord[]>(
-    useCallback(async () => {
-      const students = await apiFetch<StudentRecord[]>('/api/students');
-      const self = students.find((s) => s.email === me);
-      if (!self) return [];
-      return apiFetch<ResultDocumentRecord[]>(`/api/students/${self.studentId}/results`);
-    }, [me])
-  );
 
-  const releaseBadge = (v: string) => {
-    const map: Record<string, { label: string; color: string; bg: string }> = {
-      RELEASED: { label: 'Released', color: 'var(--success)', bg: '#dcfce7' },
-      PENDING: { label: 'Pending', color: 'var(--warning)', bg: '#fef9c3' },
-      BLOCKED: { label: 'Blocked', color: 'var(--error)', bg: '#fee2e2' },
-    };
-    const s = map[v] ?? { label: v, color: 'var(--text-light)', bg: 'var(--surface)' };
-    return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', color: s.color, backgroundColor: s.bg }}>{s.label}</span>
-    );
-  };
+  const [results, setResults] = useState<ExamResultRecord[] | null>(null);
+  const [viewer, setViewer] = useState<ExamResultRecord | null>(null);
+  const seenRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!me) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('exam_results')
+        .select('id, roll_number, year, semester, file_name, file_url, storage_path, created_at')
+        .eq('recipient_email', me)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (!cancelled) setResults((data as unknown as ExamResultRecord[] | null) ?? []);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, me]);
+
+  useEffect(() => {
+    if (!me) return;
+    const channel = supabase
+      .channel(uniqueChannelName('exam-results:mine'))
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'exam_results', filter: `recipient_email=eq.${me}` },
+        (payload) => {
+          const rec = payload.new as unknown as ExamResultRecord;
+          if (!rec || seenRef.current.has(rec.id)) return;
+          seenRef.current.add(rec.id);
+          setResults((prev) => (prev ? [rec, ...prev] : prev));
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase, me]);
+
+  const grouped = useMemo(() => {
+    const groups = new Map<string, ExamResultRecord[]>();
+    for (const r of results ?? []) {
+      const key = `${r.year} \u2022 ${r.semester}`;
+      const arr = groups.get(key) ?? [];
+      arr.push(r);
+      groups.set(key, arr);
+    }
+    return [...groups.entries()];
+  }, [results]);
+
+  const downloadHref = (r: ExamResultRecord) =>
+    `${r.file_url}${r.file_url.includes('?') ? '&' : '?'}download=${encodeURIComponent(r.file_name)}`;
 
   return (
     <div>
       <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Exam Results</h1>
-      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Your personal examination results</p>
-      {loading && !results && <div style={{ fontSize: 12, color: 'var(--text-lighter)', marginBottom: 12 }}>Loading...</div>}
-      {error && !results && <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>University server unreachable — retrying…</div>}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-        <StatCard icon={<GraduationCap size={20} />} iconBgClass="bg-primary/10 text-primary" value={3.85} label="Cumulative GPA" trend="Top 10%" />
-        <StatCard icon={<FileText size={20} />} iconBgClass="bg-info/10 text-info" value={8} label="Courses Completed" trend="All passed" />
-        <StatCard icon={<Check size={20} />} iconBgClass="bg-success/10 text-success" value={'100%'} label="Pass Rate" trend="Semester 2" />
-      </div>
-      <div className="bg-base-100 backdrop-blur-xl" style={cardStyle}>
-        <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-          <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <GraduationCap size={16} /> My Results • Mg Kyaw
-          </h3>
+      <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>
+        {results && results.length > 0
+          ? `${results.length} published result${results.length > 1 ? 's' : ''} — updates arrive in real time`
+          : 'Your published examination results'}
+      </p>
+
+      {results === null && <div style={{ fontSize: 12, color: 'var(--text-lighter)', marginBottom: 12 }}>Loading results...</div>}
+      {results !== null && results.length === 0 && (
+        <div className="bg-base-100 backdrop-blur-xl" style={{ ...cardStyle, padding: 40, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
+          No exam results published yet — you will be notified the moment a result is released.
         </div>
-        <div style={{ padding: '0 22px' }}>
-          <DataTable
-            columns={[
-              { key: 'examTypeName', label: 'Exam', render: (v: string) => <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--accent)' }}>{v}</span> },
-              { key: 'pdfFileName', label: 'Document', render: (v: string) => <span style={{ fontSize: 12.5, fontWeight: 500 }}>{v}</span> },
-              { key: 'releaseStatus', label: 'Status', render: (v: string) => releaseBadge(v) },
-            ]}
-            data={results ?? []}
-          />
-          {!loading && !error && (results ?? []).length === 0 && (
-            <div style={{ padding: '18px 0', fontSize: 12, color: 'var(--text-lighter)' }}>No results published yet</div>
-          )}
+      )}
+
+      {grouped.map(([label, list]) => (
+        <div key={label} className="mb-6">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+            <GraduationCap size={16} style={{ color: 'var(--primary)' }} />
+            <span style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)' }}>{label}</span>
+            <span className="badge badge-primary badge-sm">{list.length}</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {list.map((r) => (
+              <div
+                key={r.id}
+                className="bg-base-100 backdrop-blur-xl flex flex-col gap-4 p-5"
+                style={{
+                  ...cardStyle,
+                  background: 'linear-gradient(135deg, rgba(14,165,233,0.08), rgba(99,102,241,0.05))',
+                  backdropFilter: 'blur(10px)',
+                }}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', color: '#fff', boxShadow: '0 4px 14px rgba(2,132,199,0.35)' }}>
+                    <FileText size={20} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="truncate font-semibold" style={{ fontSize: 14, color: 'var(--accent)' }}>{r.file_name}</span>
+                      <span className="badge badge-primary badge-sm shrink-0">Exam Result</span>
+                    </div>
+                    <div className="text-xs mt-1" style={{ color: 'var(--text-lighter)' }}>
+                      Roll No {r.roll_number} \u2022 {new Date(r.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setViewer(r)} className="btn btn-primary btn-xs gap-1.5 border-none text-white" style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}>
+                    <Eye size={13} /> View Result
+                  </button>
+                  <a href={downloadHref(r)} download={r.file_name} className="btn btn-ghost btn-xs gap-1.5" style={{ border: '1.5px solid var(--surface-border)' }}>
+                    <Download size={13} /> Download PDF
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      ))}
+
+      {viewer && createPortal(
+        <AnimatePresence>
+          <motion.dialog
+            open
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="modal modal-open z-[999] p-4 border-none"
+            style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(6px)' }}
+            onClick={() => setViewer(null)}
+            onCancel={(e) => { e.preventDefault(); setViewer(null); }}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+              className="w-[94vw] max-w-3xl bg-base-100 rounded-2xl overflow-hidden"
+              style={{ border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-lg)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '16px 20px', borderBottom: '1px solid var(--surface)' }}>
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', color: '#fff' }}>
+                  <FileText size={16} />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-semibold text-sm" style={{ color: 'var(--accent)' }}>{viewer.file_name}</div>
+                  <div className="text-xs mt-0.5" style={{ color: 'var(--text-lighter)' }}>
+                    {viewer.year} \u2022 {viewer.semester} \u2022 Roll No {viewer.roll_number}
+                  </div>
+                </div>
+                <button onClick={() => setViewer(null)} className="btn btn-ghost btn-circle btn-sm" title="Close">
+                  <X size={16} />
+                </button>
+              </div>
+              <iframe src={viewer.file_url} title={viewer.file_name} className="w-full" style={{ height: '68vh', border: 'none', background: '#fff' }} />
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, padding: '14px 20px', borderTop: '1px solid var(--surface)' }}>
+                <a href={downloadHref(viewer)} download={viewer.file_name} className="btn btn-primary gap-1.5 border-none text-white" style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}>
+                  <Download size={15} /> Download PDF
+                </a>
+                <button onClick={() => setViewer(null)} className="btn btn-ghost">Close</button>
+              </div>
+            </motion.div>
+          </motion.dialog>
+        </AnimatePresence>,
+        document.body
+      )}
     </div>
   );
+}
+
+interface ExamResultRecord {
+  id: string;
+  roll_number: string;
+  year: string;
+  semester: string;
+  file_name: string;
+  file_url: string;
+  storage_path: string;
+  created_at: number;
 }
 
 export function RollCallSection() {

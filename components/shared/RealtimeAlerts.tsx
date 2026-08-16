@@ -34,9 +34,9 @@ function destinationFor(n: ToastNotification, role: string): { path: string } | 
   const base = `/${role || 'student'}`;
   switch (n.type) {
     case 'message':
-      return { path: `${base}/inbox` };
+      return { path: `${base}/messages` };
     case 'exam-result':
-      return { path: `${base}/inbox` };
+      return { path: `${base}/exam-results` };
     case 'event':
       return { path: `${base}/events` };
     case 'like':

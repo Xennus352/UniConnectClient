@@ -55,7 +55,6 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
   const supabase = useSupabase();
   const me = session?.email ?? '';
 
-  const [pendingRequests, setPendingRequests] = useState(0);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
 
@@ -63,15 +62,6 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
     if (!me) return;
     let cancelled = false;
     const loadCounts = async () => {
-      const { count: pending } = await supabase
-        .from('conversations')
-        .select('*', { count: 'exact', head: true })
-        .contains('participant_ids', [me])
-        .eq('status', 'pending')
-        .neq('requested_by', me);
-      if (cancelled) return;
-      setPendingRequests(pending ?? 0);
-
       const { data: convs } = await supabase
         .from('conversations')
         .select('id')
@@ -115,7 +105,6 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
   }, [supabase, me, role]);
 
   const badgeFor = (id: string): string | undefined => {
-    if (id === 'inbox') return pendingRequests > 0 ? String(pendingRequests) : undefined;
     if (id === 'messages') return unreadMessages > 0 ? String(unreadMessages) : undefined;
     if (id === 'notifications') return unreadNotifications > 0 ? String(unreadNotifications) : undefined;
     return undefined;

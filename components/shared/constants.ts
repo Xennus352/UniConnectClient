@@ -24,7 +24,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       section: 'Main Menu',
       items: [
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
-        { icon: 'Mail', label: 'Inbox', id: 'inbox' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
         { icon: 'Compass', label: 'Explore', id: 'explore' },
@@ -69,7 +68,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'GraduationCap', label: 'Students', id: 'students' },
         { icon: 'ClipboardCheck', label: 'Roll Call', id: 'roll-call' },
         { icon: 'CalendarDays', label: 'Timetable', id: 'timetable' },
-        { icon: 'FileText', label: 'Exam Results', id: 'exam-results' },
       ],
     },
     {
@@ -94,7 +92,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'LayoutDashboard', label: 'Dashboard', id: 'dashboard' },
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
         { icon: 'Compass', label: 'Explore', id: 'explore' },
-        { icon: 'Mail', label: 'Inbox', id: 'inbox' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
       ],
@@ -148,10 +145,15 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       items: [
         { icon: 'LayoutDashboard', label: 'Dashboard', id: 'dashboard' },
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
-        { icon: 'Mail', label: 'Inbox', id: 'inbox' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
         { icon: 'Compass', label: 'Explore', id: 'explore' },
+      ],
+    },
+    {
+      section: 'Academic',
+      items: [
+        { icon: 'FileText', label: 'Exam Results', id: 'exam-results' },
       ],
     },
     {
