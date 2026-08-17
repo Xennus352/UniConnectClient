@@ -14,7 +14,7 @@ export default function InboxItem({ item, onToggleStar, onDelete, onClick }: Inb
   return (
     <div
       onClick={() => onClick?.(item)}
-      className={`group flex items-start gap-[14px] px-[22px] py-4 cursor-pointer transition-all last:[border-bottom:none] hover:bg-[var(--divider-soft)] ${item.unread ? 'bg-[rgba(14, 165, 233,0.15)]' : ''}`}
+      className={`group flex items-start gap-[14px] px-[22px] py-4 cursor-pointer transition-all last:[border-bottom:none] hover:bg-[var(--divider-soft)] ${item.unread ? 'bg-[rgba(40, 114, 161,0.15)]' : ''}`}
       style={{ borderBottom: '1px solid var(--divider)' }}
     >
       <div

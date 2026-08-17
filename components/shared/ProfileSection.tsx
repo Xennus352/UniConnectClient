@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { User, Newspaper, BadgeCheck, Pencil, Trash2, Check, X, LogOut } from 'lucide-react';
+import { User, Newspaper, BadgeCheck, Pencil, Trash2, Check, X, LogOut, ImageOff } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
+import { usePostImageDownload } from '@/lib/supabase/usePostImage';
+import PostImageDownload from './PostImageDownload';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
 import { useSession } from './session';
 import { toast } from 'sonner';
@@ -25,35 +27,24 @@ const POST_STATUS_META: Record<string, { label: string; badge: string; color: st
 // lazily per post (see FeedPost.tsx PostImage for the rationale) so one slow
 // image can't block the whole posts list.
 function MyPostImage({ postId }: { postId: string }) {
-  const supabase = useSupabase();
-  const [src, setSrc] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const { src, phase, progress, attemptsLeft } = usePostImageDownload(postId);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('image')
-        .eq('id', postId)
-        .single();
-      if (cancelled) return;
-      setDone(true);
-      if (!error && data?.image) setSrc(data.image);
-    })();
-    return () => { cancelled = true; };
-  }, [supabase, postId]);
-
-  if (!done) {
+  if (phase === 'downloading' || phase === 'retrying') {
+    return <PostImageDownload height={120} progress={progress} retrying={phase === 'retrying'} attemptsLeft={attemptsLeft} />;
+  }
+  if (phase === 'failed') {
     return (
       <div
-        className="rounded-lg mt-2 w-full"
-        style={{ height: 120, background: 'var(--divider)', border: '1px solid var(--surface-border)' }}
-      />
+        className="rounded-lg mt-2 w-full flex flex-col items-center justify-center gap-1"
+        style={{ height: 120, background: 'var(--divider-soft)', border: '1px dashed var(--surface-border)', color: 'var(--text-lighter)', fontSize: 11.5 }}
+      >
+        <ImageOff size={16} />
+        <span>Image unavailable</span>
+      </div>
     );
   }
-  if (!src) return null;
-  return <img src={src} alt="" className="rounded-lg mt-2 w-full object-cover" style={{ maxHeight: 180 }} />;
+  if (phase === 'empty' || !src) return null;
+  return <img src={src} alt="" loading="lazy" className="rounded-lg mt-2 w-full object-cover" style={{ maxHeight: 180 }} />;
 }
 
 const FILTERS: { id: PostFilter; label: string }[] = [
@@ -253,7 +244,7 @@ export default function ProfileSection() {
     borderRadius: 'var(--radius-sm)',
     border: '1.5px solid',
     borderColor: active ? 'var(--primary)' : 'var(--surface-border)',
-    background: active ? 'rgba(14, 165, 233,0.12)' : 'transparent',
+    background: active ? 'rgba(40, 114, 161,0.12)' : 'transparent',
     color: active ? 'var(--primary)' : 'var(--text-light)',
     cursor: 'pointer',
   });
@@ -267,8 +258,8 @@ export default function ProfileSection() {
 
       <div className="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-4">
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', alignSelf: 'start' }}>
-          <div className="flex flex-col items-center px-6 py-8" style={{ background: 'linear-gradient(160deg, rgba(14, 165, 233,0.12), transparent)' }}>
-            <div className="w-20 h-20 rounded-full flex items-center justify-center font-extrabold text-white mb-3" style={{ fontSize: 26, background: 'linear-gradient(to bottom right, #bae6fd, #7dd3fc)', color: '#0369a1', boxShadow: '0 6px 18px rgba(14, 165, 233,0.25)' }}>
+          <div className="flex flex-col items-center px-6 py-8" style={{ background: 'linear-gradient(160deg, rgba(40, 114, 161,0.12), transparent)' }}>
+            <div className="w-20 h-20 rounded-full flex items-center justify-center font-extrabold text-white mb-3" style={{ fontSize: 26, background: 'linear-gradient(to bottom right, #cbdde9, #9ecbe4)', color: '#1c4f73', boxShadow: '0 6px 18px rgba(40, 114, 161,0.25)' }}>
               {session?.initials || 'U'}
             </div>
             <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent)' }}>
@@ -277,7 +268,7 @@ export default function ProfileSection() {
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-lighter)' }}>{me}</div>
             <div className="flex items-center gap-1 mt-3">
               <BadgeCheck size={14} style={{ color: 'var(--primary)' }} />
-              <span className="badge badge-sm" style={{ background: 'rgba(14, 165, 233,0.12)', color: 'var(--primary)' }}>
+              <span className="badge badge-sm" style={{ background: 'rgba(40, 114, 161,0.12)', color: 'var(--primary)' }}>
                 {profile.account?.roleName === 'SYSTEM_ADMIN' ? 'admin' : profile.account?.roleName ? profile.account.roleName.toLowerCase() : session?.role || ''}
               </span>
             </div>

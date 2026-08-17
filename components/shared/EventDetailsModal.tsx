@@ -7,7 +7,7 @@ type EventRow = Database['public']['Tables']['events']['Row'];
 
 const CATEGORY_STYLE: Record<string, { bg: string; color: string }> = {
   Sports: { bg: 'rgba(52,211,153,0.15)', color: '#16a34a' },
-  Academic: { bg: 'rgba(2,132,199,0.12)', color: '#0284c7' },
+  Academic: { bg: 'rgba(35,96,138,0.12)', color: '#23608a' },
   Cultural: { bg: 'rgba(217,70,239,0.14)', color: '#c026d3' },
   Other: { bg: 'rgba(107,114,128,0.15)', color: '#6b7280' },
 };

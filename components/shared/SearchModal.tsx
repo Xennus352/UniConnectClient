@@ -145,7 +145,7 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
               onClick={() => setTab(t)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full cursor-pointer border-none transition-all capitalize"
               style={{
-                background: tab === t ? 'rgba(14, 165, 233,0.15)' : 'transparent',
+                background: tab === t ? 'rgba(40, 114, 161,0.15)' : 'transparent',
                 color: tab === t ? 'var(--primary)' : 'var(--text-light)',
               }}
             >
@@ -228,7 +228,7 @@ export default function SearchModal({ open, onClose }: SearchModalProps) {
                 onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--surface-soft)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
               >
-                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(14, 165, 233,0.1)', color: 'var(--primary)' }}>
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ background: 'rgba(40, 114, 161,0.1)', color: 'var(--primary)' }}>
                   <Hash size={16} />
                 </div>
                 <div>

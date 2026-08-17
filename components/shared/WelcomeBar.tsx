@@ -47,7 +47,7 @@ export default function WelcomeBar({ name, subtitle }: WelcomeBarProps) {
         style={{
           position: 'absolute',
           inset: 0,
-          background: 'linear-gradient(135deg, rgba(14, 165, 233,0.1) 0%, rgba(42,122,170,0.05) 50%, transparent 100%)',
+          background: 'linear-gradient(135deg, rgba(40, 114, 161,0.1) 0%, rgba(42,122,170,0.05) 50%, transparent 100%)',
           borderRadius: 'var(--radius-xl)',
           pointerEvents: 'none',
         }}

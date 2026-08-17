@@ -111,7 +111,7 @@ export function Dashboard() {
                     className="hover:bg-(--surface-soft)"
                     style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', textDecoration: 'none', borderBottom: '1px solid var(--surface)', transition: 'background 0.15s' }}
                   >
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)' }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(40,114,161,0.12)', color: 'var(--primary)' }}>
                       <CalendarCheck size={17} />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -122,7 +122,7 @@ export function Dashboard() {
                         {registrations?.[e.id] ? ` • ${registrations[e.id].count} registered` : ''}
                       </div>
                     </div>
-                    <span className="badge badge-sm shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
+                    <span className="badge badge-sm shrink-0" style={{ background: 'rgba(40,114,161,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
                   </Link>
                 ))}
               </div>
@@ -156,7 +156,7 @@ export function Dashboard() {
 
 const ROLE_LABEL: Record<string, { label: string; bg: string; color: string }> = {
   SYSTEM_ADMIN: { label: 'Admin', bg: 'rgba(217,70,239,0.14)', color: '#c026d3' },
-  STAFF: { label: 'Lecturer / Staff', bg: 'rgba(2,132,199,0.12)', color: '#0284c7' },
+  STAFF: { label: 'Lecturer / Staff', bg: 'rgba(35,96,138,0.12)', color: '#23608a' },
   STUDENT: { label: 'Student', bg: 'rgba(52,211,153,0.15)', color: '#16a34a' },
 };
 
@@ -336,7 +336,7 @@ export function ExploreSection() {
               className="hover:bg-(--surface-soft)"
                   style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', textDecoration: 'none', borderBottom: '1px solid var(--surface)', transition: 'background 0.15s' }}
                 >
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)' }}>
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(40,114,161,0.12)', color: 'var(--primary)' }}>
                     <CalendarCheck size={17} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -347,7 +347,7 @@ export function ExploreSection() {
                       {registrations?.[e.id] ? ` • ${registrations[e.id].count} registered` : ''}
                     </div>
                   </div>
-                  <span className="badge badge-sm shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
+                  <span className="badge badge-sm shrink-0" style={{ background: 'rgba(40,114,161,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
                 </Link>
               ))}
             </div>
@@ -988,7 +988,7 @@ export function SettingsSection() {
               </div>
               <div style={{ padding: '16px 22px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, #bae6fd, #bae6fd)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>{initialsOf(name)}</div>
+                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, #cbdde9, #cbdde9)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>{initialsOf(name)}</div>
                   <div>
                     <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>{loading ? 'Loading...' : name}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-light)' }}>{loading ? '' : profile?.unit ? `System Administrator • ${profile.unit}` : me}</div>
@@ -1065,7 +1065,7 @@ export function SettingsSection() {
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', maxHeight: 'fit-content' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0' }}>
             {settingsTabs.map((t) => (
-              <button key={t} onClick={() => setSettingsTab(t)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13, fontWeight: settingsTab === t ? 700 : 500, color: settingsTab === t ? 'var(--primary)' : 'var(--text)', background: settingsTab === t ? 'linear-gradient(90deg, rgba(14, 165, 233,0.15), transparent)' : 'transparent', border: 'none', borderLeft: settingsTab === t ? '3px solid var(--primary)' : '3px solid transparent', textAlign: 'left' }}>
+              <button key={t} onClick={() => setSettingsTab(t)} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--radius-sm)', cursor: 'pointer', fontSize: 13, fontWeight: settingsTab === t ? 700 : 500, color: settingsTab === t ? 'var(--primary)' : 'var(--text)', background: settingsTab === t ? 'linear-gradient(90deg, rgba(40, 114, 161,0.15), transparent)' : 'transparent', border: 'none', borderLeft: settingsTab === t ? '3px solid var(--primary)' : '3px solid transparent', textAlign: 'left' }}>
                 {t === 'Profile' && <User size={16} />}
                 {t === 'Notifications' && <Bell size={16} />}
                 {t === 'Security' && <Shield size={16} />}

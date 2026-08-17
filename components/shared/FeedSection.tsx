@@ -118,7 +118,7 @@ export default function FeedSection() {
       {hashtag && (
         <div
           className="flex items-center justify-between gap-2 mb-4 px-4 py-2.5 bg-base-100 backdrop-blur-xl"
-          style={{ borderRadius: 'var(--radius-md)', border: '1.5px solid rgba(14, 165, 233, 0.5)', boxShadow: 'var(--shadow-sm)' }}
+          style={{ borderRadius: 'var(--radius-md)', border: '1.5px solid rgba(40, 114, 161, 0.5)', boxShadow: 'var(--shadow-sm)' }}
         >
           <div className="flex items-center gap-2" style={{ fontSize: 13, fontWeight: 600, color: 'var(--primary)' }}>
             <span>#{hashtag}</span>

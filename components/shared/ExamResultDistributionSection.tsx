@@ -592,7 +592,7 @@ export default function ExamResultDistributionSection() {
                     borderRadius: 'var(--radius-lg)',
                     padding: '42px 24px',
                     textAlign: 'center',
-                    background: dragOver ? 'rgba(14,165,233,0.06)' : 'var(--secondary-lighter)',
+                    background: dragOver ? 'rgba(40,114,161,0.06)' : 'var(--secondary-lighter)',
                     cursor: 'pointer',
                     transition: 'border-color .15s, background .15s',
                   }}
@@ -634,7 +634,7 @@ export default function ExamResultDistributionSection() {
                               fontWeight: 700,
                               cursor: 'pointer',
                               border: active ? '1.5px solid var(--primary)' : '1.5px solid var(--surface-border)',
-                              background: active ? 'rgba(14,165,233,0.1)' : 'transparent',
+                              background: active ? 'rgba(40,114,161,0.1)' : 'transparent',
                               color: active ? 'var(--primary)' : 'var(--text-light)',
                             }}
                           >
@@ -696,7 +696,7 @@ export default function ExamResultDistributionSection() {
                                 <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--divider)' }}>
                                   {semesterOf(f) ? (
                                     <span className="min-w-0">
-                                      <span className="badge badge-sm" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none', fontWeight: 700, marginBottom: 4 }}>
+                                      <span className="badge badge-sm" style={{ background: 'rgba(40,114,161,0.12)', color: 'var(--primary)', border: 'none', fontWeight: 700, marginBottom: 4 }}>
                                         {semesterOf(f)}
                                       </span>
                                       <span className="block truncate text-xs" style={{ color: 'var(--text-lighter)', maxWidth: 220, fontFamily: 'monospace' }} title={storagePathOf(f)}>{storagePathOf(f)}</span>
@@ -781,7 +781,7 @@ export default function ExamResultDistributionSection() {
                       <>
                         <div className="flex items-center gap-2 flex-wrap">
                           {semesterCounts.map(([sem, count]) => (
-                            <span key={sem} className="badge badge-sm" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none', fontWeight: 700 }}>
+                            <span key={sem} className="badge badge-sm" style={{ background: 'rgba(40,114,161,0.12)', color: 'var(--primary)', border: 'none', fontWeight: 700 }}>
                               {sem} • {count} file{count > 1 ? 's' : ''}
                             </span>
                           ))}

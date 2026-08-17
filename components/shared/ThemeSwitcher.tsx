@@ -10,8 +10,8 @@ interface ThemeSwitcherProps {
 }
 
 export default function ThemeSwitcher({ bare = false }: ThemeSwitcherProps) {
-  const [theme, setTheme] = useState<'light' | 'dark'>(
-    () => (typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+  const [theme, setTheme] = useState<'ocean-light' | 'ocean-dark'>(
+    () => (typeof document !== 'undefined' && document.documentElement.dataset.theme === 'ocean-dark' ? 'ocean-dark' : 'ocean-light')
   );
 
   useEffect(() => {
@@ -19,13 +19,13 @@ export default function ThemeSwitcher({ bare = false }: ThemeSwitcherProps) {
     localStorage.setItem(STORAGE_KEY, theme);
   }, [theme]);
 
-  const selectTheme = (t: 'light' | 'dark') => {
+  const selectTheme = (t: 'ocean-light' | 'ocean-dark') => {
     setTheme(t);
   };
 
   const options = [
-    { value: 'light' as const, label: 'Light', desc: 'Sky blue & grey', Icon: Sun },
-    { value: 'dark' as const, label: 'Dark', desc: 'Dark blue & sky blue', Icon: Moon },
+    { value: 'ocean-light' as const, label: 'Cloudy Sky', desc: 'Soft blue daylight', Icon: Sun },
+    { value: 'ocean-dark' as const, label: 'Deep Ocean', desc: 'Ocean blue at night', Icon: Moon },
   ];
 
   const content = (
@@ -51,8 +51,8 @@ export default function ThemeSwitcher({ bare = false }: ThemeSwitcherProps) {
                   padding: '16px 18px',
                   borderRadius: 'var(--radius-md)',
                   border: `1.5px solid ${isActive ? 'var(--primary)' : 'var(--secondary)'}`,
-                  background: isActive ? 'rgba(14,165,233,0.08)' : 'var(--secondary-lighter)',
-                  boxShadow: isActive ? '0 4px 14px rgba(14,165,233,0.15)' : 'none',
+                  background: isActive ? 'rgba(40,114,161,0.08)' : 'var(--secondary-lighter)',
+                  boxShadow: isActive ? '0 4px 14px rgba(40,114,161,0.15)' : 'none',
                   textAlign: 'left',
                 }}
                 onMouseEnter={(e) => { if (!isActive) { e.currentTarget.style.borderColor = 'var(--primary)'; } }}

@@ -7,14 +7,14 @@ const STORAGE_KEY = 'uniconnect-theme';
 
 export default function ThemeToggle() {
   const [dark, setDark] = useState(
-    () => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'dark'
+    () => typeof document !== 'undefined' && document.documentElement.dataset.theme === 'ocean-dark'
   );
 
   const handleChange = () => {
     const next = !dark;
     setDark(next);
-    document.documentElement.dataset.theme = next ? 'dark' : 'light';
-    localStorage.setItem(STORAGE_KEY, next ? 'dark' : 'light');
+    document.documentElement.dataset.theme = next ? 'ocean-dark' : 'ocean-light';
+    localStorage.setItem(STORAGE_KEY, next ? 'ocean-dark' : 'ocean-light');
   };
 
   return (

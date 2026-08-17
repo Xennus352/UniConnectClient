@@ -236,13 +236,17 @@ alter table public.events add column if not exists visibility text not null defa
 -- blocks every browser upload/read (this project has no Supabase Auth users —
 -- everything runs as anon). Policies below match the anon-based model.
 insert into storage.buckets (id, name, public) values ('event-images', 'event-images', true) on conflict (id) do nothing;
-create policy if not exists "event-images upload" on storage.objects
+drop policy if exists "event-images upload" on storage.objects;
+create policy "event-images upload" on storage.objects
   for insert to anon, authenticated with check (bucket_id = 'event-images');
-create policy if not exists "event-images update" on storage.objects
+drop policy if exists "event-images update" on storage.objects;
+create policy "event-images update" on storage.objects
   for update to anon, authenticated using (bucket_id = 'event-images') with check (bucket_id = 'event-images');
-create policy if not exists "event-images delete" on storage.objects
+drop policy if exists "event-images delete" on storage.objects;
+create policy "event-images delete" on storage.objects
   for delete to anon, authenticated using (bucket_id = 'event-images');
-create policy if not exists "event-images read" on storage.objects
+drop policy if exists "event-images read" on storage.objects;
+create policy "event-images read" on storage.objects
   for select to anon, authenticated using (bucket_id = 'event-images');
 
 create table public.event_registrations (
@@ -326,9 +330,38 @@ alter publication supabase_realtime add table public.exam_results;
 -- replica identity. With the default (PK-only) identity, the browser receives
 -- a DELETE event without event_id/user_email, so cancel-registration and
 -- unlike updates can't be applied locally (the UI only caught up on refresh).
--- REPLICA IDENTITY FULL makes DELETE/UPDATE payloads carry the whole row.
+-- Worse: channels with FILTERS on non-PK columns received NO events at all,
+-- because the filter is applied to the payload row, which only contained the
+-- primary key — comments, chat messages and read receipts never updated in
+-- realtime. REPLICA IDENTITY FULL makes DELETE/UPDATE payloads carry the
+-- whole row, so filters match and every handler has the columns it needs.
 alter table public.event_registrations replica identity full;
 alter table public.post_likes replica identity full;
+alter table public.post_comments replica identity full;
+alter table public.chat_messages replica identity full;
+alter table public.message_reads replica identity full;
+
+-- Belt-and-braces: guarantee every realtime table is in the supabase_realtime
+-- publication. If the publication was ever restricted, channels subscribe but
+-- silently receive nothing.
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'posts', 'post_likes', 'post_comments', 'post_shares',
+    'conversations', 'chat_messages', 'message_reads',
+    'notifications', 'events', 'event_registrations',
+    'exam_results', 'exam_result_batches'
+  ]
+  loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
 
 -- Disable RLS so browser reads + realtime work (project uses grants +
 -- server-side authorization in API routes; RLS blocks all reads otherwise)

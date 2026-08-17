@@ -141,9 +141,9 @@ export default function LostFoundSection() {
         </select>
         <button
           onClick={() => setModalOpen(true)}
-          style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)'; }}
+          style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(35, 96, 138,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(35, 96, 138,0.4)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(35, 96, 138,0.3)'; }}
         ><Plus size={14} /> Report Item</button>
       </div>
 
@@ -212,11 +212,11 @@ export default function LostFoundSection() {
           <div className="flex gap-2 mb-3">
             <button
               onClick={() => setItemStatus('lost')}
-              style={{ flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 600, cursor: 'pointer', border: '1.5px solid', borderColor: itemStatus === 'lost' ? 'rgba(239, 68, 68, 0.5)' : 'var(--secondary)', background: itemStatus === 'lost' ? 'rgba(239, 68, 68, 0.1)' : 'var(--surface)', color: itemStatus === 'lost' ? '#dc2626' : 'var(--text-light)' }}
+              style={{ flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 600, cursor: 'pointer', border: '1.5px solid', borderColor: itemStatus === 'lost' ? 'var(--tag-lost-border)' : 'var(--secondary)', background: itemStatus === 'lost' ? 'var(--tag-lost-bg)' : 'var(--surface)', color: itemStatus === 'lost' ? 'var(--tag-lost-text)' : 'var(--text-light)' }}
             >🔍 Lost item</button>
             <button
               onClick={() => setItemStatus('found')}
-              style={{ flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 600, cursor: 'pointer', border: '1.5px solid', borderColor: itemStatus === 'found' ? 'rgba(34, 197, 94, 0.5)' : 'var(--secondary)', background: itemStatus === 'found' ? 'rgba(34, 197, 94, 0.1)' : 'var(--surface)', color: itemStatus === 'found' ? '#15803d' : 'var(--text-light)' }}
+              style={{ flex: 1, padding: '8px 12px', borderRadius: 'var(--radius-sm)', fontSize: 13, fontWeight: 600, cursor: 'pointer', border: '1.5px solid', borderColor: itemStatus === 'found' ? 'var(--tag-event-border)' : 'var(--secondary)', background: itemStatus === 'found' ? 'var(--tag-event-bg)' : 'var(--surface)', color: itemStatus === 'found' ? 'var(--tag-event-text)' : 'var(--text-light)' }}
             >✓ Found item</button>
           </div>
 

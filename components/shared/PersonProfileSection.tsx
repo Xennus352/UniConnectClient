@@ -227,10 +227,10 @@ export default function PersonProfileSection({ email }: { email: string }) {
       </Link>
 
       <div className="bg-base-100 backdrop-blur-xl mb-4" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-        <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-7" style={{ background: 'linear-gradient(160deg, rgba(14, 165, 233,0.12), transparent)' }}>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 px-6 py-7" style={{ background: 'linear-gradient(160deg, rgba(40, 114, 161,0.12), transparent)' }}>
           <div
             className={`w-20 h-20 rounded-full flex items-center justify-center text-white font-extrabold shrink-0 bg-gradient-to-br ${avatarGradient}`}
-            style={{ fontSize: 26, boxShadow: '0 6px 18px rgba(14, 165, 233,0.25)' }}
+            style={{ fontSize: 26, boxShadow: '0 6px 18px rgba(40, 114, 161,0.25)' }}
           >
             {person.initials}
           </div>
@@ -241,7 +241,7 @@ export default function PersonProfileSection({ email }: { email: string }) {
             </div>
             <div className="text-xs mt-0.5" style={{ color: 'var(--text-lighter)' }}>{person.email}</div>
             <div className="flex items-center gap-2 mt-2">
-              <span className="badge badge-sm" style={{ background: 'rgba(14, 165, 233,0.12)', color: 'var(--primary)' }}>{person.role}</span>
+              <span className="badge badge-sm" style={{ background: 'rgba(40, 114, 161,0.12)', color: 'var(--primary)' }}>{person.role}</span>
               {person.sub && <span style={{ fontSize: 11.5, color: 'var(--text-light)' }}>{person.sub}</span>}
             </div>
           </div>

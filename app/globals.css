@@ -1,34 +1,34 @@
 @import "tailwindcss";
 @plugin "daisyui" {
-  themes: light --default, dark;
+  themes: ocean-light --default, ocean-dark;
 }
 
-/* ---------- daisyUI light theme (sky blue & grey) ---------- */
+/* ---------- ocean-light theme (cloudy sky & ocean blue) ---------- */
 @plugin "daisyui/theme" {
-  name: "light";
+  name: "ocean-light";
   default: true;
   color-scheme: light;
 
-  --color-base-100: oklch(99.5% 0.005 250);
-  --color-base-200: oklch(96% 0.01 250);
-  --color-base-300: oklch(91% 0.02 250);
-  --color-base-content: oklch(38% 0.03 250);
-  --color-primary: oklch(70% 0.14 240);
-  --color-primary-content: white;
-  --color-secondary: oklch(93% 0.04 240);
-  --color-secondary-content: oklch(40% 0.05 250);
-  --color-accent: oklch(58% 0.06 250);
-  --color-accent-content: white;
-  --color-neutral: oklch(55% 0.04 250);
-  --color-neutral-content: white;
-  --color-info: oklch(70% 0.14 240);
-  --color-info-content: white;
-  --color-success: oklch(65% 0.17 150);
-  --color-success-content: white;
-  --color-warning: oklch(80% 0.15 85);
-  --color-warning-content: oklch(25% 0.05 85);
-  --color-error: oklch(58% 0.22 25);
-  --color-error-content: white;
+  --color-base-100: #e7f0f5;
+  --color-base-200: #d9e8f0;
+  --color-base-300: #cbdde9;
+  --color-base-content: #18384d;
+  --color-primary: #2872a1;
+  --color-primary-content: #f2f8fc;
+  --color-secondary: #afc9d8;
+  --color-secondary-content: #1c3a4e;
+  --color-accent: #2e7bae;
+  --color-accent-content: #f2f8fc;
+  --color-neutral: #8fb4ca;
+  --color-neutral-content: #18384d;
+  --color-info: #3e8dc0;
+  --color-info-content: #f2f8fc;
+  --color-success: #3e9e6b;
+  --color-success-content: #f0f8f4;
+  --color-warning: #d9a13b;
+  --color-warning-content: #2b2006;
+  --color-error: #d9685b;
+  --color-error-content: #fbefed;
 
   --radius-selector: 0.75rem;
   --radius-field: 0.75rem;
@@ -38,31 +38,31 @@
   --noise: 0;
 }
 
-/* ---------- daisyUI dark theme (dark blue & sky blue) ---------- */
+/* ---------- ocean-dark theme (deep ocean at night) ---------- */
 @plugin "daisyui/theme" {
-  name: "dark";
+  name: "ocean-dark";
   color-scheme: dark;
 
-  --color-base-100: oklch(0.20 0.035 260);
-  --color-base-200: oklch(0.16 0.035 260);
-  --color-base-300: oklch(0.13 0.035 260);
-  --color-base-content: oklch(0.86 0.03 250);
-  --color-primary: oklch(0.70 0.14 240);
-  --color-primary-content: oklch(0.15 0.02 250);
-  --color-secondary: oklch(0.30 0.05 260);
-  --color-secondary-content: oklch(0.86 0.03 250);
-  --color-accent: oklch(0.76 0.11 240);
-  --color-accent-content: oklch(0.15 0.02 250);
-  --color-neutral: oklch(0.25 0.04 260);
-  --color-neutral-content: oklch(0.86 0.03 250);
-  --color-info: oklch(0.70 0.14 240);
-  --color-info-content: oklch(0.15 0.02 250);
-  --color-success: oklch(0.62 0.20 145);
-  --color-success-content: oklch(0.98 0.01 260);
-  --color-warning: oklch(0.75 0.15 80);
-  --color-warning-content: oklch(0.20 0.05 80);
-  --color-error: oklch(0.60 0.25 30);
-  --color-error-content: oklch(0.98 0.01 260);
+  --color-base-100: #19364a;
+  --color-base-200: #20445c;
+  --color-base-300: #274f6b;
+  --color-base-content: #d6e7f2;
+  --color-primary: #2872a1;
+  --color-primary-content: #eaf4fb;
+  --color-secondary: #2e5f7e;
+  --color-secondary-content: #d6e7f2;
+  --color-accent: #9ecbe4;
+  --color-accent-content: #0f2a3b;
+  --color-neutral: #274b63;
+  --color-neutral-content: #d6e7f2;
+  --color-info: #3e8dc0;
+  --color-info-content: #eaf4fb;
+  --color-success: #3e9e6b;
+  --color-success-content: #eaf6ef;
+  --color-warning: #d9a13b;
+  --color-warning-content: #2b2006;
+  --color-error: #d9685b;
+  --color-error-content: #fbefed;
 
   --radius-selector: 0.75rem;
   --radius-field: 0.75rem;
@@ -74,117 +74,123 @@
 
 /* ---------- theme-independent brand tokens ---------- */
 :root {
-  --primary: #0ea5e9;
-  --primary-dark: #0284c7;
-  --primary-darker: #0369a1;
-  --success: #22c55e;
-  --warning: #f59e0b;
-  --danger: #ef4444;
-  --error: #ef4444;
-  --info: #3b82f6;
+  --primary: #2872a1;
+  --primary-dark: #23608a;
+  --primary-darker: #1c4f73;
+  --success: #3e9e6b;
+  --warning: #d9a13b;
+  --danger: #d9685b;
+  --error: #d9685b;
+  --info: #3e8dc0;
   --radius-sm: 12px;
   --radius-md: 16px;
   --radius-lg: 20px;
   --radius-xl: 24px;
 }
 
-/* ---------- light theme (sky blue & grey) ---------- */
+/* ---------- ocean-light theme tokens (cloudy sky) ---------- */
 :root,
-[data-theme="light"] {
+[data-theme="ocean-light"] {
   color-scheme: light;
-  --secondary: #e0f2fe;
-  --secondary-light: #dbeafe;
-  --secondary-lighter: #f0f9ff;
-  --accent: #334155;
-  --text: #475569;
-  --text-light: #64748b;
-  --text-lighter: #94a3b8;
+  --secondary: #dce9f1;
+  --secondary-light: #d2e3ec;
+  --secondary-lighter: #eaf2f7;
+  --accent: #24577c;
+  --text: #18384d;
+  --text-light: #3e5c70;
+  --text-lighter: #7e99ac;
   --white: #ffffff;
-  --shadow-sm: 0 4px 20px rgba(15, 23, 42, 0.08);
-  --shadow-md: 0 8px 32px rgba(15, 23, 42, 0.12);
-  --shadow-lg: 0 16px 48px rgba(15, 23, 42, 0.16);
-  --surface: #ffffff;
-  --surface-soft: #f8fafc;
-  --surface-strong: rgba(2, 132, 199, 0.55);
-  --surface-border: rgba(2, 132, 199, 0.4);
-  --surface-hover: #f1f5f9;
-  --divider: #eef2f7;
-  --divider-soft: #f8fafc;
-  --modal-bg: #ffffff;
-  --nav-bg: rgba(255, 255, 255, 0.85);
-  --login-panel: linear-gradient(160deg, #7dd3fc 0%, #bae6fd 50%, #38bdf8 100%);
-  --login-panel-content: #0c4a6e;
-  --sidebar-bg: linear-gradient(180deg, #e0f2fe 0%, #f0f9ff 45%, #c7e8fb 100%);
-  --sidebar-border: rgba(56, 189, 248, 0.3);
-  --sidebar-content: #1e293b;
-  --sidebar-hover: rgba(255, 255, 255, 0.5);
-  --sidebar-active-bg: rgba(255, 255, 255, 0.7);
-  --sidebar-active-text: #0c4a6e;
-  --sidebar-active-accent: #0ea5e9;
-  --sidebar-card-bg: rgba(255, 255, 255, 0.55);
-  --sidebar-card-border: rgba(255, 255, 255, 0.8);
-  --app-bg: linear-gradient(160deg, #f1f5f9 0%, #f8fafc 35%, #eff6fb 65%, #f6f9fc 100%);
-  --tag-event-bg: rgba(34, 197, 94, 0.14);
-  --tag-event-text: #15803d;
-  --tag-event-border: rgba(34, 197, 94, 0.4);
-  --tag-general-bg: rgba(100, 116, 139, 0.14);
-  --tag-general-text: #475569;
-  --tag-general-border: rgba(100, 116, 139, 0.38);
-  --tag-lost-bg: rgba(245, 158, 11, 0.16);
-  --tag-lost-text: #b45309;
-  --tag-lost-border: rgba(245, 158, 11, 0.45);
-  --tag-announcement-bg: rgba(14, 165, 233, 0.14);
-  --tag-announcement-text: #0369a1;
-  --tag-announcement-border: rgba(14, 165, 233, 0.42);
+  --shadow-sm: 0 4px 20px rgba(40, 84, 110, 0.12);
+  --shadow-md: 0 8px 32px rgba(40, 84, 110, 0.16);
+  --shadow-lg: 0 16px 48px rgba(40, 84, 110, 0.2);
+  --surface: #e7f0f5;
+  --surface-soft: #f2f8fc;
+  --surface-strong: rgba(40, 114, 161, 0.5);
+  --surface-border: rgba(40, 114, 161, 0.3);
+  --surface-hover: #d9e8f0;
+  --divider: #d3e2ec;
+  --divider-soft: #e4eef5;
+  --glass-bg: rgba(231, 240, 245, 0.62);
+  --glass-border: rgba(122, 160, 184, 0.32);
+  --thread: rgba(122, 160, 184, 0.4);
+  --modal-bg: #d9e8f0;
+  --nav-bg: rgba(214, 230, 240, 0.82);
+  --login-panel: linear-gradient(160deg, #cbdde9 0%, #b4d2e4 50%, #8fb3cc 100%);
+  --login-panel-content: #18384d;
+  --sidebar-bg: linear-gradient(180deg, #d9e8f0 0%, #e4eef5 45%, #cbdde9 100%);
+  --sidebar-border: rgba(40, 114, 161, 0.22);
+  --sidebar-content: #24577c;
+  --sidebar-hover: rgba(255, 255, 255, 0.55);
+  --sidebar-active-bg: rgba(40, 114, 161, 0.16);
+  --sidebar-active-text: #1c4f73;
+  --sidebar-active-accent: #2872a1;
+  --sidebar-card-bg: rgba(255, 255, 255, 0.5);
+  --sidebar-card-border: rgba(255, 255, 255, 0.7);
+  --app-bg: linear-gradient(160deg, #d9e8f0 0%, #e3edf4 35%, #d4e4ee 65%, #deeaf2 100%);
+  --tag-event-bg: rgba(62, 158, 107, 0.14);
+  --tag-event-text: #2f7a53;
+  --tag-event-border: rgba(62, 158, 107, 0.38);
+  --tag-general-bg: rgba(122, 160, 184, 0.16);
+  --tag-general-text: #3e5c70;
+  --tag-general-border: rgba(122, 160, 184, 0.36);
+  --tag-lost-bg: rgba(217, 161, 59, 0.16);
+  --tag-lost-text: #9a6b1f;
+  --tag-lost-border: rgba(217, 161, 59, 0.42);
+  --tag-announcement-bg: rgba(40, 114, 161, 0.14);
+  --tag-announcement-text: #1c4f73;
+  --tag-announcement-border: rgba(40, 114, 161, 0.4);
 }
 
-/* ---------- dark theme (dark blue & sky blue) ---------- */
-[data-theme="dark"] {
+/* ---------- ocean-dark theme tokens (deep ocean) ---------- */
+[data-theme="ocean-dark"] {
   color-scheme: dark;
-  --secondary: rgba(56, 189, 248, 0.1);
-  --secondary-light: rgba(56, 189, 248, 0.16);
-  --secondary-lighter: rgba(56, 189, 248, 0.06);
-  --accent: #bae6fd;
-  --text: #cbd5e1;
-  --text-light: #94a3b8;
-  --text-lighter: #64748b;
-  --white: rgba(56, 189, 248, 0.08);
-  --shadow-sm: 0 4px 20px rgba(0, 0, 0, 0.35);
-  --shadow-md: 0 8px 32px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
-  --surface: #16223a;
-  --surface-soft: #0f1a2e;
-  --surface-strong: #22304e;
-  --surface-border: rgba(56, 189, 248, 0.14);
-  --surface-hover: #1e2c46;
-  --divider: rgba(56, 189, 248, 0.08);
-  --divider-soft: rgba(56, 189, 248, 0.05);
-  --modal-bg: #16223a;
-  --nav-bg: rgba(8, 16, 30, 0.85);
-  --login-panel: linear-gradient(160deg, #0ea5e9 0%, #0369a1 100%);
-  --login-panel-content: #e0f2fe;
-  --sidebar-bg: linear-gradient(180deg, #0a1526 0%, #10224a 50%, #0a1526 100%);
-  --sidebar-border: rgba(56, 189, 248, 0.18);
-  --sidebar-content: #bae6fd;
-  --sidebar-hover: rgba(56, 189, 248, 0.08);
-  --sidebar-active-bg: rgba(56, 189, 248, 0.16);
-  --sidebar-active-text: #ffffff;
-  --sidebar-active-accent: #38bdf8;
-  --sidebar-card-bg: rgba(56, 189, 248, 0.1);
-  --sidebar-card-border: rgba(56, 189, 248, 0.2);
-  --app-bg: linear-gradient(160deg, #0a1628 0%, #0e1f3d 35%, #132a52 65%, #0a1628 100%);
-  --tag-event-bg: rgba(34, 197, 94, 0.18);
-  --tag-event-text: #4ade80;
-  --tag-event-border: rgba(74, 222, 128, 0.45);
-  --tag-general-bg: rgba(148, 163, 184, 0.15);
-  --tag-general-text: #94a3b8;
-  --tag-general-border: rgba(148, 163, 184, 0.35);
-  --tag-lost-bg: rgba(251, 191, 36, 0.16);
-  --tag-lost-text: #fbbf24;
-  --tag-lost-border: rgba(251, 191, 36, 0.45);
-  --tag-announcement-bg: rgba(56, 189, 248, 0.16);
-  --tag-announcement-text: #38bdf8;
-  --tag-announcement-border: rgba(56, 189, 248, 0.45);
+  --secondary: rgba(82, 153, 198, 0.12);
+  --secondary-light: rgba(82, 153, 198, 0.18);
+  --secondary-lighter: rgba(82, 153, 198, 0.07);
+  --accent: #9ecbe4;
+  --text: #d6e7f2;
+  --text-light: #a8c4d6;
+  --text-lighter: #6e8ca0;
+  --white: rgba(82, 153, 198, 0.1);
+  --shadow-sm: 0 4px 20px rgba(2, 12, 20, 0.45);
+  --shadow-md: 0 8px 32px rgba(2, 12, 20, 0.55);
+  --shadow-lg: 0 16px 48px rgba(2, 12, 20, 0.65);
+  --surface: #19364a;
+  --surface-soft: #122331;
+  --surface-strong: #20445c;
+  --surface-border: rgba(139, 186, 214, 0.22);
+  --surface-hover: #20445c;
+  --divider: rgba(139, 186, 214, 0.13);
+  --divider-soft: rgba(139, 186, 214, 0.07);
+  --glass-bg: rgba(25, 54, 74, 0.55);
+  --glass-border: rgba(160, 200, 225, 0.16);
+  --thread: rgba(160, 200, 225, 0.28);
+  --modal-bg: #20445c;
+  --nav-bg: rgba(14, 30, 42, 0.85);
+  --login-panel: linear-gradient(160deg, #2872a1 0%, #1c4f73 55%, #153a52 100%);
+  --login-panel-content: #d6e7f2;
+  --sidebar-bg: linear-gradient(180deg, #10273a 0%, #15344a 50%, #10273a 100%);
+  --sidebar-border: rgba(139, 186, 214, 0.16);
+  --sidebar-content: #bbd6e6;
+  --sidebar-hover: rgba(82, 153, 198, 0.1);
+  --sidebar-active-bg: rgba(40, 114, 161, 0.28);
+  --sidebar-active-text: #eaf4fb;
+  --sidebar-active-accent: #9ecbe4;
+  --sidebar-card-bg: rgba(32, 68, 92, 0.6);
+  --sidebar-card-border: rgba(139, 186, 214, 0.22);
+  --app-bg: linear-gradient(160deg, #0e2230 0%, #122a3c 35%, #17344a 65%, #0f2434 100%);
+  --tag-event-bg: rgba(62, 158, 107, 0.2);
+  --tag-event-text: #7cc7a0;
+  --tag-event-border: rgba(124, 199, 160, 0.4);
+  --tag-general-bg: rgba(139, 186, 214, 0.16);
+  --tag-general-text: #a8c4d6;
+  --tag-general-border: rgba(139, 186, 214, 0.34);
+  --tag-lost-bg: rgba(217, 161, 59, 0.18);
+  --tag-lost-text: #e4be72;
+  --tag-lost-border: rgba(228, 190, 114, 0.42);
+  --tag-announcement-bg: rgba(40, 114, 161, 0.25);
+  --tag-announcement-text: #8fc2e0;
+  --tag-announcement-border: rgba(40, 114, 161, 0.55);
 }
 
 html {
@@ -206,7 +212,7 @@ body {
 /* Telegram-style blink highlight when arriving from a notification. */
 @keyframes notif-blink {
   0%, 100% {
-    background-color: rgba(14, 165, 233, 0.14);
+    background-color: rgba(40, 114, 161, 0.14);
     box-shadow: 0 0 0 2px var(--primary);
   }
   50% {

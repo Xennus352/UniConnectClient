@@ -2,8 +2,10 @@
 
 import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { ShieldCheck, Check, X, Trash2, Loader2, AlertTriangle } from 'lucide-react';
+import { ShieldCheck, Check, X, Trash2, Loader2, AlertTriangle, ImageOff } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
+import { usePostImageDownload } from '@/lib/supabase/usePostImage';
+import PostImageDownload from './PostImageDownload';
 import { usePendingPosts } from '@/lib/supabase/hooks';
 import { toast } from 'sonner';
 import PostTag from './PostTag';
@@ -29,38 +31,28 @@ const TABS = ['All Pending', 'Latest', 'Lost & Found'];
 // FeedPost.tsx PostImage for the same rationale); images are loaded lazily
 // per post so one slow transfer can't block the moderation queue.
 function PendingPostImage({ postId }: { postId: string }) {
-  const supabase = useSupabase();
-  const [src, setSrc] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const { src, phase, progress, attemptsLeft } = usePostImageDownload(postId);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('image')
-        .eq('id', postId)
-        .single();
-      if (cancelled) return;
-      setDone(true);
-      if (!error && data?.image) setSrc(data.image);
-    })();
-    return () => { cancelled = true; };
-  }, [supabase, postId]);
-
-  if (!done) {
+  if (phase === 'downloading' || phase === 'retrying') {
+    return <PostImageDownload height={150} progress={progress} retrying={phase === 'retrying'} attemptsLeft={attemptsLeft} />;
+  }
+  if (phase === 'failed') {
     return (
       <div
-        className="rounded-xl w-full mt-3"
-        style={{ height: 150, background: 'var(--divider)', border: '1px solid var(--surface-border)' }}
-      />
+        className="rounded-xl w-full mt-3 flex flex-col items-center justify-center gap-1"
+        style={{ height: 150, background: 'var(--divider-soft)', border: '1px dashed var(--surface-border)', color: 'var(--text-lighter)', fontSize: 11.5 }}
+      >
+        <ImageOff size={16} />
+        <span>Image unavailable</span>
+      </div>
     );
   }
-  if (!src) return null;
+  if (phase === 'empty' || !src) return null;
   return (
     <img
       src={src}
       alt=""
+      loading="lazy"
       className="rounded-xl w-full object-cover mt-3"
       style={{ maxHeight: 150, border: '1px solid var(--surface-border)' }}
     />

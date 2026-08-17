@@ -23,13 +23,13 @@ export default function QuickAccess({ role }: { role?: string }) {
           }}
           onMouseEnter={(e) => {
             e.currentTarget.style.transform = 'translateY(-2px)';
-            e.currentTarget.style.boxShadow = '0 4px 12px rgba(2, 132, 199,0.1)';
+            e.currentTarget.style.boxShadow = '0 4px 12px rgba(35, 96, 138,0.1)';
             e.currentTarget.style.borderColor = 'var(--secondary)';
           }}
           onMouseLeave={(e) => {
             e.currentTarget.style.transform = 'translateY(0)';
             e.currentTarget.style.boxShadow = 'none';
-            e.currentTarget.style.borderColor = 'rgba(14, 165, 233,0.4)';
+            e.currentTarget.style.borderColor = 'rgba(40, 114, 161,0.4)';
           }}
         >
           <div className="mb-[6px]" style={{ fontSize: 22, color: 'var(--primary)' }}>

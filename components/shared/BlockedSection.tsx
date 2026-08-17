@@ -200,7 +200,7 @@ export default function BlockedSection({ bare = false }: { bare?: boolean }) {
                 padding: '7px 14px',
                 borderRadius: 18,
                 border: filter === p.key ? '1.5px solid var(--primary)' : '1.5px solid var(--surface-border)',
-                background: filter === p.key ? 'rgba(14, 165, 233,0.15)' : 'var(--divider)',
+                background: filter === p.key ? 'rgba(40, 114, 161,0.15)' : 'var(--divider)',
                 color: filter === p.key ? 'var(--primary)' : 'var(--text-light)',
                 display: 'flex',
                 alignItems: 'center',

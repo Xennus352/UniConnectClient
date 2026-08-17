@@ -78,10 +78,10 @@ export default function FeedItem({ item }: FeedItemProps) {
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{
               color: isLiked ? 'var(--primary)' : 'var(--text-light)',
-              backgroundColor: isLiked ? 'rgba(14, 165, 233,0.12)' : 'transparent',
+              backgroundColor: isLiked ? 'rgba(40, 114, 161,0.12)' : 'transparent',
             }}
             onMouseEnter={(e) => {
-              if (!isLiked) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }
+              if (!isLiked) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }
             }}
             onMouseLeave={(e) => {
               if (!isLiked) { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }
@@ -93,7 +93,7 @@ export default function FeedItem({ item }: FeedItemProps) {
             onClick={() => { setShowComments(prev => !prev); setTimeout(() => commentInputRef.current?.focus(), 50); }}
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{ color: showComments ? 'var(--primary)' : 'var(--text-light)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
           >
             <MessageCircle size={14} /> {item.comments + comments.length}
@@ -102,7 +102,7 @@ export default function FeedItem({ item }: FeedItemProps) {
             onClick={() => setShowShareModal(true)}
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{ color: 'var(--text-light)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
           >
             <Share2 size={14} /> Share
@@ -115,7 +115,7 @@ export default function FeedItem({ item }: FeedItemProps) {
               backgroundColor: isSaved ? 'rgba(245,158,11,0.12)' : 'transparent',
             }}
             onMouseEnter={(e) => {
-              if (!isSaved) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }
+              if (!isSaved) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }
             }}
             onMouseLeave={(e) => {
               if (!isSaved) { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }
@@ -126,7 +126,7 @@ export default function FeedItem({ item }: FeedItemProps) {
         </div>
 
         {shareMsg && (
-          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(14, 165, 233,0.1)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}>
+          <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(40, 114, 161,0.1)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}>
             {shareMsg}
           </div>
         )}

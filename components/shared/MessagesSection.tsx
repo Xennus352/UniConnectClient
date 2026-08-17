@@ -10,7 +10,7 @@ import {
   MessageSquare, Send, Plus, Search, UserCheck, UserX, Ban, RotateCcw, Clock,
   Users, Check, Filter, Settings, UserMinus, Trash2, Paperclip, FileText,
   FileSpreadsheet, File, Download, Loader2, Image as ImageIcon, Share2, LogOut,
-  Ellipsis, Pencil, X, CheckCheck,
+  Ellipsis, Pencil, X, CheckCheck, ArrowLeft,
 } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import type { Database } from '@/utils/supabase/types';
@@ -1192,14 +1192,14 @@ export default function MessagesSection() {
   const statusBadge = (status: ConvStatus) => {
     if (status === 'pending') {
       return (
-        <span className="badge badge-sm gap-1" style={{ background: 'rgba(251,191,36,0.15)', color: '#d97706', border: 'none' }}>
+        <span className="badge badge-sm gap-1 shrink-0" style={{ background: 'rgba(251,191,36,0.15)', color: '#d97706', border: 'none' }}>
           <Clock size={10} /> Pending
         </span>
       );
     }
     if (status === 'blocked') {
       return (
-        <span className="badge badge-sm gap-1" style={{ background: 'rgba(248,113,113,0.15)', color: '#dc2626', border: 'none' }}>
+        <span className="badge badge-sm gap-1 shrink-0" style={{ background: 'rgba(248,113,113,0.15)', color: '#dc2626', border: 'none' }}>
           <Ban size={10} /> Blocked
         </span>
       );
@@ -1230,7 +1230,7 @@ export default function MessagesSection() {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[320px_1fr] gap-[18px] h-full min-h-0">
       <div
-        className="bg-base-100 backdrop-blur-xl flex flex-col max-h-[72vh] lg:max-h-none lg:h-full lg:min-h-0"
+        className={`bg-base-100 backdrop-blur-xl flex-col max-h-[72vh] lg:max-h-none lg:h-full lg:min-h-0 ${selected ? 'hidden lg:flex' : 'flex'}`}
         style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}
       >
         <div className="flex-shrink-0" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 18px', borderBottom: '1px solid var(--surface)' }}>
@@ -1280,7 +1280,7 @@ export default function MessagesSection() {
                   padding: '0 5px',
                   fontSize: 10.5,
                   fontWeight: 700,
-                  background: convTab === key ? 'rgba(14, 165, 233,0.15)' : 'var(--surface-soft)',
+                  background: convTab === key ? 'rgba(40, 114, 161,0.15)' : 'var(--surface-soft)',
                   color: convTab === key ? 'var(--primary)' : 'var(--text-light)',
                 }}
               >
@@ -1328,7 +1328,7 @@ export default function MessagesSection() {
                   className="w-full flex items-center gap-3 px-4 py-3 text-left cursor-pointer transition-colors"
                   style={{
                     borderBottom: '1px solid var(--surface)',
-                    background: selectedId === conv.id ? 'rgba(14, 165, 233,0.10)' : 'transparent',
+                    background: selectedId === conv.id ? 'rgba(40, 114, 161,0.10)' : 'transparent',
                   }}
                 >
                   <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 12 }}>
@@ -1339,7 +1339,7 @@ export default function MessagesSection() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2">
-                      <span style={{ fontSize: 13.5, fontWeight: hasUnread ? 700 : 600, color: 'var(--accent)' }}>{displayName}</span>
+                      <span className="flex-1 min-w-0 truncate" style={{ fontSize: 13.5, fontWeight: hasUnread ? 700 : 600, color: 'var(--accent)' }}>{displayName}</span>
                       <span className="flex items-center gap-1.5 shrink-0">
                         {hasUnread && (
                           <span
@@ -1354,7 +1354,7 @@ export default function MessagesSection() {
                     </div>
                     <div className="flex items-center justify-between gap-2 mt-0.5">
                       <div
-                        className="text-xs truncate"
+                        className="text-xs truncate min-w-0"
                         style={{ color: hasUnread ? 'var(--text)' : 'var(--text-lighter)', fontWeight: hasUnread ? 600 : 400 }}
                       >
                         {conv.isGroup ? `${conv.members.length + 1} members \u2022 ` : ''}{conv.preview || 'No messages yet'}
@@ -1381,7 +1381,7 @@ export default function MessagesSection() {
       </div>
 
       <div
-        className="bg-base-100 backdrop-blur-xl flex flex-col max-h-[72vh] lg:max-h-none lg:h-full lg:min-h-0"
+        className={`bg-base-100 backdrop-blur-xl flex-col ${selected ? 'flex h-[calc(100dvh-100px)]' : 'hidden'} lg:flex lg:h-full lg:min-h-0`}
         style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}
       >
         {!selected ? (
@@ -1399,6 +1399,15 @@ export default function MessagesSection() {
         ) : (
           <>
             <div className="flex-shrink-0" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 18px', borderBottom: '1px solid var(--surface)' }}>
+              <button
+                onClick={() => setSelectedId(null)}
+                className="lg:hidden flex items-center justify-center cursor-pointer border-none shrink-0"
+                style={{ width: 30, height: 30, borderRadius: 'var(--radius-sm)', color: 'var(--text-light)', background: 'var(--divider)', border: '1.5px solid var(--surface-border)' }}
+                title="Back to conversations"
+                aria-label="Back to conversations"
+              >
+                <ArrowLeft size={16} />
+              </button>
               <div className="relative w-9 h-9 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 12 }}>
                 {selected.isGroup ? <Users size={15} /> : selected.other.initials}
                 {!selected.isGroup && otherOnline && (
@@ -1433,7 +1442,7 @@ export default function MessagesSection() {
                   style={{ color: 'var(--primary)', border: '1.5px solid var(--surface-border)' }}
                   title="Manage group"
                 >
-                  <Settings size={14} /> Manage
+                  <Settings size={14} /> <span className="hidden sm:inline">Manage</span>
                 </button>
               )}
               {selected.isGroup && !selectedIsCreator && (
@@ -1442,7 +1451,7 @@ export default function MessagesSection() {
                   className="btn btn-error btn-outline btn-xs gap-1.5"
                   title="Leave group"
                 >
-                  <LogOut size={12} /> Leave Group
+                  <LogOut size={12} /> <span className="hidden sm:inline">Leave Group</span>
                 </button>
               )}
               {!selected.isGroup && selected.status === 'active' && (
@@ -1452,7 +1461,7 @@ export default function MessagesSection() {
                   style={{ color: 'var(--danger)', border: '1.5px solid var(--surface-border)' }}
                   title="Block user"
                 >
-                  <Ban size={14} /> Block
+                  <Ban size={14} /> <span className="hidden sm:inline">Block</span>
                 </button>
               )}
               {!selected.isGroup && selected.status === 'blocked' && selected.blockedBy === me && (
@@ -1462,7 +1471,7 @@ export default function MessagesSection() {
                   style={{ color: 'var(--primary)', border: '1.5px solid var(--surface-border)' }}
                   title="Unblock user"
                 >
-                  <RotateCcw size={14} /> Unblock
+                  <RotateCcw size={14} /> <span className="hidden sm:inline">Unblock</span>
                 </button>
               )}
               {!selected.isGroup && selected.status === 'pending' && !iAmRequester && (
@@ -1472,14 +1481,14 @@ export default function MessagesSection() {
                     className="btn btn-sm gap-1.5 border-none text-white"
                     style={{ background: 'linear-gradient(var(--success), var(--success-dark))' }}
                   >
-                    <UserCheck size={14} /> Accept
+                    <UserCheck size={14} /> <span className="hidden sm:inline">Accept</span>
                   </button>
                   <button
                     onClick={() => handleConversationAction('reject')}
                     className="btn btn-sm gap-1.5 border-none text-white"
                     style={{ background: 'linear-gradient(var(--danger), var(--danger-dark))' }}
                   >
-                    <UserX size={14} /> Decline
+                    <UserX size={14} /> <span className="hidden sm:inline">Decline</span>
                   </button>
                 </div>
               )}
@@ -1637,7 +1646,7 @@ export default function MessagesSection() {
                                   {m.pending ? (
                                     <Clock size={11} />
                                   ) : (readMap[m.id] ?? []).length > 0 ? (
-                                    <CheckCheck size={11} style={{ color: '#7dd3fc' }} />
+                                    <CheckCheck size={11} style={{ color: '#9ecbe4' }} />
                                   ) : (
                                     <Check size={11} />
                                   )}
@@ -1690,7 +1699,7 @@ export default function MessagesSection() {
                                 {m.pending ? (
                                   <Clock size={11} />
                                 ) : m.is_read ? (
-                                  <CheckCheck size={11} style={{ color: '#7dd3fc' }} />
+                                  <CheckCheck size={11} style={{ color: '#9ecbe4' }} />
                                 ) : (
                                   <Check size={11} />
                                 )}
@@ -1707,7 +1716,7 @@ export default function MessagesSection() {
               <div ref={endRef} />
             </div>
 
-            <div className="flex-shrink-0 relative" style={{ borderTop: '1px solid var(--surface)' }}>
+            <div className="flex-shrink-0 relative pb-[env(safe-area-inset-bottom)]" style={{ borderTop: '1px solid var(--surface)' }}>
               {mentionQuery !== null && mentionCandidates.length > 0 && (
                 <div className="absolute bottom-full left-3 right-3 z-30 mb-1">
                   <ul
@@ -1934,7 +1943,7 @@ export default function MessagesSection() {
                         padding: '4px 10px',
                         borderRadius: 14,
                         border: `1.5px solid ${active ? 'var(--primary)' : 'var(--surface-border)'}`,
-                        background: active ? 'rgba(14, 165, 233,0.15)' : 'var(--divider)',
+                        background: active ? 'rgba(40, 114, 161,0.15)' : 'var(--divider)',
                         color: active ? 'var(--primary)' : 'var(--text)',
                       }}
                     >
@@ -1977,7 +1986,7 @@ export default function MessagesSection() {
                       key={p.email}
                       onClick={() => toggleMember(p.email)}
                       className="flex items-center gap-1 cursor-pointer"
-                      style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 12, background: 'rgba(14, 165, 233,0.15)', color: 'var(--primary)', border: 'none' }}
+                      style={{ fontSize: 11, fontWeight: 600, padding: '3px 8px', borderRadius: 12, background: 'rgba(40, 114, 161,0.15)', color: 'var(--primary)', border: 'none' }}
                     >
                       {p.name} ✕
                     </button>
@@ -2011,7 +2020,7 @@ export default function MessagesSection() {
                     className="w-full flex items-center gap-3 px-5 py-3 text-left cursor-pointer transition-colors"
                     style={{
                       borderBottom: '1px solid var(--surface)',
-                      background: isSelected ? 'rgba(14, 165, 233,0.10)' : undefined,
+                      background: isSelected ? 'rgba(40, 114, 161,0.10)' : undefined,
                     }}
                     onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--surface-soft)'; }}
                     onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
@@ -2247,7 +2256,7 @@ export default function MessagesSection() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="truncate font-bold text-lg" style={{ color: '#f1f5f9' }}>{selectedMentionUser.name}</span>
+                      <span className="truncate font-bold text-lg" style={{ color: 'var(--text)' }}>{selectedMentionUser.name}</span>
                       {mentionPerson?.role && (
                         <span className="badge badge-info badge-sm shrink-0">{mentionPerson.role}</span>
                       )}
@@ -2300,8 +2309,8 @@ export default function MessagesSection() {
                     <Users size={24} />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate font-bold text-lg" style={{ color: '#f1f5f9' }}>{selected?.groupName ?? 'Group'}</div>
-                    <div className="text-xs mt-1" style={{ color: '#94a3b8' }}>
+                    <div className="truncate font-bold text-lg" style={{ color: 'var(--text)' }}>{selected?.groupName ?? 'Group'}</div>
+                    <div className="text-xs mt-1" style={{ color: 'var(--text-light)' }}>
                       {(selected?.members.length ?? 0) + 1} members
                     </div>
                     <div className="text-xs mt-1 font-medium" style={{ color: mentionGroupOnlineCount > 0 ? '#4ade80' : '#94a3b8' }}>

@@ -140,8 +140,8 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
         {MAIN_NAV[role].map((section: NavItem) => (
           <div key={section.section} className="pt-4 pl-3 pb-1.5">
             <div
-              className="text-[10px] uppercase tracking-[1.5px] font-bold px-2 mb-1"
-              style={{ color: 'var(--sidebar-content)', opacity: 0.55 }}
+              className="text-xs uppercase tracking-wider font-bold px-2 mb-1.5"
+              style={{ color: 'var(--sidebar-content)', opacity: 0.8 }}
             >
               {section.section}
             </div>
@@ -153,7 +153,7 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
                 <Link
                   key={item.id}
                   href={href}
-                  className={`flex items-center gap-2.5 w-full px-3.5 py-2.5 my-0.5 mx-2 rounded-xl text-[14px] font-medium transition-all duration-200 hover:bg-(--sidebar-hover) ${
+                  className={`flex items-center gap-3 w-full px-3.5 py-2.5 my-1 rounded-xl text-[15px] font-medium transition-all duration-200 hover:bg-(--sidebar-hover) ${
                     isActive ? "font-semibold" : "hover:translate-x-0.5"
                   }`}
                   style={{
@@ -161,10 +161,10 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
                     background: isActive ? 'var(--sidebar-active-bg)' : 'transparent',
                     color: isActive ? 'var(--sidebar-active-text)' : 'var(--sidebar-content)',
                     boxShadow: isActive ? 'inset 3px 0 0 var(--sidebar-active-accent)' : 'none',
-                    opacity: isActive ? 1 : 0.75,
+                    opacity: isActive ? 1 : 0.85,
                   }}
                 >
-                  <IconComp size={16} />
+                  <IconComp size={20} />
                   <span className="flex-1 text-left">{item.label}</span>
                   {(badgeFor(item.id)) && (
                     <span className="bg-error text-error-content text-[10px] font-bold px-[7px] py-[2px] rounded-full">
@@ -185,7 +185,7 @@ export default function Sidebar({ basePath, activePage, role }: SidebarProps) {
           href={`${basePath}/profile`}
           className="flex items-center gap-2.5 flex-1 min-w-0"
         >
-          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#bae6fd] to-[#7dd3fc] flex items-center justify-center text-[#0369a1] font-bold text-xs">
+          <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#cbdde9] to-[#9ecbe4] flex items-center justify-center text-[#1c4f73] font-bold text-xs">
             {session?.initials || 'U'}
           </div>
           <div className="flex-1 min-w-0">

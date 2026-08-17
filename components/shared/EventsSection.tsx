@@ -14,7 +14,7 @@ type EventRow = Database['public']['Tables']['events']['Row'];
 
 const CATEGORY_STYLE: Record<string, { bg: string; color: string }> = {
   Sports: { bg: 'rgba(52,211,153,0.15)', color: '#16a34a' },
-  Academic: { bg: 'rgba(2,132,199,0.12)', color: '#0284c7' },
+  Academic: { bg: 'rgba(35,96,138,0.12)', color: '#23608a' },
   Cultural: { bg: 'rgba(217,70,239,0.14)', color: '#c026d3' },
   Other: { bg: 'rgba(107,114,128,0.15)', color: '#6b7280' },
 };
@@ -178,7 +178,7 @@ export default function EventsSection() {
         {canCreate && (
           <button
             onClick={() => setCreating(true)}
-            style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
+            style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(35, 96, 138,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
           >
             <Plus size={14} /> Create Event
           </button>
@@ -325,7 +325,7 @@ export default function EventsSection() {
                       <button
                         onClick={() => handleRegister(e.id)}
                         disabled={full}
-                        style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '7px 16px', fontSize: 12, fontWeight: 600, border: 'none', cursor: full ? 'not-allowed' : 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', gap: 6, opacity: full ? 0.6 : 1 }}
+                        style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '7px 16px', fontSize: 12, fontWeight: 600, border: 'none', cursor: full ? 'not-allowed' : 'pointer', boxShadow: '0 4px 14px rgba(35, 96, 138,0.3)', display: 'flex', alignItems: 'center', gap: 6, opacity: full ? 0.6 : 1 }}
                       >
                         <Users size={13} /> {full ? 'Event Full' : 'Register'}
                       </button>
@@ -429,7 +429,7 @@ export default function EventsSection() {
                   onDrop={handleImageDrop}
                   className="flex flex-col items-center justify-center w-full cursor-pointer gap-1.5"
                   style={{ border: '1.5px dashed var(--secondary)', background: 'var(--secondary-lighter)', borderRadius: 'var(--radius-sm)', padding: '18px 14px', textAlign: 'center', transition: 'border-color 0.2s, background 0.2s' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = 'rgba(2,132,199,0.06)'; }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = 'rgba(35,96,138,0.06)'; }}
                   onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--secondary)'; e.currentTarget.style.background = 'var(--secondary-lighter)'; }}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: 'var(--accent)' }}>
@@ -468,7 +468,7 @@ export default function EventsSection() {
               <button
                 onClick={handleCreate}
                 disabled={saving}
-                style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '10px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                style={{ width: '100%', background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '10px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: saving ? 'not-allowed' : 'pointer', boxShadow: '0 4px 14px rgba(35, 96, 138,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
               >
                 <Plus size={14} /> {saving ? 'Creating...' : 'Create Event'}
               </button>

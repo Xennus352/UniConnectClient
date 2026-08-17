@@ -63,7 +63,7 @@ export default function Navbar({ onMenuToggle, basePath }: NavbarProps) {
             color: 'var(--text-lighter)',
             fontSize: 14,
           }}
-          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.boxShadow = '0 0 0 4px rgba(14, 165, 233,0.15)'; }}
+          onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.boxShadow = '0 0 0 4px rgba(40, 114, 161,0.15)'; }}
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--surface-border)'; e.currentTarget.style.boxShadow = 'none'; }}
         >
           <Search size={15} />
@@ -83,7 +83,7 @@ export default function Navbar({ onMenuToggle, basePath }: NavbarProps) {
             el.style.color = 'white';
             el.style.borderColor = 'var(--primary)';
             el.style.transform = 'translateY(-1px)';
-            el.style.boxShadow = '0 4px 12px rgba(14, 165, 233,0.3)';
+            el.style.boxShadow = '0 4px 12px rgba(40, 114, 161,0.3)';
           }}
           onMouseLeave={(e) => {
             const el = e.currentTarget;
@@ -131,7 +131,7 @@ export default function Navbar({ onMenuToggle, basePath }: NavbarProps) {
             el.style.color = 'white';
             el.style.borderColor = 'var(--primary)';
             el.style.transform = 'translateY(-1px)';
-            el.style.boxShadow = '0 4px 12px rgba(14, 165, 233,0.3)';
+            el.style.boxShadow = '0 4px 12px rgba(40, 114, 161,0.3)';
           }}
           onMouseLeave={(e) => {
             const el = e.currentTarget;

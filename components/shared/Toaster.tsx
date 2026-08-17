@@ -8,7 +8,7 @@ export default function Toaster() {
 
   useEffect(() => {
     const update = () =>
-      setTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light');
+      setTheme(document.documentElement.dataset.theme === 'ocean-dark' ? 'dark' : 'light');
     update();
     const observer = new MutationObserver(update);
     observer.observe(document.documentElement, {

@@ -128,7 +128,7 @@ export function Dashboard() {
                     className="hover:bg-(--surface-soft)"
                     style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 22px', textDecoration: 'none', borderBottom: '1px solid var(--surface)', transition: 'background 0.15s' }}
                   >
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)' }}>
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'rgba(40,114,161,0.12)', color: 'var(--primary)' }}>
                       <CalendarCheck size={17} />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -139,7 +139,7 @@ export function Dashboard() {
                         {registrations?.[e.id] ? ` • ${registrations[e.id].count} registered` : ''}
                       </div>
                     </div>
-                    <span className="badge badge-sm shrink-0" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
+                    <span className="badge badge-sm shrink-0" style={{ background: 'rgba(40,114,161,0.12)', color: 'var(--primary)', border: 'none' }}>{e.category}</span>
                   </Link>
                 ))}
               </div>
@@ -205,11 +205,11 @@ export function StudentsSection() {
         <button style={{
           background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff',
           borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600,
-          border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)',
+          border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(35, 96, 138,0.3)',
           display: 'flex', alignItems: 'center', gap: 6,
         }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)' }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)' }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(35, 96, 138,0.4)' }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(35, 96, 138,0.3)' }}
         >
           <Plus size={14} /> Add Student
         </button>
@@ -280,7 +280,7 @@ export function StudentsSection() {
                   padding: '6px 14px', fontSize: 12, color: 'var(--primary)', cursor: 'pointer',
                   fontWeight: 600, borderRadius: 'var(--radius-sm)', border: 'none', background: 'none',
                 }}
-                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.15)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.15)' }}
                   onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
                 >
                   <Eye size={14} />
@@ -363,9 +363,9 @@ export function SettingsSection() {
             )}
             <div style={{ paddingTop: 16, borderTop: '1px solid var(--surface)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button style={{ background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
-              <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
-                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(2, 132, 199,0.4)' }}
-                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(2, 132, 199,0.3)' }}><Save size={14} /> Save Changes</button>
+              <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(35, 96, 138,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}
+                onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 20px rgba(35, 96, 138,0.4)' }}
+                onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(35, 96, 138,0.3)' }}><Save size={14} /> Save Changes</button>
             </div>
           </div>
         ) : settingsTab === 'Appearance' ? (

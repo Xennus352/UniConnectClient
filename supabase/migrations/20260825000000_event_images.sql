@@ -11,11 +11,15 @@ alter table public.events add column if not exists visibility text not null defa
 
 insert into storage.buckets (id, name, public) values ('event-images', 'event-images', true) on conflict (id) do nothing;
 
-create policy if not exists "event-images upload" on storage.objects
+drop policy if exists "event-images upload" on storage.objects;
+create policy "event-images upload" on storage.objects
   for insert to anon, authenticated with check (bucket_id = 'event-images');
-create policy if not exists "event-images update" on storage.objects
+drop policy if exists "event-images update" on storage.objects;
+create policy "event-images update" on storage.objects
   for update to anon, authenticated using (bucket_id = 'event-images') with check (bucket_id = 'event-images');
-create policy if not exists "event-images delete" on storage.objects
+drop policy if exists "event-images delete" on storage.objects;
+create policy "event-images delete" on storage.objects
   for delete to anon, authenticated using (bucket_id = 'event-images');
-create policy if not exists "event-images read" on storage.objects
+drop policy if exists "event-images read" on storage.objects;
+create policy "event-images read" on storage.objects
   for select to anon, authenticated using (bucket_id = 'event-images');

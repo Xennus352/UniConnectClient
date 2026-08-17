@@ -60,6 +60,18 @@ export async function POST(request: Request) {
     }
   }
 
+  // Event and Announcement tags are reserved for official roles (admin,
+  // student-affairs). Other roles never see the chips in the composer, and
+  // this strips the tags server-side too so a crafted request (or an
+  // `#event`/`#announcement` hashtag in the content) can't bypass the rule.
+  const RESTRICTED_TAGS = new Set(['event', 'announcement']);
+  const isOfficialRole = identity.role === 'admin' || identity.role === 'student-affair';
+  if (!isOfficialRole) {
+    for (let i = tags.length - 1; i >= 0; i -= 1) {
+      if (RESTRICTED_TAGS.has(normalizeTag(tags[i].label ?? ''))) tags.splice(i, 1);
+    }
+  }
+
   const supabase = createServerSupabase() as unknown as SupabaseClient;
   const now = Date.now();
 

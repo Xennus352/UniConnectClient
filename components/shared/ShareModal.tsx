@@ -116,7 +116,7 @@ export default function ShareModal({ open, onClose, onShare }: ShareModalProps) 
               className="flex items-center gap-3 w-full cursor-pointer border-none text-left"
               style={{
                 padding: '10px 24px',
-                background: active ? 'rgba(14, 165, 233,0.1)' : 'transparent',
+                background: active ? 'rgba(40, 114, 161,0.1)' : 'transparent',
                 transition: 'background 0.15s',
               }}
               onMouseEnter={(e) => { if (!active) e.currentTarget.style.background = 'var(--surface-soft)'; }}

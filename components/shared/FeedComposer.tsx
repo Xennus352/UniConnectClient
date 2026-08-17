@@ -18,6 +18,10 @@ interface FeedComposerProps {
 
 export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
   const { user: session } = useSession();
+  const canPostOfficialTags = session?.role === 'admin' || session?.role === 'student-affair';
+  const visibleTags = canPostOfficialTags
+    ? TAG_OPTIONS
+    : TAG_OPTIONS.filter((t) => t.label !== 'Event' && t.label !== 'Announcement');
   const [text, setText] = useState('');
   const [image, setImage] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -49,8 +53,9 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
   }, []);
 
   const toggleTag = useCallback((tag: string) => {
+    if (!canPostOfficialTags && (tag === 'Event' || tag === 'Announcement')) return;
     setSelectedTag((prev) => (prev === tag ? null : tag));
-  }, []);
+  }, [canPostOfficialTags]);
 
   const handlePost = useCallback(async () => {
     if ((!text.trim() && !image) || submitting) return;
@@ -93,8 +98,8 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
         <div
           className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 font-bold"
           style={{
-            background: 'linear-gradient(to bottom right, #bae6fd, #bae6fd)',
-            color: '#0369a1',
+            background: 'linear-gradient(to bottom right, #cbdde9, #cbdde9)',
+            color: '#1c4f73',
             fontSize: 14,
           }}
         >
@@ -133,7 +138,7 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
           )}
 
           <div className="mt-2.5 flex gap-1.5 flex-wrap">
-            {TAG_OPTIONS.map((tag) => {
+            {visibleTags.map((tag) => {
               const active = selectedTag === tag.label;
               return (
                 <button
@@ -141,7 +146,7 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
                   onClick={() => toggleTag(tag.label)}
                   className="px-2.5 py-1 text-xs font-medium rounded-full cursor-pointer transition-all border-none"
                   style={{
-                    backgroundColor: active ? 'rgba(14, 165, 233,0.15)' : 'var(--divider)',
+                    backgroundColor: active ? 'rgba(40, 114, 161,0.15)' : 'var(--divider)',
                     color: active ? 'var(--primary)' : 'var(--text-light)',
                   }}
                 >
@@ -177,7 +182,7 @@ export default function FeedComposer({ avatarInitials }: FeedComposerProps) {
                 background: 'linear-gradient(var(--primary), var(--primary-dark))',
                 color: '#fff',
                 fontSize: 13,
-                boxShadow: '0 2px 8px rgba(14, 165, 233,0.25)',
+                boxShadow: '0 2px 8px rgba(40, 114, 161,0.25)',
               }}
             >
               <Send size={14} /> {submitting ? 'Posting...' : 'Post'}

@@ -10,8 +10,8 @@ import type { Notification } from '@/lib/supabase/hooks';
 
 const TYPE_META: Record<string, { icon: React.ReactNode; bg: string; color: string }> = {
   like: { icon: <Heart size={15} />, bg: 'rgba(248,113,113,0.12)', color: '#f87171' },
-  comment: { icon: <MessageSquare size={15} />, bg: 'rgba(14, 165, 233,0.12)', color: 'var(--primary)' },
-  message: { icon: <MessageSquare size={15} />, bg: 'rgba(14, 165, 233,0.12)', color: 'var(--primary)' },
+  comment: { icon: <MessageSquare size={15} />, bg: 'rgba(40, 114, 161,0.12)', color: 'var(--primary)' },
+  message: { icon: <MessageSquare size={15} />, bg: 'rgba(40, 114, 161,0.12)', color: 'var(--primary)' },
   share: { icon: <Share2 size={15} />, bg: 'rgba(52,211,153,0.12)', color: '#34d399' },
   moderation: { icon: <ShieldCheck size={15} />, bg: 'rgba(167,139,250,0.14)', color: '#a78bfa' },
   event: { icon: <CalendarCheck size={15} />, bg: 'rgba(251,191,36,0.14)', color: '#fbbf24' },
@@ -151,7 +151,7 @@ export default function NotificationsSection() {
               key={n.id}
               onClick={() => handleClick(n)}
               className="w-full flex items-start gap-4 px-5 py-4 text-left cursor-pointer transition-colors duration-150 hover:bg-(--surface-soft)"
-              style={{ borderBottom: i < (notifications?.length ?? 0) - 1 ? '1px solid var(--surface)' : 'none', background: read ? 'transparent' : 'rgba(14, 165, 233,0.04)' }}
+              style={{ borderBottom: i < (notifications?.length ?? 0) - 1 ? '1px solid var(--surface)' : 'none', background: read ? 'transparent' : 'rgba(40, 114, 161,0.04)' }}
             >
               <div
                 className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"

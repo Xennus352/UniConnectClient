@@ -3,8 +3,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
-import { Heart, MessageCircle, Share2, CircleCheck, Send, Pencil, Trash2, X, Check } from 'lucide-react';
+import { Heart, MessageCircle, Share2, CircleCheck, Send, Pencil, Trash2, X, Check, Reply, ImageOff } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
+import { usePostImageDownload } from '@/lib/supabase/usePostImage';
+import PostImageDownload from './PostImageDownload';
 import { useSession } from './session';
 import { toast } from 'sonner';
 import ShareModal from './ShareModal';
@@ -38,40 +40,29 @@ function timeAgo(ts: number): string {
 // lazily per post, in parallel, each with its own request budget, so slow
 // images degrade gracefully instead of blanking the entire feed.
 function PostImage({ postId }: { postId: string }) {
-  const supabase = useSupabase();
-  const [src, setSrc] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const { src, phase, progress, attemptsLeft } = usePostImageDownload(postId);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('image')
-        .eq('id', postId)
-        .single();
-      if (cancelled) return;
-      setDone(true);
-      if (!error && data?.image) setSrc(data.image);
-    })();
-    return () => { cancelled = true; };
-  }, [supabase, postId]);
-
-  if (!done) {
+  if (phase === 'downloading' || phase === 'retrying') {
+    return <PostImageDownload height={160} progress={progress} retrying={phase === 'retrying'} attemptsLeft={attemptsLeft} />;
+  }
+  if (phase === 'failed') {
     return (
       <div
-        className="mt-3 overflow-hidden flex justify-center"
-        style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', height: 200, background: 'var(--divider)' }}
-      />
+        className="mt-3 w-full flex flex-col items-center justify-center gap-1"
+        style={{ height: 160, borderRadius: 'var(--radius-md)', border: '1px dashed var(--surface-border)', background: 'var(--divider-soft)', color: 'var(--text-lighter)', fontSize: 12 }}
+      >
+        <ImageOff size={18} />
+        <span>Image unavailable</span>
+      </div>
     );
   }
-  if (!src) return null;
+  if (phase === 'empty' || !src) return null;
   return (
     <div
       className="mt-3 overflow-hidden flex justify-center"
       style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}
     >
-      <img src={src} alt="" className="max-w-full h-auto" style={{ maxHeight: 480, objectFit: 'contain' }} />
+      <img src={src} alt="" loading="lazy" className="max-w-full h-auto" style={{ maxHeight: 480, objectFit: 'contain' }} />
     </div>
   );
 }
@@ -96,7 +87,7 @@ export default function FeedPost({ post }: FeedPostProps) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const commentInputRef = useRef<HTMLInputElement>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
   const submittingRef = useRef(false);
   const [likePulse, setLikePulse] = useState(0);
 
@@ -141,6 +132,8 @@ export default function FeedPost({ post }: FeedPostProps) {
     if (!content || !me) return;
     submittingRef.current = true;
     setCommentText('');
+    const ta = commentInputRef.current;
+    if (ta) ta.style.height = 'auto';
     try {
       const res = await fetch(`/api/posts/${post.id}/comments`, {
         method: 'POST',
@@ -159,6 +152,20 @@ export default function FeedPost({ post }: FeedPostProps) {
       submittingRef.current = false;
     }
   }, [commentText, me, myName, meInitials, post.id]);
+
+  const handleReply = useCallback((name: string) => {
+    setCommentText((prev) => (prev.trim() ? prev : `@${name} `));
+    commentInputRef.current?.focus();
+  }, []);
+
+  const handleCommentChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setCommentText(e.target.value);
+    const ta = commentInputRef.current;
+    if (ta) {
+      ta.style.height = 'auto';
+      ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+    }
+  }, []);
 
   const handleShare = useCallback(async (selected: UniversityPerson[]) => {
     if (!me || selected.length === 0) return;
@@ -351,9 +358,9 @@ export default function FeedPost({ post }: FeedPostProps) {
             <span
               className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-bold"
               style={{
-                background: post.item_status === 'lost' ? 'rgba(239, 68, 68, 0.12)' : 'rgba(34, 197, 94, 0.14)',
-                color: post.item_status === 'lost' ? '#dc2626' : '#15803d',
-                border: `1px solid ${post.item_status === 'lost' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(34, 197, 94, 0.4)'}`,
+                background: post.item_status === 'lost' ? 'var(--tag-lost-bg)' : 'var(--tag-event-bg)',
+                color: post.item_status === 'lost' ? 'var(--tag-lost-text)' : 'var(--tag-event-text)',
+                border: `1px solid ${post.item_status === 'lost' ? 'var(--tag-lost-border)' : 'var(--tag-event-border)'}`,
                 whiteSpace: 'nowrap',
               }}
             >
@@ -364,9 +371,9 @@ export default function FeedPost({ post }: FeedPostProps) {
             <span
               className="inline-flex items-center gap-1 rounded-full px-2 py-[2px] text-[11px] font-bold"
               style={{
-                background: 'rgba(14, 165, 233, 0.12)',
-                color: '#0369a1',
-                border: '1px solid rgba(14, 165, 233, 0.4)',
+                background: 'rgba(40, 114, 161, 0.12)',
+                color: '#1c4f73',
+                border: '1px solid rgba(40, 114, 161, 0.4)',
                 whiteSpace: 'nowrap',
               }}
             >
@@ -386,10 +393,10 @@ export default function FeedPost({ post }: FeedPostProps) {
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{
               color: isLiked ? 'var(--primary)' : 'var(--text-light)',
-              backgroundColor: isLiked ? 'rgba(14, 165, 233,0.12)' : 'transparent',
+              backgroundColor: isLiked ? 'rgba(40, 114, 161,0.12)' : 'transparent',
             }}
             onMouseEnter={(e) => {
-              if (!isLiked) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }
+              if (!isLiked) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }
             }}
             onMouseLeave={(e) => {
               if (!isLiked) { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }
@@ -410,7 +417,7 @@ export default function FeedPost({ post }: FeedPostProps) {
             onClick={() => { setShowComments(prev => !prev); setTimeout(() => commentInputRef.current?.focus(), 50); }}
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{ color: showComments ? 'var(--primary)' : 'var(--text-light)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
           >
             <MessageCircle size={14} /> {comments?.length ?? post.comments_count ?? 0}
@@ -419,7 +426,7 @@ export default function FeedPost({ post }: FeedPostProps) {
             onClick={() => setShowShareModal(true)}
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
             style={{ color: 'var(--text-light)' }}
-            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(14, 165, 233,0.12)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
           >
             <Share2 size={14} /> {shares ?? 0} Share
@@ -432,7 +439,7 @@ export default function FeedPost({ post }: FeedPostProps) {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: -4 }}
             transition={{ type: 'spring', stiffness: 420, damping: 26 }}
-            style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(14, 165, 233,0.1)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}
+            style={{ marginTop: 8, padding: '8px 12px', borderRadius: 'var(--radius-sm)', background: 'rgba(40, 114, 161,0.1)', color: 'var(--primary)', fontSize: 12, fontWeight: 600 }}
           >
             {shareMsg}
           </motion.div>
@@ -448,34 +455,48 @@ export default function FeedPost({ post }: FeedPostProps) {
             className="mt-3 pt-3 overflow-hidden"
             style={{ borderTop: '1px solid var(--divider)' }}
           >
-            {(comments ?? []).map((c) => (
-              <CommentRow key={c.id} comment={c} me={me} meInitials={meInitials} onEdit={editComment} onDelete={deleteComment} />
-            ))}
-            {hasMore && (
-              <button
-                onClick={loadMore}
-                disabled={loadingMore}
-                className="mb-2 px-2 py-1 font-semibold border-none cursor-pointer disabled:opacity-50"
-                style={{ borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--primary)', fontSize: 12 }}
-              >
-                {loadingMore ? 'Loading more comments...' : 'Load more comments'}
-              </button>
-            )}
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary-dark/80 flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 10 }}>
+            <div className="pl-4 border-l-2 flex flex-col gap-2 mb-3" style={{ borderColor: 'var(--thread)' }}>
+              {(comments ?? []).map((c) => (
+                <CommentRow key={c.id} comment={c} me={me} meInitials={meInitials} onEdit={editComment} onDelete={deleteComment} onReply={handleReply} />
+              ))}
+              {hasMore && (
+                <button
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                  className="self-start mb-1 px-2 py-1 font-semibold border-none cursor-pointer disabled:opacity-50"
+                  style={{ borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--primary)', fontSize: 12 }}
+                >
+                  {loadingMore ? 'Loading more comments...' : 'Load more comments'}
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-dark/80 flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 11 }}>
                 {meInitials}
               </div>
-              <div className="flex-1 flex items-center gap-2" style={{ background: 'var(--divider)', borderRadius: 'var(--radius-md)', padding: '4px 4px 4px 12px', border: '1.5px solid var(--surface-border)' }}>
-                <input
+              <div
+                className="flex-1 flex items-end gap-1.5 rounded-xl px-3 py-2 backdrop-blur-md transition-shadow focus-within:ring-1 focus-within:ring-cyan-500/50"
+                style={{ background: 'var(--divider)', border: '1.5px solid var(--surface-border)' }}
+              >
+                <textarea
                   ref={commentInputRef}
-                  type="text"
                   value={commentText}
-                  onChange={(e) => setCommentText(e.target.value)}
+                  maxLength={300}
+                  rows={1}
+                  onChange={handleCommentChange}
                   placeholder="Write a comment..."
-                  className="flex-1 bg-transparent outline-none"
-                  style={{ fontSize: 13, color: 'var(--text)', border: 'none' }}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleComment(); }}
+                  className="flex-1 bg-transparent outline-none resize-none leading-snug"
+                  style={{ fontSize: 13.5, color: 'var(--text)', border: 'none', padding: '4px 0', maxHeight: 120 }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleComment();
+                    }
+                  }}
                 />
+                <span className="shrink-0 text-[10px] font-medium" style={{ color: commentText.length >= 300 ? 'var(--danger)' : 'var(--text-lighter)' }}>
+                  {commentText.length}/300
+                </span>
                 <button
                   onClick={handleComment}
                   disabled={!commentText.trim()}
@@ -500,90 +521,105 @@ export default function FeedPost({ post }: FeedPostProps) {
   );
 }
 
-function CommentRow({ comment, me, meInitials, onEdit, onDelete }: { comment: Comment; me: string; meInitials: string; onEdit: (id: string, content: string) => void; onDelete: (id: string) => void }) {
+function CommentRow({ comment, me, meInitials, onEdit, onDelete, onReply }: { comment: Comment; me: string; meInitials: string; onEdit: (id: string, content: string) => void; onDelete: (id: string) => void; onReply: (name: string) => void }) {
   const isMe = comment.author_email === me;
   const isEdited = (comment.updated_at ?? 0) > (comment.created_at ?? 0);
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(comment.content);
   const [confirming, setConfirming] = useState(false);
   return (
-    <div className="flex items-start gap-2 mb-2">
+    <div className="flex items-start gap-2.5 rounded-xl px-3 py-2.5 backdrop-blur-md" style={{ background: 'var(--glass-bg)', border: '1px solid var(--glass-border)' }}>
       <div
-        className="w-7 h-7 rounded-full bg-gradient-to-br from-primary to-primary-dark/80 flex items-center justify-center text-white font-bold shrink-0"
-        style={{ fontSize: 10 }}
+        className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-primary-dark/80 flex items-center justify-center text-white font-bold shrink-0"
+        style={{ fontSize: 11 }}
       >
         {isMe ? meInitials : (comment.author_initials ?? comment.author_name?.slice(0, 2).toUpperCase())}
       </div>
-      <div className="flex-1">
-        <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--accent)' }}>
-          {isMe ? 'You' : comment.author_name}{' '}
-          {isEdited && <span style={{ color: 'var(--text-lighter)', fontWeight: 500 }}>• edited</span>}
-        </div>
-        {editing ? (
-          <>
-            <div className="flex items-center gap-2 mt-1" style={{ background: 'var(--divider)', borderRadius: 'var(--radius-sm)', padding: '6px 10px', border: '1.5px solid var(--surface-border)' }}>
-              <input
-                value={text}
-                onChange={(e) => setText(e.target.value)}
-                className="flex-1 bg-transparent outline-none"
-                style={{ fontSize: 13, color: 'var(--text)', border: 'none' }}
-                onKeyDown={(e) => { if (e.key === 'Enter') { onEdit(comment.id, text); setEditing(false); } if (e.key === 'Escape') { setText(comment.content); setEditing(false); } }}
-              />
-              <button
-                onClick={() => { onEdit(comment.id, text); setEditing(false); }}
-                disabled={!text.trim()}
-                className="cursor-pointer border-none disabled:opacity-30"
-                style={{ color: 'var(--primary)', background: 'transparent' }}
-                title="Save edit"
-              >
-                <Check size={14} />
-              </button>
-              <button
-                onClick={() => { setText(comment.content); setEditing(false); }}
-                className="cursor-pointer border-none"
-                style={{ color: 'var(--text-light)', background: 'transparent' }}
-                title="Cancel edit"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <div style={{ fontSize: 13, color: 'var(--text)' }}>{comment.content}</div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--accent)' }}>
+            {isMe ? 'You' : comment.author_name}
+          </span>
+          <span style={{ fontSize: 11, color: 'var(--text-lighter)', whiteSpace: 'nowrap' }}>{timeAgo(comment.created_at)}</span>
+          {isEdited && <span style={{ fontSize: 11, color: 'var(--text-lighter)' }}>• edited</span>}
+          <div className="ml-auto flex items-center gap-0.5">
+            <button
+              onClick={() => onReply(comment.author_name ?? '')}
+              title="Reply"
+              className="cursor-pointer border-none transition-colors"
+              style={{ padding: 3, color: 'var(--text-lighter)', background: 'transparent', borderRadius: 'var(--radius-sm)' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-lighter)'; }}
+            >
+              <Reply size={12} />
+            </button>
             {isMe && (
-              <div className="flex items-center gap-1 mt-0.5">
+              <>
                 <button
                   onClick={() => { setText(comment.content); setEditing(true); }}
-                  className="cursor-pointer border-none"
-                  style={{ padding: 2, color: 'var(--text-lighter)', background: 'transparent', fontSize: 11, fontWeight: 600 }}
                   title="Edit comment"
+                  className="cursor-pointer border-none transition-colors"
+                  style={{ padding: 3, color: 'var(--text-lighter)', background: 'transparent', borderRadius: 'var(--radius-sm)' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-lighter)'; }}
                 >
-                  Edit
+                  <Pencil size={12} />
                 </button>
                 {confirming ? (
                   <>
-                    <span style={{ fontSize: 11, color: 'var(--error)', fontWeight: 600 }}>Delete?</span>
-                    <button onClick={() => onDelete(comment.id)} className="cursor-pointer border-none" style={{ color: 'var(--error)', background: 'transparent', fontSize: 11, fontWeight: 600 }}>
-                      Yes
+                    <span style={{ fontSize: 10.5, color: 'var(--error)', fontWeight: 700 }}>Delete?</span>
+                    <button onClick={() => onDelete(comment.id)} className="cursor-pointer border-none" style={{ color: 'var(--error)', background: 'transparent', padding: 3 }}>
+                      <Check size={12} />
                     </button>
-                    <button onClick={() => setConfirming(false)} className="cursor-pointer border-none" style={{ color: 'var(--text-light)', background: 'transparent', fontSize: 11, fontWeight: 600 }}>
-                      No
+                    <button onClick={() => setConfirming(false)} className="cursor-pointer border-none" style={{ color: 'var(--text-light)', background: 'transparent', padding: 3 }}>
+                      <X size={12} />
                     </button>
                   </>
                 ) : (
                   <button
                     onClick={() => setConfirming(true)}
-                    className="cursor-pointer border-none"
-                    style={{ padding: 2, color: 'var(--text-lighter)', background: 'transparent', fontSize: 11, fontWeight: 600 }}
                     title="Delete comment"
+                    className="cursor-pointer border-none transition-colors"
+                    style={{ padding: 3, color: 'var(--text-lighter)', background: 'transparent', borderRadius: 'var(--radius-sm)' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--error)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-lighter)'; }}
                   >
-                    Delete
+                    <Trash2 size={12} />
                   </button>
                 )}
-              </div>
+              </>
             )}
-          </>
+          </div>
+        </div>
+        {editing ? (
+          <div className="flex items-center gap-1.5 rounded-xl px-3 py-1.5 mt-1.5" style={{ background: 'var(--divider)', border: '1.5px solid var(--surface-border)' }}>
+            <input
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="flex-1 bg-transparent outline-none"
+              style={{ fontSize: 13, color: 'var(--text)', border: 'none' }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { onEdit(comment.id, text); setEditing(false); } if (e.key === 'Escape') { setText(comment.content); setEditing(false); } }}
+            />
+            <button
+              onClick={() => { onEdit(comment.id, text); setEditing(false); }}
+              disabled={!text.trim()}
+              className="cursor-pointer border-none disabled:opacity-30"
+              style={{ color: 'var(--primary)', background: 'transparent' }}
+              title="Save edit"
+            >
+              <Check size={14} />
+            </button>
+            <button
+              onClick={() => { setText(comment.content); setEditing(false); }}
+              className="cursor-pointer border-none"
+              style={{ color: 'var(--text-light)', background: 'transparent' }}
+              title="Cancel edit"
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5, marginTop: 2, wordBreak: 'break-word' }}>{comment.content}</div>
         )}
       </div>
     </div>

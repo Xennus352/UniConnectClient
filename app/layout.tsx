@@ -12,7 +12,7 @@ export const metadata: Metadata = {
 const THEME_SCRIPT = `
 try {
   var t = localStorage.getItem('uniconnect-theme');
-  document.documentElement.dataset.theme = t === 'dark' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = (t === 'dark' || t === 'ocean-dark') ? 'ocean-dark' : 'ocean-light';
 } catch (e) {}
 `;
 
