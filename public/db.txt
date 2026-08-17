@@ -1,0 +1,82 @@
+------------------------------------------------------------
+-- UniConnect — Exam Results setup
+-- Paste this whole block into the Supabase SQL Editor and run it.
+-- It is idempotent (safe to run multiple times).
+------------------------------------------------------------
+
+-- 1. Exam Results distribution: dedicated published-results table
+create table if not exists public.exam_results (
+  id              uuid primary key default gen_random_uuid(),
+  user_id         uuid,
+  recipient_email text not null,
+  roll_number     text not null,
+  year            text not null,
+  semester        text not null,
+  file_name       text not null,
+  file_url        text not null,
+  storage_path    text not null,
+  created_at      bigint not null default (extract(epoch from now()) * 1000)
+);
+create index if not exists idx_exam_results_recipient
+  on public.exam_results (recipient_email, created_at desc);
+
+-- 2. Exam Result Batches: aggregate grouping for sent PDFs
+create table if not exists public.exam_result_batches (
+  id            uuid primary key default gen_random_uuid(),
+  exam_type     text not null,
+  semester      text not null,
+  academic_year text not null,
+  total_files   integer not null default 0,
+  status        text not null default 'UPLOADED',
+  created_by    text,
+  created_at    bigint not null default (extract(epoch from now()) * 1000)
+);
+create index if not exists idx_exam_result_batches_created
+  on public.exam_result_batches (created_at desc);
+
+-- 3. exam_results extensions: batch link, student name, student id
+alter table public.exam_results
+  add column if not exists batch_id uuid references public.exam_result_batches(id) on delete set null,
+  add column if not exists student_name text;
+create index if not exists idx_exam_results_batch
+  on public.exam_results (batch_id);
+
+alter table public.exam_results
+  add column if not exists student_id text;
+create index if not exists idx_exam_results_student
+  on public.exam_results (student_id);
+
+-- 4. Grants (anon/authenticated)
+grant select, insert, update, delete on public.exam_result_batches to anon, authenticated;
+grant select, insert, update on public.exam_results to anon, authenticated;
+
+-- 5. CRITICAL: disable RLS on the exam tables. They are created with RLS
+--    enabled and no policies, which silently blocks ALL browser reads and
+--    realtime events (uploads still succeed via the service-role API, but
+--    admins/students see nothing). Every other table in this project uses
+--    grants + server-side authorization instead.
+alter table public.exam_results disable row level security;
+alter table public.exam_result_batches disable row level security;
+
+-- 6. Enable Realtime for live sync (Result Batches + Sent History must
+--    appear instantly without a page refresh)
+alter publication supabase_realtime add table public.exam_result_batches;
+alter publication supabase_realtime add table public.exam_results;
+
+-- 7. Exam Result distribution: system inbox messages
+alter table public.chat_messages
+  add column if not exists sender_id uuid,
+  add column if not exists recipient_id uuid,
+  add column if not exists recipient_email text,
+  add column if not exists message_type text not null default 'text',
+  add column if not exists file_url text,
+  add column if not exists file_name text,
+  add column if not exists roll_number text;
+
+create index if not exists idx_chat_messages_recipient_type
+  on public.chat_messages (recipient_email, message_type, created_at desc);
+
+-- 8. Storage bucket "exam-results" (public, 15MB limit) — created automatically
+--    by the upload API if missing, but you can pre-create it in the
+--    Supabase Dashboard: Storage -> New bucket -> name "exam-results",
+--    public bucket, file size limit 15MB.

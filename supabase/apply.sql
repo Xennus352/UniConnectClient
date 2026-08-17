@@ -292,6 +292,19 @@ alter table public.exam_results
   add column if not exists student_name text;
 create index if not exists idx_exam_results_batch
   on public.exam_results (batch_id);
+alter table public.exam_results
+  add column if not exists student_id text;
+create index if not exists idx_exam_results_student
+  on public.exam_results (student_id);
 
 grant select, insert, update, delete on public.exam_result_batches to anon, authenticated;
 grant update on public.exam_results to anon, authenticated;
+
+-- Enable Realtime for exam result sync
+alter publication supabase_realtime add table public.exam_result_batches;
+alter publication supabase_realtime add table public.exam_results;
+
+-- Disable RLS so browser reads + realtime work (project uses grants +
+-- server-side authorization in API routes; RLS blocks all reads otherwise)
+alter table public.exam_results disable row level security;
+alter table public.exam_result_batches disable row level security;

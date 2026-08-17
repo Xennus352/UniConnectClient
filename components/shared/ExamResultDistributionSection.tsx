@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Upload, Settings, FileText, GraduationCap, Send, Loader2,
   X, Check, FileWarning, Filter, Eye, Download, Rocket,
-  Archive, Trash2, History, Layers,
+  Archive, Trash2, History, Layers, Sparkles, Search, RotateCcw,
 } from 'lucide-react';
 import { apiFetch, type StudentRecord, type AcademicTermRecord } from './api';
 import { useUniversityData } from './useUniversityData';
@@ -72,7 +72,12 @@ type FilterId = (typeof filterOptions)[number]['id'];
 
 type TabId = 'upload' | 'batches' | 'history';
 
-const EXAM_TYPES = ['Mid Term', 'Final Term', 'Quiz', 'Assignment'];
+const EXAM_TYPES = ['Mid Term', 'Final Term'] as const;
+
+const HISTORY_SEMESTERS = Array.from({ length: 8 }, (_, i) => `Semester ${i + 1}`);
+const HISTORY_EXAM_TYPES = ['Mid Term', 'Final Term'];
+
+const escapeOrValue = (v: string): string => v.replace(/[\\%_]/g, '').replace(/,/g, '\\,');
 
 const statusBadge = (status: string) => {
   const s = status.toUpperCase();
@@ -108,6 +113,9 @@ export default function ExamResultDistributionSection() {
   const [historyPage, setHistoryPage] = useState(1);
   const [historyPageSize, setHistoryPageSize] = useState(10);
   const [historyBatch, setHistoryBatch] = useState('all');
+  const [historySearch, setHistorySearch] = useState('');
+  const [historySemester, setHistorySemester] = useState('ALL');
+  const [historyExamType, setHistoryExamType] = useState('ALL');
   const [viewer, setViewer] = useState<HistoryRow | null>(null);
 
   const { data: terms } = useUniversityData<AcademicTermRecord[]>(
@@ -120,28 +128,9 @@ export default function ExamResultDistributionSection() {
   }, [terms]);
 
   const [year, setYear] = useState<string>('');
-  const [semester, setSemester] = useState<string>('');
   const [examType, setExamType] = useState<string>(EXAM_TYPES[0]);
 
   const effectiveYear = year || yearOptions[0] || '2025-2026';
-
-  const semesterOptions = useMemo(() => {
-    const ts = (terms ?? []).filter((t) => String(t.academicYear) === effectiveYear);
-    return ts.length > 0
-      ? ts.map((t, i) => ({
-          value: `Semester ${i + 1}`,
-          label: `Semester ${i + 1}${t.status === 'ACTIVE' ? ' (Active)' : ''}`,
-        }))
-      : [{ value: 'Semester 1', label: 'Semester 1' }];
-  }, [terms, effectiveYear]);
-
-  const effectiveSemester = useMemo(() => {
-    if (semester) return semester;
-    const ts = (terms ?? []).filter((t) => String(t.academicYear) === effectiveYear);
-    if (ts.length === 0) return 'Semester 1';
-    const activeIdx = ts.findIndex((t) => t.status === 'ACTIVE');
-    return `Semester ${(activeIdx >= 0 ? activeIdx : 0) + 1}`;
-  }, [semester, terms, effectiveYear]);
 
   useEffect(() => {
     let cancelled = false;
@@ -177,6 +166,25 @@ export default function ExamResultDistributionSection() {
       .select('id, user_id, recipient_email, roll_number, year, semester, file_name, file_url, storage_path, created_at, batch_id, student_name', { count: 'exact' })
       .order('created_at', { ascending: false });
     if (batchFilter) query = query.eq('batch_id', batchFilter);
+    if (historySemester !== 'ALL') query = query.eq('semester', historySemester);
+    if (historyExamType !== 'ALL') {
+      const { data: typeBatches } = await supabase
+        .from('exam_result_batches')
+        .select('id')
+        .eq('exam_type', historyExamType);
+      const typeIds = (typeBatches ?? []).map((b) => b.id);
+      if (typeIds.length === 0) {
+        historyIdsRef.current = new Set();
+        setHistory([]);
+        setHistoryTotal(0);
+        return;
+      }
+      query = query.in('batch_id', typeIds);
+    }
+    if (historySearch.trim()) {
+      const q = escapeOrValue(historySearch.trim());
+      query = query.or(`roll_number.ilike.%${q}%,student_name.ilike.%${q}%`);
+    }
     const from = (historyPage - 1) * historyPageSize;
     const { data, count } = await query.range(from, from + historyPageSize - 1);
     if (data) {
@@ -184,7 +192,7 @@ export default function ExamResultDistributionSection() {
       setHistory(data as unknown as HistoryRow[]);
       setHistoryTotal(count ?? 0);
     }
-  }, [supabase, historyPage, historyPageSize, historyBatch]);
+  }, [supabase, historyPage, historyPageSize, historyBatch, historySearch, historySemester, historyExamType]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch, setState only after await
@@ -196,76 +204,36 @@ export default function ExamResultDistributionSection() {
     historyBatchRef.current = historyBatch;
   }, [historyBatch]);
 
+  const loadBatchesRef = useRef(loadBatches);
+  useEffect(() => {
+    loadBatchesRef.current = loadBatches;
+  }, [loadBatches]);
+
+  const loadHistoryRef = useRef(loadHistory);
+  useEffect(() => {
+    loadHistoryRef.current = loadHistory;
+  }, [loadHistory]);
+
   useEffect(() => {
     const channel = supabase
-      .channel('admin-exam-results-sync')
+      .channel('admin-exam-sync')
       .on(
         'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'exam_result_batches' },
+        { event: '*', schema: 'public', table: 'exam_result_batches' },
         (payload) => {
-          const rec = payload.new as unknown as ExamBatchRow;
-          setBatches((prev) => (prev && !prev.some((b) => b.id === rec.id) ? [rec, ...prev] : prev));
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'exam_result_batches' },
-        (payload) => {
-          const rec = payload.new as unknown as ExamBatchRow;
-          setBatches((prev) => (prev ? prev.map((b) => (b.id === rec.id ? rec : b)) : prev));
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'exam_result_batches' },
-        (payload) => {
-          const old = payload.old as { id: string };
-          setBatches((prev) => (prev ? prev.filter((b) => b.id !== old.id) : prev));
-          if (historyBatchRef.current === old.id) setHistoryBatch('all');
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'exam_results' },
-        (payload) => {
-          const rec = payload.new as unknown as HistoryRow;
-          if (historyBatchRef.current !== 'all' && rec.batch_id !== historyBatchRef.current) return;
-          if (historyIdsRef.current.has(rec.id)) return;
-          historyIdsRef.current.add(rec.id);
-          setHistory((prev) => (prev ? [rec, ...prev] : prev));
-          setHistoryTotal((t) => t + 1);
-        }
-      )
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'exam_results' },
-        (payload) => {
-          const rec = payload.new as unknown as HistoryRow;
-          const filter = historyBatchRef.current;
-          const present = historyIdsRef.current.has(rec.id);
-          const matches = filter === 'all' || rec.batch_id === filter;
-          if (present && matches) {
-            setHistory((prev) => (prev ? prev.map((r) => (r.id === rec.id ? rec : r)) : prev));
-          } else if (!present && matches) {
-            historyIdsRef.current.add(rec.id);
-            setHistory((prev) => (prev ? [rec, ...prev] : prev));
-            setHistoryTotal((t) => t + 1);
-          } else if (present && !matches) {
-            historyIdsRef.current.delete(rec.id);
-            setHistory((prev) => (prev ? prev.filter((r) => r.id !== rec.id) : prev));
-            setHistoryTotal((t) => Math.max(0, t - 1));
+          const old = payload.old as { id?: string } | null;
+          if (payload.eventType === 'DELETE' && old?.id && historyBatchRef.current === old.id) {
+            setHistoryBatch('all');
           }
+          void loadBatchesRef.current();
+          void loadHistoryRef.current();
         }
       )
       .on(
         'postgres_changes',
-        { event: 'DELETE', schema: 'public', table: 'exam_results' },
-        (payload) => {
-          const old = payload.old as { id: string };
-          if (!historyIdsRef.current.has(old.id)) return;
-          historyIdsRef.current.delete(old.id);
-          setHistory((prev) => (prev ? prev.filter((r) => r.id !== old.id) : prev));
-          setHistoryTotal((t) => Math.max(0, t - 1));
+        { event: '*', schema: 'public', table: 'exam_results' },
+        () => {
+          void loadHistoryRef.current();
         }
       )
       .subscribe();
@@ -345,8 +313,18 @@ export default function ExamResultDistributionSection() {
 
   const seenNamesRef = useRef<Set<string>>(new Set());
 
-  const studentOf = (f: ParsedFile): StudentRecord | null =>
-    f.rollNo ? studentByRoll.get(f.rollNo) ?? null : null;
+  const studentOf = useCallback(
+    (f: ParsedFile): StudentRecord | null => (f.rollNo ? studentByRoll.get(f.rollNo) ?? null : null),
+    [studentByRoll]
+  );
+
+  const semesterOf = useCallback(
+    (f: ParsedFile): string | null => {
+      const s = studentOf(f);
+      return s && s.semesterNo > 0 ? `Semester ${s.semesterNo}` : null;
+    },
+    [studentOf]
+  );
 
   const visibleFiles = useMemo(
     () =>
@@ -364,6 +342,21 @@ export default function ExamResultDistributionSection() {
   );
   const matchedCount = matchedFiles.length;
   const unmatchedCount = parsedFiles.length - matchedCount;
+
+  const semesterCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const f of matchedFiles) {
+      const sem = semesterOf(f);
+      if (sem) map.set(sem, (map.get(sem) ?? 0) + 1);
+    }
+    return [...map.entries()];
+  }, [matchedFiles, semesterOf]);
+
+  const storagePathOf = (f: ParsedFile): string => {
+    const roll = f.rollNo ?? 'UCSTGO-XXXX';
+    const sem = semesterOf(f) ?? 'Semester X';
+    return `exam-results/${effectiveYear}/${sem}/${roll}_exam_result.pdf`;
+  };
 
   const FILE_PAGE_SIZE = 20;
   const fileTotalPages = Math.max(1, Math.ceil(visibleFiles.length / FILE_PAGE_SIZE));
@@ -401,6 +394,8 @@ export default function ExamResultDistributionSection() {
       toast.error('No matched files to send');
       return;
     }
+    const batchSemesters = [...new Set(matched.map((f) => semesterOf(f)).filter((s): s is string => Boolean(s)))];
+    const batchSemester = batchSemesters.length === 1 ? batchSemesters[0] : batchSemesters.length > 1 ? 'Multi-Semester' : 'Unassigned';
     setSending(true);
     setLastResults(null);
     setResultPage(1);
@@ -410,12 +405,14 @@ export default function ExamResultDistributionSection() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           year: effectiveYear,
-          semester: effectiveSemester,
+          semester: batchSemester,
           examType,
           files: matched.map((f) => ({
             fileName: f.fileName,
             rollNo: f.rollNo,
             base64: (f.dataUrl ?? '').split(',')[1] || '',
+            semester: semesterOf(f) ?? '',
+            studentId: studentOf(f)?.studentId ?? '',
             studentUserId: studentOf(f)?.userId ?? '',
             studentEmail: studentOf(f)?.email ?? '',
             studentName: studentOf(f)?.studentName ?? '',
@@ -434,10 +431,13 @@ export default function ExamResultDistributionSection() {
         setSentCount((c) => c + (data.sent ?? 0));
         setParsedFiles((prev) => prev.filter((f) => !results.some((r) => r.ok && r.fileName === f.fileName)));
       }
+      const total = data.total ?? results.length;
+      const semCount = data.semesters ?? Math.max(1, batchSemesters.length);
+      await Promise.all([loadBatches(), loadHistory()]);
       if (failed.length > 0) {
-        toast.error(`${failed.length} file${failed.length > 1 ? 's' : ''} failed — see details`);
+        toast.error(`Processed ${data.succeeded ?? 0}/${total} exam results (${failed.length} failed) — see details`);
       } else {
-        toast.success(`Batch published — ${data.sent ?? 0} results delivered to students`);
+        toast.success(`Successfully processed ${data.succeeded ?? 0}/${total} exam results across ${semCount} semester${semCount === 1 ? '' : 's'}`);
       }
     } catch {
       toast.error('Network error — could not reach the server');
@@ -491,6 +491,9 @@ export default function ExamResultDistributionSection() {
   };
 
   const viewBatchDetails = (batch: ExamBatchRow) => {
+    setHistorySearch('');
+    setHistorySemester('ALL');
+    setHistoryExamType('ALL');
     setHistoryBatch(batch.id);
     setHistoryPage(1);
     setTab('history');
@@ -503,6 +506,22 @@ export default function ExamResultDistributionSection() {
     `${r.file_url}${r.file_url.includes('?') ? '&' : '?'}download=${encodeURIComponent(r.file_name)}`;
 
   const displayName = (r: HistoryRow) => r.student_name ?? r.recipient_email.split('@')[0];
+
+  const historyFilterLabel = useMemo(() => {
+    const parts: string[] = [];
+    if (historySemester !== 'ALL') parts.push(historySemester);
+    if (historyExamType !== 'ALL') parts.push(historyExamType);
+    if (historySearch.trim()) parts.push(`"${historySearch.trim()}"`);
+    return parts.length > 0 ? ` for ${parts.join(' • ')}` : '';
+  }, [historySearch, historySemester, historyExamType]);
+
+  const resetHistoryFilters = () => {
+    setHistorySearch('');
+    setHistorySemester('ALL');
+    setHistoryExamType('ALL');
+    setHistoryBatch('all');
+    setHistoryPage(1);
+  };
 
   return (
     <div>
@@ -631,7 +650,7 @@ export default function ExamResultDistributionSection() {
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                         <thead>
                           <tr>
-                            {['File Name', 'Extracted Roll No', 'Matched Student', 'Match Status', ''].map((h) => (
+                            {['File Name', 'Extracted Roll No', 'Matched Student', 'Detected Semester', 'Match Status', ''].map((h) => (
                               <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 11, textTransform: 'uppercase', color: 'var(--text-light)', fontWeight: 700, letterSpacing: '0.5px', borderBottom: '1.5px solid var(--secondary)', backgroundColor: 'var(--secondary-lighter)' }}>
                                 {h}
                               </th>
@@ -675,6 +694,18 @@ export default function ExamResultDistributionSection() {
                                   )}
                                 </td>
                                 <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--divider)' }}>
+                                  {semesterOf(f) ? (
+                                    <span className="min-w-0">
+                                      <span className="badge badge-sm" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none', fontWeight: 700, marginBottom: 4 }}>
+                                        {semesterOf(f)}
+                                      </span>
+                                      <span className="block truncate text-xs" style={{ color: 'var(--text-lighter)', maxWidth: 220, fontFamily: 'monospace' }} title={storagePathOf(f)}>{storagePathOf(f)}</span>
+                                    </span>
+                                  ) : (
+                                    <span style={{ color: 'var(--text-lighter)', fontSize: 12.5 }}>—</span>
+                                  )}
+                                </td>
+                                <td style={{ padding: '12px 14px', borderBottom: '1px solid var(--divider)' }}>
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: matched ? 'rgba(34,197,94,0.15)' : 'rgba(239,68,68,0.12)', color: matched ? '#166534' : '#b91c1c' }}>
                                     {matched ? <Check size={11} /> : <X size={11} />}
                                     {matched ? 'Matched' : 'Unmatched'}
@@ -690,7 +721,7 @@ export default function ExamResultDistributionSection() {
                           })}
                           {visibleFiles.length === 0 && (
                             <tr>
-                              <td colSpan={5} style={{ padding: '22px', textAlign: 'center', fontSize: 13, color: 'var(--text-lighter)' }}>
+                              <td colSpan={6} style={{ padding: '22px', textAlign: 'center', fontSize: 13, color: 'var(--text-lighter)' }}>
                                 No {filter === 'all' ? '' : filter} files
                               </td>
                             </tr>
@@ -735,18 +766,38 @@ export default function ExamResultDistributionSection() {
                 </div>
                 <div style={{ marginBottom: 16 }}>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Academic Year</label>
-                  <select value={effectiveYear} onChange={(e) => { setYear(e.target.value); setSemester(''); }} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}>
+                  <select value={effectiveYear} onChange={(e) => setYear(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}>
                     {yearOptions.map((y) => <option key={y} value={y}>{y}</option>)}
                   </select>
                 </div>
                 <div style={{ marginBottom: 16 }}>
-                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Semester</label>
-                  <select value={effectiveSemester} onChange={(e) => setSemester(e.target.value)} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }}>
-                    {semesterOptions.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                </div>
-                <div style={{ marginBottom: 16, fontSize: 12.5, color: 'var(--text-light)', lineHeight: 1.5 }}>
-                  Files are stored under <code style={{ background: 'var(--divider-soft)', padding: '2px 6px', borderRadius: 6, fontSize: 11.5 }}>{effectiveYear}/{effectiveSemester}/UCSTGO-XXXX_exam_result.pdf</code>. Uploading creates a batch and delivers the results to students immediately — you can re-notify students anytime from Result Batches.
+                  <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Semester (Auto-Detect)</label>
+                  <div style={{ padding: '12px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)' }}>
+                    <div className="flex items-center gap-2" style={{ marginBottom: semesterCounts.length > 0 ? 8 : 0 }}>
+                      <Sparkles size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent)' }}>Auto-Detect from Matched Students</span>
+                    </div>
+                    {semesterCounts.length > 0 ? (
+                      <>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {semesterCounts.map(([sem, count]) => (
+                            <span key={sem} className="badge badge-sm" style={{ background: 'rgba(14,165,233,0.12)', color: 'var(--primary)', border: 'none', fontWeight: 700 }}>
+                              {sem} • {count} file{count > 1 ? 's' : ''}
+                            </span>
+                          ))}
+                        </div>
+                        {semesterCounts.length > 1 && (
+                          <div style={{ marginTop: 8, fontSize: 11.5, color: 'var(--warning)', lineHeight: 1.4 }}>
+                            Multi-Semester batch — each file is saved under its matched student semester.
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 12.5, color: 'var(--text-light)' }}>
+                        No matched files yet — semesters are auto-read from student profile records.
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {studentsLoading && (
@@ -915,6 +966,38 @@ export default function ExamResultDistributionSection() {
               </select>
             </div>
           </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '12px 22px', borderBottom: '1px solid var(--surface)', flexWrap: 'wrap' }}>
+              <div className="flex items-center gap-2" style={{ flex: '1 1 240px', maxWidth: 340 }}>
+                <Search size={15} style={{ color: 'var(--text-lighter)', flexShrink: 0 }} />
+                <input
+                  type="text"
+                  value={historySearch}
+                  onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }}
+                  placeholder="Search by roll no or student name…"
+                  className="input input-sm"
+                  style={{ width: '100%', fontSize: 12.5, background: 'var(--secondary-lighter)', borderColor: 'var(--secondary)' }}
+                />
+              </div>
+              <select value={historySemester} onChange={(e) => { setHistorySemester(e.target.value); setHistoryPage(1); }} className="select select-sm" style={{ fontSize: 12.5, color: 'var(--text)', background: 'var(--secondary-lighter)', borderColor: 'var(--secondary)' }}>
+                <option value="ALL">All Semesters</option>
+                {HISTORY_SEMESTERS.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+              <select value={historyExamType} onChange={(e) => { setHistoryExamType(e.target.value); setHistoryPage(1); }} className="select select-sm" style={{ fontSize: 12.5, color: 'var(--text)', background: 'var(--secondary-lighter)', borderColor: 'var(--secondary)' }}>
+                <option value="ALL">All Exam Types</option>
+                {HISTORY_EXAM_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <button
+                onClick={resetHistoryFilters}
+                disabled={!historySearch && historySemester === 'ALL' && historyExamType === 'ALL' && historyBatch === 'all'}
+                className="btn btn-ghost btn-sm gap-1.5"
+                style={{ border: '1.5px solid var(--surface-border)', opacity: !historySearch && historySemester === 'ALL' && historyExamType === 'ALL' && historyBatch === 'all' ? 0.45 : 1 }}
+              >
+                <RotateCcw size={13} /> Reset Filters
+              </button>
+              <span className="badge badge-ghost badge-sm" style={{ background: 'var(--divider-soft)', color: 'var(--text)', border: 'none', fontSize: 11.5, fontWeight: 700, padding: '7px 12px' }}>
+                Showing {historyTotal} result{historyTotal === 1 ? '' : 's'}{historyFilterLabel}
+              </span>
+            </div>
           {history === null && (
             <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
               <Loader2 size={20} className="animate-spin mx-auto mb-2" /> Loading history…
@@ -922,7 +1005,7 @@ export default function ExamResultDistributionSection() {
           )}
           {history !== null && history.length === 0 && (
             <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
-              No sent results yet.
+              {historyFilterLabel ? 'No results match the current filters.' : 'No sent results yet.'}
             </div>
           )}
           {history && history.length > 0 && (

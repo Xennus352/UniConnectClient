@@ -305,6 +305,7 @@ export interface Database {
           created_at: number;
           batch_id: string | null;
           student_name: string | null;
+          student_id: string | null;
         };
         Insert: {
           id?: string;
@@ -319,8 +320,9 @@ export interface Database {
           created_at?: number | null;
           batch_id?: string | null;
           student_name?: string | null;
+          student_id?: string | null;
         };
-        Update: { batch_id?: string | null; student_name?: string | null };
+        Update: { batch_id?: string | null; student_name?: string | null; student_id?: string | null };
         Relationships: [
           {
             foreignKeyName: 'exam_results_batch_id_fkey';

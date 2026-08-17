@@ -14,6 +14,8 @@ interface DistributeFile {
   fileName: string;
   rollNo: string;
   base64: string;
+  semester?: string;
+  studentId?: string;
   studentUserId: string;
   studentEmail: string;
   studentName: string;
@@ -53,10 +55,10 @@ export async function POST(request: Request) {
   const examType = typeof body?.examType === 'string' ? sanitizeFolder(body.examType) : 'Exam';
   const files: DistributeFile[] = Array.isArray(body?.files) ? body.files : [];
 
-  if (!year || !semester) {
-    return NextResponse.json({ message: 'Academic year and semester are required' }, { status: 400 });
+  if (!year) {
+    return NextResponse.json({ message: 'Academic year is required' }, { status: 400 });
   }
-  if (!FOLDER_RE.test(year) || !FOLDER_RE.test(semester)) {
+  if (!FOLDER_RE.test(year) || (semester && !FOLDER_RE.test(semester))) {
     return NextResponse.json({ message: 'Invalid year or semester value' }, { status: 400 });
   }
   if (files.length === 0) {
@@ -85,99 +87,139 @@ export async function POST(request: Request) {
     return NextResponse.json({ message: 'Storage unavailable' }, { status: 500 });
   }
 
-  const results: FileResult[] = [];
-  const insertedIds: string[] = [];
-  const sentEmails: string[] = [];
-  let sent = 0;
-
-  for (const file of files) {
-    try {
-      const buffer = Buffer.from(file.base64, 'base64');
-      if (buffer.length === 0) throw new Error('Empty file');
-      if (buffer.length > MAX_FILE_SIZE) throw new Error(`Exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
-
-      const objectPath = `${year}/${semester}/${file.rollNo.toUpperCase()}_exam_result.pdf`;
-      const { error: upErr } = await supabase.storage
-        .from(BUCKET)
-        .upload(objectPath, buffer, { contentType: 'application/pdf', cacheControl: '3600', upsert: true });
-      if (upErr) throw new Error(upErr.message);
-
-      const fileUrl = supabase.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl;
-
-      const now = Date.now();
-      const { data: row, error: recErr } = await supabase
-        .from('exam_results')
-        .insert({
-          user_id: file.studentUserId || null,
-          recipient_email: file.studentEmail,
-          roll_number: file.rollNo.toUpperCase(),
-          year,
-          semester,
-          file_name: file.fileName,
-          file_url: fileUrl,
-          storage_path: objectPath,
-          student_name: file.studentName || null,
-          created_at: now,
-        })
-        .select('id')
-        .single();
-      if (recErr || !row) throw new Error(recErr?.message ?? 'Insert failed');
-      insertedIds.push(row.id);
-      sentEmails.push(file.studentEmail);
-
-      sent += 1;
-      results.push({ fileName: file.fileName, rollNo: file.rollNo, ok: true });
-    } catch (err) {
-      results.push({
-        fileName: file.fileName,
-        rollNo: file.rollNo,
-        ok: false,
-        error: err instanceof Error ? err.message : 'Distribution failed',
-      });
-    }
-  }
-
-  if (sent === 0) {
-    return NextResponse.json({ sent: 0, results, message: 'No files uploaded — batch not created' }, { status: 400 });
-  }
+  const fileSemesters = files
+    .map((f) => sanitizeFolder(f.semester ?? ''))
+    .filter((s): s is string => Boolean(s));
+  const distinctSemesters = [...new Set(fileSemesters)];
+  const batchSemester =
+    distinctSemesters.length === 1
+      ? distinctSemesters[0]
+      : distinctSemesters.length > 1
+        ? 'Multi-Semester'
+        : semester || 'Unassigned';
 
   const { data: batch, error: batchErr } = await supabase
     .from('exam_result_batches')
     .insert({
       exam_type: examType || 'Exam',
-      semester,
+      semester: batchSemester,
       academic_year: year,
-      total_files: sent,
+      total_files: files.length,
       status: 'PUBLISHED',
       created_by: identity.email ?? null,
     })
     .select('id, exam_type, semester, academic_year, total_files, status, created_by, created_at')
     .single();
-
   if (batchErr || !batch) {
-    return NextResponse.json({ sent: 0, results, message: 'Batch creation failed' }, { status: 500 });
-  }
-
-  const { error: linkErr } = await supabase
-    .from('exam_results')
-    .update({ batch_id: batch.id })
-    .in('id', insertedIds);
-
-  if (linkErr) {
-    return NextResponse.json({ sent: 0, results, message: 'Batch linking failed' }, { status: 500 });
+    return NextResponse.json({ message: 'Batch creation failed' }, { status: 500 });
   }
 
   const now = Date.now();
-  const notifications = [...new Set(sentEmails)].map((email) => ({
-    recipient_email: email,
-    type: 'exam-result',
-    message: `Your ${batch.exam_type} results (${semester}, ${year}) have been published!`,
-    created_at: now,
-    read: false,
-  }));
+  const uploadPromises = files.map(async (file): Promise<{ fileName: string; rollNo: string; semester: string }> => {
+    const fileSemester = sanitizeFolder(file.semester ?? '') || semester || 'Unassigned';
+    if (!FOLDER_RE.test(fileSemester)) throw new Error('Invalid semester value');
+
+    const buffer = Buffer.from(file.base64, 'base64');
+    if (buffer.length === 0) throw new Error('Empty file');
+    if (buffer.length > MAX_FILE_SIZE) throw new Error(`Exceeds ${MAX_FILE_SIZE / 1024 / 1024}MB limit`);
+
+    const objectPath = `${year}/${fileSemester}/${file.rollNo.toUpperCase()}_exam_result.pdf`;
+    const { error: upErr } = await supabase.storage
+      .from(BUCKET)
+      .upload(objectPath, buffer, { contentType: 'application/pdf', cacheControl: '3600', upsert: true });
+    if (upErr) throw new Error(upErr.message);
+
+    const fileUrl = supabase.storage.from(BUCKET).getPublicUrl(objectPath).data.publicUrl;
+
+    const { error: recErr } = await supabase
+      .from('exam_results')
+      .insert({
+        user_id: file.studentUserId || null,
+        student_id: file.studentId || null,
+        recipient_email: file.studentEmail,
+        roll_number: file.rollNo.toUpperCase(),
+        year,
+        semester: fileSemester,
+        file_name: file.fileName,
+        file_url: fileUrl,
+        storage_path: objectPath,
+        student_name: file.studentName || null,
+        batch_id: batch.id,
+        created_at: now,
+      });
+    if (recErr) throw new Error(recErr.message);
+
+    return { fileName: file.fileName, rollNo: file.rollNo, semester: fileSemester };
+  });
+
+  const settled = await Promise.allSettled(uploadPromises);
+  const results: FileResult[] = [];
+  const successSemesters = new Set<string>();
+  const emailSemesters = new Map<string, Set<string>>();
+  let succeeded = 0;
+
+  settled.forEach((outcome, i) => {
+    const file = files[i];
+    if (outcome.status === 'fulfilled') {
+      succeeded += 1;
+      successSemesters.add(outcome.value.semester);
+      const set = emailSemesters.get(file.studentEmail) ?? new Set<string>();
+      set.add(outcome.value.semester);
+      emailSemesters.set(file.studentEmail, set);
+      results.push({ fileName: file.fileName, rollNo: file.rollNo, ok: true });
+    } else {
+      const reason = outcome.reason;
+      results.push({
+        fileName: file.fileName,
+        rollNo: file.rollNo,
+        ok: false,
+        error: reason instanceof Error ? reason.message : 'Distribution failed',
+      });
+    }
+  });
+
+  const failed = files.length - succeeded;
+  if (succeeded === 0) {
+    await supabase.from('exam_result_batches').delete().eq('id', batch.id);
+    return NextResponse.json(
+      { sent: 0, succeeded: 0, failed: files.length, total: files.length, results, message: 'No files uploaded — batch not created' },
+      { status: 400 }
+    );
+  }
+
+  const { error: countErr } = await supabase
+    .from('exam_result_batches')
+    .update({ total_files: succeeded })
+    .eq('id', batch.id);
+  if (countErr) {
+    return NextResponse.json({ message: 'Batch update failed' }, { status: 500 });
+  }
+
+  const notifications = [...new Set(emailSemesters.keys())].map((email) => {
+    const studentSemesters = emailSemesters.get(email);
+    const label =
+      studentSemesters && studentSemesters.size === 1
+        ? [...studentSemesters][0]
+        : 'Multiple Semesters';
+    return {
+      recipient_email: email,
+      type: 'exam-result',
+      message: `Your ${batch.exam_type} results (${label}, ${year}) have been published!`,
+      created_at: now,
+      read: false,
+    };
+  });
   if (notifications.length > 0) {
     await supabase.from('notifications').insert(notifications);
   }
 
-  return NextResponse.json({ batchId: batch.id, sent, results });
+  return NextResponse.json({
+    batchId: batch.id,
+    sent: succeeded,
+    succeeded,
+    failed,
+    total: files.length,
+    semesters: successSemesters.size,
+    results,
+  });
 }
