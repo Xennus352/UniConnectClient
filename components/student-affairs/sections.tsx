@@ -5,15 +5,14 @@ import Link from 'next/link';
 import WelcomeBar from '@/components/shared/WelcomeBar';
 import StatCard from '@/components/shared/StatCard';
 import MessageItem from '@/components/shared/MessageItem';
-import FeedPost from '@/components/shared/FeedPost';
 import LostFoundPage from '@/components/shared/LostFoundSection';
-import QuickAccess from '@/components/shared/QuickAccess';
 import DataTable from '@/components/shared/DataTable';
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
+import PendingPostApprovals from '@/components/shared/PendingPostApprovals';
 import {
   Users, CalendarCheck, MessageSquare, ClipboardList,
   GraduationCap, BookOpen, Search, Plus,
-  Eye, Newspaper, Upload, Save, Bell, Ban,
+  Eye, Upload, Save, Ban,
 } from 'lucide-react';
 import type { StudentData } from '@/components/shared/types';
 import { apiFetch } from '@/components/shared/api';
@@ -22,7 +21,7 @@ import type {
 } from '@/components/shared/api';
 import { useUniversityData } from '@/components/shared/useUniversityData';
 import { useSupabase } from '@/utils/supabase/client';
-import { useFeedPosts, useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
+import { useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from '@/components/shared/session';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
@@ -59,7 +58,6 @@ export function Dashboard() {
   const { user: session } = useSession();
   const me = session?.email ?? '';
   const supabase = useSupabase();
-  const { posts, loading: postsLoading } = useFeedPosts(supabase);
   const { conversations, loading: convLoading } = useConversations(supabase, me);
   const { events, loading: eventsLoading } = useEvents(supabase);
   const eventIds = useMemo(() => (events ?? []).map((e) => e.id), [events]);
@@ -67,9 +65,6 @@ export function Dashboard() {
   const { data: users, loading: usersLoading } = useUniversityData<UserRecord[]>(
     useCallback(() => apiFetch<UserRecord[]>('/api/users'), [])
   );
-
-  const [feedTab, setFeedTab] = useState('Latest');
-  const feedTabs = ['Latest', 'Lost & Found'];
 
   const counts = useMemo(() => {
     const list = users ?? [];
@@ -84,17 +79,6 @@ export function Dashboard() {
     () => (events ?? []).filter((e) => e.event_date >= Date.now()).length,
     [events]
   );
-
-  const feedPosts = useMemo(() => {
-    const list = posts ?? [];
-    if (feedTab !== 'Lost & Found') return list;
-    return list.filter((p) =>
-      Array.isArray(p.tags) &&
-      (p.tags as { label?: string }[]).some((t) =>
-        (t.label ?? '').replace(/^#/, '').toLowerCase() === 'lost & found'
-      )
-    );
-  }, [posts, feedTab]);
 
   const unreadTotal = useMemo(
     () => (conversations ?? []).reduce((s, c) => s + (c.unread ?? 0), 0),
@@ -119,49 +103,10 @@ export function Dashboard() {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-[18px]">
         <div>
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Newspaper size={16} /> University News Feed
-              </div>
-              <Link href="/student-affair/feed" style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600, padding: '6px 14px', borderRadius: 'var(--radius-sm)', textDecoration: 'none', display: 'inline-block' }}>
-                View All <span style={{ fontSize: 10 }}>→</span>
-              </Link>
-            </div>
-            <div style={{ display: 'flex', gap: 4, padding: '0 22px', borderBottom: '1px solid var(--surface)' }}>
-              {feedTabs.map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setFeedTab(t)}
-                  style={{
-                    padding: '12px 16px', fontSize: 13, fontWeight: 600,
-                    color: feedTab === t ? 'var(--primary)' : 'var(--text-light)',
-                    cursor: 'pointer', borderBottom: feedTab === t ? '2.5px solid var(--primary)' : '2.5px solid transparent',
-                    background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none',
-                    marginBottom: -1,
-                  }}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-            <div style={{ padding: 0 }}>
-              {postsLoading && !posts && (
-                <div style={{ padding: '24px 22px', textAlign: 'center', color: 'var(--text-lighter)', fontSize: 13 }}>Loading...</div>
-              )}
-              {!postsLoading && feedPosts.length === 0 && (
-                <div style={{ padding: '24px 22px', textAlign: 'center', color: 'var(--text-lighter)', fontSize: 13 }}>
-                  {feedTab === 'Lost & Found' ? 'No lost & found posts yet' : 'No posts yet'}
-                </div>
-              )}
-              {!postsLoading && feedPosts.slice(0, 2).map((post) => (
-                <FeedPost key={post.id} post={post} />
-              ))}
-            </div>
-          </div>
+          <PendingPostApprovals viewAllHref="/student-affair/moderation" />
         </div>
-        <div>
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginBottom: 16, flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CalendarCheck size={16} /> Upcoming Events
@@ -198,7 +143,7 @@ export function Dashboard() {
               </div>
             )}
           </div>
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginBottom: 16 }}>
+          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <MessageSquare size={16} /> Messages
@@ -217,16 +162,6 @@ export function Dashboard() {
               {conversations?.slice(0, 3).map((conv) => (
                 <MessageItem key={conv.id} initials={conv.other.initials} color="from-primary to-secondary" name={conv.other.name} preview={conv.preview} time={timeLabel(conv.lastMessageAt)} />
               ))}
-            </div>
-          </div>
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Bell size={16} /> Quick Access
-              </div>
-            </div>
-            <div style={{ padding: '8px 18px 16px' }}>
-              <QuickAccess />
             </div>
           </div>
         </div>

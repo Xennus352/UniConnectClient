@@ -11,15 +11,14 @@ import type {
 import { useUniversityData } from '@/components/shared/useUniversityData';
 import WelcomeBar from '@/components/shared/WelcomeBar';
 import StatCard from '@/components/shared/StatCard';
-import FeedPost from '@/components/shared/FeedPost';
 import MessageItem from '@/components/shared/MessageItem';
-import QuickAccess from '@/components/shared/QuickAccess';
 import DataTable from '@/components/shared/DataTable';
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
 import { toast } from 'sonner';
 import { useSupabase } from '@/utils/supabase/client';
-import { useFeedPosts, useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
+import { useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from '@/components/shared/session';
+import PendingPostApprovals from '@/components/shared/PendingPostApprovals';
 import {
   Users, GraduationCap,
   ClipboardCheck, CalendarDays, CalendarCheck,
@@ -53,11 +52,8 @@ const timeLabel = (ts: number) => {
 };
 
 export function Dashboard() {
-  const [feedTab, setFeedTab] = useState('Latest');
-  const feedTabs = ['Latest', 'Lost & Found'];
   const { user: session } = useSession();
   const me = session?.email ?? '';
-  const { posts, loading: postsLoading } = useFeedPosts(useSupabase());
   const { conversations, loading: convLoading } = useConversations(useSupabase(), me);
   const { events, loading: eventsLoading } = useEvents(useSupabase());
   const eventIds = useMemo(() => (events ?? []).map((e) => e.id), [events]);
@@ -79,17 +75,6 @@ export function Dashboard() {
     };
   }, [users]);
 
-  const feedPosts = useMemo(() => {
-    const list = posts ?? [];
-    if (feedTab !== 'Lost & Found') return list;
-    return list.filter((p) =>
-      Array.isArray(p.tags) &&
-      (p.tags as { label?: string }[]).some((t) =>
-        (t.label ?? '').replace(/^#/, '').toLowerCase() === 'lost & found'
-      )
-    );
-  }, [posts, feedTab]);
-
   return (
     <div>
       <WelcomeBar name="Admin Team" subtitle="University management dashboard overview" />
@@ -101,37 +86,10 @@ export function Dashboard() {
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-[18px]">
         <div>
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                <Newspaper size={16} /> University News Feed
-              </div>
-              <Link href="/admin/feed" style={{ fontSize: 13, color: 'var(--primary)', cursor: 'pointer', fontWeight: 600, textDecoration: 'none' }}>View All →</Link>
-            </div>
-            <div style={{ display: 'flex', gap: 4, padding: '0 22px', borderBottom: '1px solid var(--surface)' }}>
-              {feedTabs.map((t) => (
-                <button key={t} onClick={() => setFeedTab(t)} style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: feedTab === t ? 'var(--primary)' : 'var(--text-light)', cursor: 'pointer', borderBottom: feedTab === t ? '2.5px solid var(--primary)' : '2.5px solid transparent', background: 'none', borderTop: 'none', borderLeft: 'none', borderRight: 'none' }}>
-                  {t}
-                </button>
-              ))}
-            </div>
-            <div style={{ padding: '6px 0' }}>
-              {!postsLoading ? (
-                feedPosts && feedPosts.length === 0 ? (
-                  <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>{feedTab === 'Lost & Found' ? 'No lost & found posts yet' : 'No posts yet'}</div>
-                ) : (
-                  feedPosts.slice(0, 2).map((post) => (
-                    <FeedPost key={post.id} post={post} />
-                  ))
-                )
-              ) : (
-                <div style={{ padding: 22, fontSize: 13, color: 'var(--text-light)' }}>Loading...</div>
-              )}
-            </div>
-          </div>
+          <PendingPostApprovals viewAllHref="/admin/moderation" />
         </div>
-        <div>
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginBottom: 16 }}>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginBottom: 16, flexShrink: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CalendarDays size={16} /> Upcoming Events
@@ -168,7 +126,7 @@ export function Dashboard() {
               </div>
             )}
           </div>
-          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginBottom: 16 }}>
+          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 22px', borderBottom: '1px solid var(--surface)' }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <MessageSquare size={16} /> Messages
@@ -187,7 +145,6 @@ export function Dashboard() {
                 <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>Loading...</div>
               )}
           </div>
-          <QuickAccess />
         </div>
       </div>
     </div>

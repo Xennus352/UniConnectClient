@@ -6,6 +6,10 @@ import { toast } from 'sonner';
 import { useSupabase } from '@/utils/supabase/client';
 import { useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from './session';
+import EventRosterModal from './EventRosterModal';
+import type { Database } from '@/utils/supabase/types';
+
+type EventRow = Database['public']['Tables']['events']['Row'];
 
 const CATEGORY_STYLE: Record<string, { bg: string; color: string }> = {
   Sports: { bg: 'rgba(52,211,153,0.15)', color: '#16a34a' },
@@ -42,6 +46,7 @@ export default function EventsSection() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', location: '', category: 'Other', date: '', maxAttendees: '' });
+  const [rosterEvent, setRosterEvent] = useState<EventRow | null>(null);
 
   const filtered = useMemo(() => {
     const list = events ?? [];
@@ -177,6 +182,14 @@ export default function EventsSection() {
                     </span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <button
+                      onClick={() => setRosterEvent(e)}
+                      title="View registrants"
+                      className="btn btn-sm btn-ghost gap-1.5"
+                      style={{ fontSize: 12, color: 'var(--primary)' }}
+                    >
+                      👥 {reg?.count ?? 0} Registered
+                    </button>
                     {canDelete && (
                       <button
                         onClick={() => handleDelete(e.id)}
@@ -200,10 +213,6 @@ export default function EventsSection() {
                         <MapPin size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} /> {e.location}
                       </div>
                     )}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--text-light)' }}>
-                      <Users size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                      {reg ? `${reg.count} registered${e.max_attendees ? ` / ${e.max_attendees}` : ''}` : 'No registrations yet'}
-                    </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 11.5, color: 'var(--text-lighter)' }}>By {e.created_by_name}</span>
@@ -315,6 +324,10 @@ export default function EventsSection() {
             </div>
           </div>
         </div>
+      )}
+
+      {rosterEvent && (
+        <EventRosterModal event={rosterEvent} onClose={() => setRosterEvent(null)} />
       )}
     </div>
   );

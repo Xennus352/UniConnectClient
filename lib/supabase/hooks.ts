@@ -41,6 +41,96 @@ interface ChatMeta {
 }
 
 const FEED_PAGE_SIZE = 10;
+const PENDING_STATUSES = ['pending', 'pending_review'];
+
+export function usePendingPosts(supabase: TypedSupabaseClient) {
+  const [pending, setPending] = useState<Post[] | null>(null);
+
+  const refresh = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('posts')
+      .select('*')
+      .in('status', PENDING_STATUSES)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) {
+      console.error('Pending posts fetch error:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        raw: error,
+      });
+      return;
+    }
+    setPending((data ?? []) as Post[]);
+  }, [supabase]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('*')
+        .in('status', PENDING_STATUSES)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) {
+        console.error('Pending posts fetch error:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          raw: error,
+        });
+        if (!cancelled) setPending([]);
+        return;
+      }
+      if (!cancelled) setPending((data ?? []) as Post[]);
+    };
+    void load();
+
+    const channel = supabase
+      .channel(uniqueChannelName('public:posts:queue'))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
+        const row = (payload.new ?? payload.old) as Partial<Post> | undefined;
+        const isPending = typeof row?.status === 'string' && PENDING_STATUSES.includes(row.status);
+        setPending((prev) => {
+          if (!prev) return prev;
+          if (payload.eventType === 'INSERT') {
+            const r = payload.new as Partial<Post>;
+            if (!isPending || !r.id || prev.some((p) => p.id === r.id)) return prev;
+            return [r as Post, ...prev];
+          }
+          if (payload.eventType === 'UPDATE') {
+            const r = payload.new as Partial<Post>;
+            if (!r.id) return prev;
+            if (isPending) {
+              if (prev.some((p) => p.id === r.id)) {
+                return prev.map((p) => (p.id === r.id ? { ...p, ...r } : p));
+              }
+              return [r as Post, ...prev];
+            }
+            return prev.filter((p) => p.id !== r.id);
+          }
+          if (payload.eventType === 'DELETE') {
+            const r = payload.old as Partial<Post>;
+            return prev.filter((p) => p.id !== r.id);
+          }
+          return prev;
+        });
+      })
+      .subscribe();
+
+    return () => { cancelled = true; supabase.removeChannel(channel); };
+  }, [supabase]);
+
+  const removePending = useCallback((id: string) => {
+    setPending((prev) => prev?.filter((p) => p.id !== id) ?? prev);
+  }, []);
+
+  return { pending, loading: pending === null, removePending, refresh };
+}
 
 export function useFeedPosts(supabase: TypedSupabaseClient) {
   const [posts, setPosts] = useState<Post[] | null>(null);
@@ -57,7 +147,17 @@ export function useFeedPosts(supabase: TypedSupabaseClient) {
         .order('created_at', { ascending: false })
         .limit(FEED_PAGE_SIZE);
       const { data, error } = await query;
-      if (error) { console.error(error); setPosts([]); setHasMore(false); }
+      if (error) {
+        console.error('Feed fetch error:', {
+          message: error.message,
+          details: error.details,
+          hint: error.hint,
+          code: error.code,
+          raw: error,
+        });
+        setPosts([]);
+        setHasMore(false);
+      }
       else { setPosts(data ?? []); setHasMore((data?.length ?? 0) === FEED_PAGE_SIZE); }
       setLoading(false);
     };
@@ -104,7 +204,15 @@ export function useFeedPosts(supabase: TypedSupabaseClient) {
       .lt('created_at', last.created_at)
       .limit(FEED_PAGE_SIZE);
     const { data, error } = await query;
-    if (!error && data) {
+    if (error) {
+      console.error('Feed load-more error:', {
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        raw: error,
+      });
+    } else if (data) {
       setPosts((prev) => {
         const existing = new Set((prev ?? []).map((p) => p.id));
         return [...(prev ?? []), ...data.filter((p) => !existing.has(p.id))];

@@ -82,7 +82,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
     .single();
   if (fetchErr || !post) return NextResponse.json({ message: fetchErr?.message || 'Post not found' }, { status: 404 });
 
-  if (post.author_email !== identity.email && identity.role !== 'admin') {
+  if (post.author_email !== identity.email && identity.role !== 'admin' && identity.role !== 'student-affair') {
     return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
   }
 
