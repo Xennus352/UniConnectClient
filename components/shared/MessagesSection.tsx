@@ -2019,9 +2019,10 @@ export default function MessagesSection() {
                     <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white font-bold shrink-0" style={{ fontSize: 11 }}>
                       {p.initials}
                     </div>
-                    <div className="flex-1">
+                    <div className="flex-1 min-w-0">
                       <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--accent)' }}>{p.name}</div>
-                      <div style={{ fontSize: 11.5, color: 'var(--text-lighter)' }}>{subParts.join(' \u2022 ')}</div>
+                      <div style={{ fontSize: 11.5, color: 'var(--text-lighter)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.email}</div>
+                      {subParts.length > 0 && <div style={{ fontSize: 11, color: 'var(--text-lighter)', marginTop: 1 }}>{subParts.join(' \u2022 ')}</div>}
                     </div>
                     {chatMode === 'group' && (
                       <div

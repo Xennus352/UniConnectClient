@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { ShieldCheck, Check, X, Trash2, Loader2, AlertTriangle } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
@@ -25,6 +25,48 @@ function timeAgo(ts: number): string {
 
 const TABS = ['All Pending', 'Latest', 'Lost & Found'];
 
+// The pending list is fetched without the multi-MB `image` column (see
+// FeedPost.tsx PostImage for the same rationale); images are loaded lazily
+// per post so one slow transfer can't block the moderation queue.
+function PendingPostImage({ postId }: { postId: string }) {
+  const supabase = useSupabase();
+  const [src, setSrc] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('image')
+        .eq('id', postId)
+        .single();
+      if (cancelled) return;
+      setDone(true);
+      if (!error && data?.image) setSrc(data.image);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, postId]);
+
+  if (!done) {
+    return (
+      <div
+        className="rounded-xl w-full mt-3"
+        style={{ height: 150, background: 'var(--divider)', border: '1px solid var(--surface-border)' }}
+      />
+    );
+  }
+  if (!src) return null;
+  return (
+    <img
+      src={src}
+      alt=""
+      className="rounded-xl w-full object-cover mt-3"
+      style={{ maxHeight: 150, border: '1px solid var(--surface-border)' }}
+    />
+  );
+}
+
 const isLostFound = (p: PostRow) =>
   Array.isArray(p.tags) &&
   (p.tags as { label?: string }[]).some((t) =>
@@ -47,7 +89,6 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
 
   const handleApprove = async (post: PostRow) => {
     setBusyId(post.id);
-    removePending(post.id);
     try {
       const res = await fetch(`/api/posts/${post.id}`, {
         method: 'PATCH',
@@ -55,6 +96,7 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
         body: JSON.stringify({ status: 'approved' }),
       });
       if (res.ok) {
+        removePending(post.id);
         toast.success(`Post by ${post.author_name} approved and published to the feed`);
       } else {
         const err = await res.json().catch(() => ({ message: 'Failed to approve post' }));
@@ -70,8 +112,6 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
 
   const handleReject = async (post: PostRow) => {
     setBusyId(post.id);
-    removePending(post.id);
-    setRejectPost(null);
     try {
       const res = await fetch(`/api/posts/${post.id}`, {
         method: 'PATCH',
@@ -79,6 +119,8 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
         body: JSON.stringify({ status: 'rejected' }),
       });
       if (res.ok) {
+        removePending(post.id);
+        setRejectPost(null);
         toast.error(`Post by ${post.author_name} rejected`);
       } else {
         const err = await res.json().catch(() => ({ message: 'Failed to reject post' }));
@@ -94,11 +136,11 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
 
   const handleDelete = async (post: PostRow) => {
     setBusyId(post.id);
-    removePending(post.id);
-    setRejectPost(null);
     try {
       const res = await fetch(`/api/posts/${post.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete post');
+      removePending(post.id);
+      setRejectPost(null);
       toast.success(`Post by ${post.author_name} deleted`);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to delete post');
@@ -186,13 +228,15 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
             {post.content}
           </p>
 
-          {post.image && (
+          {post.image ? (
             <img
               src={post.image}
               alt=""
               className="rounded-xl w-full object-cover mt-3"
               style={{ maxHeight: 150, border: '1px solid var(--surface-border)' }}
             />
+          ) : (
+            <PendingPostImage postId={post.id} />
           )}
 
           <div className="flex items-center gap-2 mt-3.5">
@@ -200,9 +244,10 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
               onClick={() => void handleApprove(post)}
               disabled={busyId === post.id}
               className="btn btn-success btn-sm gap-1.5 border-none text-white"
-              style={{ opacity: busyId === post.id ? 0.6 : 1 }}
+              style={{ opacity: busyId === post.id ? 0.7 : 1 }}
             >
-              <Check size={13} /> Approve
+              {busyId === post.id ? <Loader2 size={13} className="animate-spin" /> : <Check size={13} />}
+              {busyId === post.id ? 'Approving...' : 'Approve'}
             </button>
             <button
               onClick={() => setRejectPost(post)}
@@ -236,10 +281,12 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
             </div>
             <div className="modal-action">
               <button onClick={() => void handleReject(rejectPost)} disabled={busyId === rejectPost.id} className="btn btn-error btn-sm gap-1.5 border-none text-white">
-                <X size={13} /> Reject Post
+                {busyId === rejectPost.id ? <Loader2 size={13} className="animate-spin" /> : <X size={13} />}
+                {busyId === rejectPost.id ? 'Rejecting...' : 'Reject Post'}
               </button>
               <button onClick={() => void handleDelete(rejectPost)} disabled={busyId === rejectPost.id} className="btn btn-error btn-sm btn-outline gap-1.5">
-                <Trash2 size={13} /> Delete Post
+                {busyId === rejectPost.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                {busyId === rejectPost.id ? 'Deleting...' : 'Delete Post'}
               </button>
               <button onClick={() => setRejectPost(null)} disabled={busyId === rejectPost.id} className="btn btn-ghost btn-sm">
                 Cancel

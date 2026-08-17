@@ -11,12 +11,14 @@ import DataTable from '@/components/shared/DataTable';
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
 import FeedPost from '@/components/shared/FeedPost';
 import LostFoundPage from '@/components/shared/LostFoundSection';
+import AnnouncementsPage from '@/components/shared/AnnouncementsSection';
 import { useSession } from '@/components/shared/session';
+import { useMyProfile } from '@/components/shared/useMyProfile';
 import { toast } from 'sonner';
 import {
   BookOpen, ClipboardList, Megaphone, CalendarCheck,
   CalendarDays,
-  Search, MessageSquare, Newspaper, Upload,
+  Search, MessageSquare, Newspaper,
   Filter, Download, Plus, Check, X, Eye, Users, Ban,
 } from 'lucide-react';
 import type { StudentData, RollCallData } from '@/components/shared/types';
@@ -603,10 +605,18 @@ export function LostFoundSection() {
   return <LostFoundPage />;
 }
 
+export function AnnouncementsSection() {
+  return <AnnouncementsPage />;
+}
+
 
 export function SettingsSection() {
   const [settingsTab, setSettingsTab] = useState('Profile');
   const [notifPrefs, setNotifPrefs] = useState({ push: true, emailDigest: false, messageAlerts: true, eventReminders: true });
+  const { user: session } = useSession();
+  const { profile, loading } = useMyProfile();
+  const me = session?.email ?? '';
+  const name = profile?.name || session?.name || 'User';
 
   const notifToggles = [
     { key: 'push', label: 'Push Notifications', desc: 'Receive push notifications on your device' },
@@ -629,33 +639,34 @@ export function SettingsSection() {
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
           <div style={{ padding: '24px 28px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid var(--surface)' }}>
-              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(to bottom right, var(--secondary), var(--secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 22, color: 'var(--primary)' }}>DS</div>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(to bottom right, var(--secondary), var(--secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 22, color: 'var(--primary)' }}>{initialsOf(name)}</div>
               <div>
-                <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>Dr. Smith</h3>
-                <p style={{ fontSize: 12, color: 'var(--text-lighter)', margin: '4px 0 0 0' }}>Professor • Computer Science Department</p>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>{loading ? 'Loading...' : name}</h3>
+                <p style={{ fontSize: 12, color: 'var(--text-lighter)', margin: '4px 0 0 0' }}>{loading ? '' : profile?.unit || me}</p>
               </div>
-              <button style={{ marginLeft: 'auto', background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--secondary)'; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = 'var(--secondary-light)'; }}><Upload size={13} /> Change Photo</button>
             </div>
+            {loading ? (
+              <div className="text-center py-8 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading profile...</div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Full Name</label>
-                <input type="text" defaultValue="Dr. Smith" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
+                <input type="text" defaultValue={name} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
               </div>
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Email Address</label>
-                <input type="email" defaultValue="dr.smith@university.edu" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
+                <input type="email" defaultValue={me} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
               </div>
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Department</label>
-                <input type="text" defaultValue="Computer Science" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
+                <input type="text" defaultValue={profile?.unit || ''} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
               </div>
               <div style={{ marginBottom: 16 }}>
                 <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Phone Number</label>
-                <input type="text" defaultValue="+95 9 123 456 789" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
+                <input type="text" defaultValue={profile?.phone || ''} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} />
               </div>
             </div>
+            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, paddingTop: 18, borderTop: '1px solid var(--surface)' }}>
               <button style={{ background: 'transparent', color: 'var(--text-light)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                 onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface)'; e.currentTarget.style.color = 'var(--primary)'; }}

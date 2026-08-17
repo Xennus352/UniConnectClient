@@ -67,15 +67,14 @@ export async function POST(request: NextRequest) {
   let unitName: string | undefined;
   try {
     const authHeader = { Authorization: `Bearer ${data.accessToken}` };
-    if (data.roleName === 'STUDENT') {
-      const students = await fetch(`${BASE}/api/students`, { headers: authHeader }).then((r) => r.json());
-      const mine = (students || []).find((s: { userId: string }) => String(s.userId) === String(data.userId));
-      if (mine?.studentName) name = mine.studentName;
-    } else if (data.roleName === 'STAFF') {
-      const staff = await fetch(`${BASE}/api/staff`, { headers: authHeader }).then((r) => r.json());
-      const mine = (staff || []).find((s: { userId: string }) => String(s.userId) === String(data.userId));
-      if (mine?.staffName) name = mine.staffName;
-      if (mine?.unitName) unitName = mine.unitName;
+    if (data.roleName === 'STAFF') {
+      // Targeted lookup — fetching the full staff list on every login is slow.
+      const me = await fetch(`${BASE}/api/staff/me`, { headers: authHeader }).then((r) => (r.ok ? r.json() : null));
+      if (me?.staffName) name = me.staffName;
+      if (me?.unitName) unitName = me.unitName;
+    } else if (data.roleName === 'STUDENT') {
+      const me = await fetch(`${BASE}/api/students/me`, { headers: authHeader }).then((r) => (r.ok ? r.json() : null));
+      if (me?.studentName) name = me.studentName;
     }
   } catch {
     // name/unit lookup is best-effort

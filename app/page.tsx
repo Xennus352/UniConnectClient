@@ -26,17 +26,14 @@ export default function Home() {
 
   const handleLogin = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    const found = LOGIN_CREDENTIALS.find(
-      (c) => c.email.toLowerCase() === email.trim().toLowerCase() && c.password === password
-    );
-    if (!found) {
-      toast.error('Invalid email or password. Please try again.');
+    if (!email.trim() || !password) {
+      toast.error('Please enter your email and password.');
       return;
     }
     setLoggingIn(true);
     let result: LoginResult;
     try {
-      result = await backendLogin(found.email, found.password);
+      result = await backendLogin(email.trim(), password);
     } catch (err) {
       setLoggingIn(false);
       toast.error(err instanceof Error ? err.message : 'Cannot reach the university server. Please try again.');
@@ -48,7 +45,7 @@ export default function Home() {
       // session refresh failures are non-fatal; navigation still proceeds
     }
     toast.success(`Welcome back, ${result.name}!`);
-    router.push(found.path);
+    router.push(result.path);
   };
 
   const fillCredential = (c: (typeof LOGIN_CREDENTIALS)[number]) => {

@@ -6,13 +6,14 @@ import WelcomeBar from '@/components/shared/WelcomeBar';
 import StatCard from '@/components/shared/StatCard';
 import MessageItem from '@/components/shared/MessageItem';
 import LostFoundPage from '@/components/shared/LostFoundSection';
+import AnnouncementsPage from '@/components/shared/AnnouncementsSection';
 import DataTable from '@/components/shared/DataTable';
 import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
 import PendingPostApprovals from '@/components/shared/PendingPostApprovals';
 import {
   Users, CalendarCheck, MessageSquare, ClipboardList,
   GraduationCap, BookOpen, Search, Plus,
-  Eye, Upload, Save, Ban,
+  Eye, Save, Ban,
 } from 'lucide-react';
 import type { StudentData } from '@/components/shared/types';
 import { apiFetch } from '@/components/shared/api';
@@ -23,6 +24,7 @@ import { useUniversityData } from '@/components/shared/useUniversityData';
 import { useSupabase } from '@/utils/supabase/client';
 import { useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from '@/components/shared/session';
+import { useMyProfile } from '@/components/shared/useMyProfile';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
 export { ExploreSection } from '@/components/admin/sections';
@@ -301,11 +303,19 @@ export function LostFoundSection() {
   return <LostFoundPage />;
 }
 
+export function AnnouncementsSection() {
+  return <AnnouncementsPage />;
+}
+
 
 
 export function SettingsSection() {
   const [settingsTab, setSettingsTab] = useState('Profile');
   const [notifPrefs, setNotifPrefs] = useState({ push: true, emailDigest: false, messageAlerts: true, eventReminders: true });
+  const { user: session } = useSession();
+  const { profile, loading } = useMyProfile();
+  const me = session?.email ?? '';
+  const name = profile?.name || session?.name || 'User';
 
   const notifToggles = [
     { key: 'push', label: 'Push Notifications', desc: 'Receive push notifications on your device' },
@@ -335,19 +345,22 @@ export function SettingsSection() {
         {settingsTab === 'Profile' ? (
           <div style={{ padding: '24px 22px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 24, paddingBottom: 24, borderBottom: '1px solid var(--surface)' }}>
-              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg, var(--secondary-light), var(--secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 20, color: 'var(--primary)' }}>SA</div>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'linear-gradient(135deg, var(--secondary-light), var(--secondary))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 20, color: 'var(--primary)' }}>{initialsOf(name)}</div>
               <div>
-                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>Student Affairs Office</h3>
-                <p style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 4 }}>Student Affairs • University Portal</p>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--accent)', margin: 0 }}>{loading ? 'Loading...' : name}</h3>
+                <p style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 4 }}>{loading ? '' : profile?.unit ? `${profile.unit} • University Portal` : me}</p>
               </div>
-              <button style={{ background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '6px 14px', fontSize: 12, cursor: 'pointer', fontWeight: 600, marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}><Upload size={13} /> Change Photo</button>
             </div>
+            {loading ? (
+              <div className="text-center py-8 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading profile...</div>
+            ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4" style={{ marginBottom: 24 }}>
-              <div><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Full Name</label><input type="text" defaultValue="Student Affairs Office" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
-              <div><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Email Address</label><input type="email" defaultValue="student.affairs@uni.edu" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
-              <div><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Department</label><input type="text" defaultValue="Student Affairs" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
-              <div><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Phone Number</label><input type="text" defaultValue="+95 9 123 456 789" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
+              <div><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Full Name</label><input type="text" defaultValue={name} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
+              <div><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Email Address</label><input type="email" defaultValue={me} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
+              <div><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Department</label><input type="text" defaultValue={profile?.unit || ''} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
+              <div><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Phone Number</label><input type="text" defaultValue={profile?.phone || ''} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
             </div>
+            )}
             <div style={{ paddingTop: 16, borderTop: '1px solid var(--surface)', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button style={{ background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
               <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', boxShadow: '0 4px 14px rgba(2, 132, 199,0.3)', display: 'flex', alignItems: 'center', gap: 6 }}

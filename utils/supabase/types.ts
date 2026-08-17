@@ -242,6 +242,8 @@ export interface Database {
           event_date: number;
           category: string;
           max_attendees: number | null;
+          image_url: string | null;
+          visibility: string;
           created_by: string;
           created_by_name: string;
           created_at: number;
@@ -253,11 +255,13 @@ export interface Database {
           event_date: number;
           category?: string;
           max_attendees?: number | null;
+          image_url?: string | null;
+          visibility?: string;
           created_by: string;
           created_by_name: string;
           created_at?: number;
         };
-        Update: Partial<{ title: string; description: string | null; location: string | null; event_date: number; category: string; max_attendees: number | null }>;
+        Update: Partial<{ title: string; description: string | null; location: string | null; event_date: number; category: string; max_attendees: number | null; image_url: string | null; visibility: string }>;
         Relationships: [];
       };
       event_registrations: {

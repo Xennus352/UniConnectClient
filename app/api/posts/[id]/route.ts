@@ -28,6 +28,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     const text = String(body.content).trim();
     if (!text) return NextResponse.json({ message: 'Empty content' }, { status: 400 });
     if (post.author_email !== identity.email) return NextResponse.json({ message: 'Forbidden' }, { status: 403 });
+    const { data: current } = await supabase
+      .from('posts')
+      .select('content')
+      .eq('id', id)
+      .single();
+    if (current && current.content === text) {
+      return NextResponse.json({ ok: true, unchanged: true });
+    }
     patch['content'] = text;
     contentEdited = true;
   }

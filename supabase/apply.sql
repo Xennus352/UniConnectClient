@@ -227,6 +227,24 @@ create table public.events (
 );
 create index idx_events_date on public.events (event_date desc);
 
+-- Event cover images + visibility (private events are hidden from students).
+alter table public.events add column if not exists image_url text;
+alter table public.events add column if not exists visibility text not null default 'public';
+
+-- Public storage bucket for event cover images (created by the upload flow).
+-- storage.objects RLS is ON by default with zero policies, which silently
+-- blocks every browser upload/read (this project has no Supabase Auth users —
+-- everything runs as anon). Policies below match the anon-based model.
+insert into storage.buckets (id, name, public) values ('event-images', 'event-images', true) on conflict (id) do nothing;
+create policy if not exists "event-images upload" on storage.objects
+  for insert to anon, authenticated with check (bucket_id = 'event-images');
+create policy if not exists "event-images update" on storage.objects
+  for update to anon, authenticated using (bucket_id = 'event-images') with check (bucket_id = 'event-images');
+create policy if not exists "event-images delete" on storage.objects
+  for delete to anon, authenticated using (bucket_id = 'event-images');
+create policy if not exists "event-images read" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'event-images');
+
 create table public.event_registrations (
   id         uuid primary key default gen_random_uuid(),
   event_id   uuid references public.events on delete cascade,
@@ -303,6 +321,14 @@ grant update on public.exam_results to anon, authenticated;
 -- Enable Realtime for exam result sync
 alter publication supabase_realtime add table public.exam_result_batches;
 alter publication supabase_realtime add table public.exam_results;
+
+-- Realtime DELETE/UPDATE payloads only include columns covered by the table's
+-- replica identity. With the default (PK-only) identity, the browser receives
+-- a DELETE event without event_id/user_email, so cancel-registration and
+-- unlike updates can't be applied locally (the UI only caught up on refresh).
+-- REPLICA IDENTITY FULL makes DELETE/UPDATE payloads carry the whole row.
+alter table public.event_registrations replica identity full;
+alter table public.post_likes replica identity full;
 
 -- Disable RLS so browser reads + realtime work (project uses grants +
 -- server-side authorization in API routes; RLS blocks all reads otherwise)

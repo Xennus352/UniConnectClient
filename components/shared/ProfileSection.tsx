@@ -21,6 +21,41 @@ const POST_STATUS_META: Record<string, { label: string; badge: string; color: st
   rejected: { label: 'Rejected', badge: 'badge-error', color: 'var(--danger)' },
 };
 
+// "My Posts" is fetched without the multi-MB `image` column; images load
+// lazily per post (see FeedPost.tsx PostImage for the rationale) so one slow
+// image can't block the whole posts list.
+function MyPostImage({ postId }: { postId: string }) {
+  const supabase = useSupabase();
+  const [src, setSrc] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('image')
+        .eq('id', postId)
+        .single();
+      if (cancelled) return;
+      setDone(true);
+      if (!error && data?.image) setSrc(data.image);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, postId]);
+
+  if (!done) {
+    return (
+      <div
+        className="rounded-lg mt-2 w-full"
+        style={{ height: 120, background: 'var(--divider)', border: '1px solid var(--surface-border)' }}
+      />
+    );
+  }
+  if (!src) return null;
+  return <img src={src} alt="" className="rounded-lg mt-2 w-full object-cover" style={{ maxHeight: 180 }} />;
+}
+
 const FILTERS: { id: PostFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'approved', label: 'Published' },
@@ -90,11 +125,13 @@ export default function ProfileSection() {
     const load = async () => {
       const { data, error } = await supabase
         .from('posts')
-        .select('*')
+        .select(
+          'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+        )
         .eq('author_email', me)
         .order('created_at', { ascending: false });
-      if (error) setMyPosts([]);
-      else setMyPosts(data ?? []);
+      if (error) setMyPosts((prev) => prev ?? []);
+      else setMyPosts((data ?? []) as Post[]);
     };
     load();
     const ch = supabase
@@ -168,6 +205,11 @@ export default function ProfileSection() {
   const saveEdit = async (postId: string, content: string) => {
     const text = content.trim();
     if (!text) return;
+    const current = myPosts?.find((p) => p.id === postId);
+    if (current && current.content === text) {
+      setEditingId(null);
+      return;
+    }
     try {
       const res = await fetch(`/api/posts/${postId}`, {
         method: 'PATCH',
@@ -376,8 +418,10 @@ export default function ProfileSection() {
                 ) : (
                   <>
                     <p className="text-sm" style={{ color: 'var(--text)', lineHeight: 1.6 }}>{post.content}</p>
-                    {post.image && (
+                    {post.image ? (
                       <img src={post.image} alt="" className="rounded-lg mt-2 w-full object-cover" style={{ maxHeight: 180 }} />
+                    ) : (
+                      <MyPostImage postId={post.id} />
                     )}
                     {post.status === 'rejected' && (
                       <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>

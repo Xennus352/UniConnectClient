@@ -18,12 +18,13 @@ import { toast } from 'sonner';
 import { useSupabase } from '@/utils/supabase/client';
 import { useConversations, useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from '@/components/shared/session';
+import { useMyProfile } from '@/components/shared/useMyProfile';
 import PendingPostApprovals from '@/components/shared/PendingPostApprovals';
 import {
   Users, GraduationCap,
   ClipboardCheck, CalendarDays, CalendarCheck,
   Coins, Search, MessageSquare, Newspaper,
-  Upload, Filter, Plus, Download,
+  Filter, Plus, Download,
   Check, X, Eye, BookOpen, Bell, MessageCircle, User, Ban,
 } from 'lucide-react';
 import type {
@@ -33,6 +34,7 @@ import type {
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
 export { default as LostFoundSection } from '@/components/shared/LostFoundSection';
+export { default as AnnouncementsSection } from '@/components/shared/AnnouncementsSection';
 import BlockedSection from '@/components/shared/BlockedSection';
 
 const initialsOf = (name: string) =>
@@ -961,6 +963,10 @@ export function SettingsSection() {
   const [settingsTab, setSettingsTab] = useState('Profile');
   const settingsTabs = ['Profile', 'Notifications', 'Security', 'Appearance', 'Blocked'];
   const [notifPrefs, setNotifPrefs] = useState({ push: true, emailDigest: false, messageAlerts: true, eventReminders: true });
+  const { user: session } = useSession();
+  const { profile, loading } = useMyProfile();
+  const me = session?.email ?? '';
+  const name = profile?.name || session?.name || 'User';
 
   const notifToggles = [
     { key: 'push', label: 'Push Notifications', desc: 'Receive push notifications on your device' },
@@ -982,21 +988,26 @@ export function SettingsSection() {
               </div>
               <div style={{ padding: '16px 22px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, #bae6fd, #bae6fd)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>AD</div>
+                  <div style={{ width: 72, height: 72, borderRadius: '50%', background: 'linear-gradient(135deg, #bae6fd, #bae6fd)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>{initialsOf(name)}</div>
                   <div>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>Admin User</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-light)' }}>System Administrator • Management Portal</div>
-                    <button style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 'var(--radius-sm)', fontSize: 12, fontWeight: 600, cursor: 'pointer', background: 'var(--secondary-light)', color: 'var(--primary)', border: '1.5px solid var(--secondary)', marginTop: 8 }}><Upload size={13} /> Change Photo</button>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>{loading ? 'Loading...' : name}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-light)' }}>{loading ? '' : profile?.unit ? `System Administrator • ${profile.unit}` : me}</div>
                   </div>
                 </div>
-                <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Full Name</label><input type="text" defaultValue="Admin User" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
-                <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Email</label><input type="email" defaultValue="admin@university.edu" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
-                <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Phone Number</label><input type="tel" defaultValue="+95 9 000 000 000" style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
-                <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Bio</label><textarea placeholder="Tell us about yourself..." style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)', fontFamily: 'inherit', resize: 'vertical', minHeight: 80 }} defaultValue="System administrator passionate about education technology." /></div>
+                {loading ? (
+                  <div className="text-center py-8 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading profile...</div>
+                ) : (
+                <>
+                <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Full Name</label><input type="text" defaultValue={name} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
+                <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Email</label><input type="email" defaultValue={me} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
+                <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Phone Number</label><input type="tel" defaultValue={profile?.phone || ''} style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)' }} /></div>
+                <div style={{ marginBottom: 16 }}><label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Bio</label><textarea placeholder="Tell us about yourself..." style={{ width: '100%', padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', fontSize: 13, color: 'var(--text)', fontFamily: 'inherit', resize: 'vertical', minHeight: 80 }} /></div>
                 <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
                   <button style={{ background: 'transparent', color: 'var(--text-light)', borderRadius: 'var(--radius-sm)', padding: '10px 20px', fontSize: 13, fontWeight: 600, cursor: 'pointer', border: 'none' }}>Cancel</button>
                   <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '10px 20px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer' }}>Save Changes</button>
                 </div>
+                </>
+                )}
               </div>
             </div>
           )}

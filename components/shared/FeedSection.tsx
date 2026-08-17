@@ -13,7 +13,7 @@ export default function FeedSection() {
   const supabase = useSupabase();
   const router = useRouter();
   const { user: session } = useSession();
-  const { posts, loading, loadingMore, hasMore, loadMore } = useFeedPosts(supabase);
+  const { posts, loading, loadingMore, hasMore, loadMore, hasError, refresh } = useFeedPosts(supabase);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   const [focusId, setFocusId] = useState<string | null>(null);
@@ -137,12 +137,25 @@ export default function FeedSection() {
           </button>
         </div>
       )}
-      {!posts && loading && (
-        <div className="text-center py-12 text-sm" style={{ color: 'var(--text-lighter)' }}>
-          Loading feed...
+      {loading && (
+        <div className="text-center py-12">
+          <span className="loading loading-spinner loading-md" style={{ color: 'var(--primary)' }} />
+          <p className="mt-2 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading feed...</p>
         </div>
       )}
-      {displayPosts.length === 0 && !loading && (
+      {hasError && !loading && (
+        <div className="text-center py-12" style={{ color: 'var(--text-light)' }}>
+          <p className="text-sm mb-4">Could not load the feed — check your connection and try again.</p>
+          <button
+            onClick={refresh}
+            className="btn btn-sm text-white border-none"
+            style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {displayPosts.length === 0 && !loading && !hasError && (
         <div className="text-center py-12" style={{ color: 'var(--text-lighter)' }}>
           <p className="text-sm">{hashtag ? `No posts with #${hashtag} yet.` : 'No posts yet — be the first to share something with the university.'}</p>
         </div>

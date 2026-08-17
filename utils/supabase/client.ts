@@ -5,6 +5,20 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type TypedSupabaseClient = SupabaseClient<Database>;
 
+// The feed transfers full-size base64 images inline (a single post can be
+// several MB), so a tight timeout aborts legitimate slow transfers and
+// surfaces as "The user aborted a request" (the timeout hint). 30s is a
+// hang guard, not a latency target.
+const REQUEST_TIMEOUT_MS = 30000;
+
+function timeoutFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const timeoutSignal = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
+  const signal = init?.signal
+    ? AbortSignal.any([init.signal, timeoutSignal])
+    : timeoutSignal;
+  return fetch(input, { ...init, signal });
+}
+
 let browserClient: TypedSupabaseClient | null = null;
 
 export function getSupabaseBrowser(): TypedSupabaseClient {
@@ -12,7 +26,8 @@ export function getSupabaseBrowser(): TypedSupabaseClient {
   browserClient = createBrowserClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { global: { fetch: timeoutFetch } }
   ) as TypedSupabaseClient;
   return browserClient;
 }

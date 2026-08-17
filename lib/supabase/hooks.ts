@@ -43,13 +43,73 @@ interface ChatMeta {
 const FEED_PAGE_SIZE = 10;
 const PENDING_STATUSES = ['pending', 'pending_review'];
 
+interface QueryResult {
+  data: unknown;
+  error: unknown;
+}
+
+// Supabase edge/gateway hiccups can return an HTTP error with an empty `{}`
+// JSON body — postgrest-js then yields an error whose message/details/hint/code
+// are ALL undefined, which is the "Feed fetch error: {}" seen in the console.
+// PostgREST itself always includes a `message`, so `{}` means the request never
+// reached PostgREST. Retrying with backoff lets the feed self-heal instead of
+// wiping itself to an empty state on a transient failure.
+//
+// AbortError is NOT retried: it means the request was cancelled (our timeout
+// guard), and re-firing it re-transfers the same multi-MB payload and fails
+// identically — the abort is a symptom of a slow transfer, not a transient
+// gateway blip. Surface it once and let the user retry manually.
+// postgrest-js wraps fetch aborts into a PostgrestError whose only stable
+// abort marker is this hint (name becomes "PostgrestError"). Match the
+// underlying AbortError directly too, in case a bare error ever surfaces.
+function isAbortError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const e = error as { name?: unknown; hint?: unknown; code?: unknown };
+  return (
+    e.name === 'AbortError' ||
+    e.code === 'ABORT_ERR' ||
+    (typeof e.hint === 'string' && e.hint.startsWith('Request was aborted'))
+  );
+}
+
+async function withRetry<T extends QueryResult>(
+  fn: () => PromiseLike<T>,
+  retries = 2,
+  delayMs = 400
+): Promise<T> {
+  let last: T | null = null;
+  for (let attempt = 1; attempt <= retries; attempt += 1) {
+    last = await fn();
+    if (!last.error || isAbortError(last.error)) return last;
+    if (attempt < retries) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs * attempt));
+    }
+  }
+  return last as T;
+}
+
+function logFetchError(label: string, error: unknown) {
+  const e = error as { message?: string; details?: string; hint?: string; code?: string };
+  console.error(label, {
+    message: e.message ?? undefined,
+    details: e.details ?? undefined,
+    hint: e.hint ?? undefined,
+    code: e.code ?? undefined,
+    keys: Object.keys(e as object),
+    serialized: JSON.stringify(error),
+    raw: error,
+  });
+}
+
 export function usePendingPosts(supabase: TypedSupabaseClient) {
   const [pending, setPending] = useState<Post[] | null>(null);
 
   const refresh = useCallback(async () => {
     const { data, error } = await supabase
       .from('posts')
-      .select('*')
+      .select(
+        'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+      )
       .in('status', PENDING_STATUSES)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -71,7 +131,9 @@ export function usePendingPosts(supabase: TypedSupabaseClient) {
     const load = async () => {
       const { data, error } = await supabase
         .from('posts')
-        .select('*')
+        .select(
+          'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+        )
         .in('status', PENDING_STATUSES)
         .order('created_at', { ascending: false })
         .limit(50);
@@ -83,7 +145,7 @@ export function usePendingPosts(supabase: TypedSupabaseClient) {
           code: error.code,
           raw: error,
         });
-        if (!cancelled) setPending([]);
+        if (!cancelled) setPending((prev) => prev ?? []);
         return;
       }
       if (!cancelled) setPending((data ?? []) as Post[]);
@@ -137,28 +199,28 @@ export function useFeedPosts(supabase: TypedSupabaseClient) {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const load = async () => {
-      const query = supabase
-        .from('posts')
-        .select('*')
-        .eq('status', 'approved')
-        .order('created_at', { ascending: false })
-        .limit(FEED_PAGE_SIZE);
-      const { data, error } = await query;
+      const { data, error } = await withRetry(() =>
+        supabase
+          .from('posts')
+          .select(
+            'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+          )
+          .eq('status', 'approved')
+          .order('created_at', { ascending: false })
+          .limit(FEED_PAGE_SIZE)
+      );
       if (error) {
-        console.error('Feed fetch error:', {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
-          raw: error,
-        });
-        setPosts([]);
+        logFetchError('Feed fetch error (2 attempts failed):', error);
+        setHasError(true);
+        setPosts((prev) => prev ?? []);
         setHasMore(false);
       }
-      else { setPosts(data ?? []); setHasMore((data?.length ?? 0) === FEED_PAGE_SIZE); }
+      else { setHasError(false); setPosts((data ?? []) as Post[]); setHasMore((data?.length ?? 0) === FEED_PAGE_SIZE); }
       setLoading(false);
     };
     load();
@@ -190,70 +252,92 @@ export function useFeedPosts(supabase: TypedSupabaseClient) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [supabase]);
+  }, [supabase, attempt]);
+
+  const refresh = useCallback(() => {
+    setHasError(false);
+    setLoading(true);
+    setAttempt((a) => a + 1);
+  }, []);
 
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore || !posts || posts.length === 0) return;
     setLoadingMore(true);
     const last = posts[posts.length - 1];
-    const query = supabase
-      .from('posts')
-      .select('*')
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .lt('created_at', last.created_at)
-      .limit(FEED_PAGE_SIZE);
-    const { data, error } = await query;
+    const { data, error } = await withRetry(
+      () =>
+        supabase
+          .from('posts')
+          .select(
+            'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+          )
+          .eq('status', 'approved')
+          .order('created_at', { ascending: false })
+          .lt('created_at', last.created_at)
+          .limit(FEED_PAGE_SIZE),
+      2,
+      600
+    );
     if (error) {
-      console.error('Feed load-more error:', {
-        message: error.message,
-        details: error.details,
-        hint: error.hint,
-        code: error.code,
-        raw: error,
-      });
+      logFetchError('Feed load-more error (2 attempts failed):', error);
     } else if (data) {
       setPosts((prev) => {
         const existing = new Set((prev ?? []).map((p) => p.id));
-        return [...(prev ?? []), ...data.filter((p) => !existing.has(p.id))];
+        return [...(prev ?? []), ...(data.filter((p) => !existing.has(p.id)) as Post[])];
       });
       setHasMore(data.length === FEED_PAGE_SIZE);
     }
     setLoadingMore(false);
   }, [loadingMore, hasMore, posts, supabase]);
 
-  return { posts, loading, loadingMore, hasMore, loadMore };
+  return { posts, loading, loadingMore, hasMore, loadMore, hasError, refresh };
 }
 
-export function useLostFoundPosts(supabase: TypedSupabaseClient) {
+const normalizeTag = (s: string) => s.replace(/^#/, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+
+function postHasTag(p: { tags?: unknown; content?: string | null }, aliases: string[]): boolean {
+  const tags = (p.tags ?? []) as { label?: string }[];
+  if (tags.some((t) => aliases.includes(normalizeTag(t.label ?? '')))) return true;
+  if (p.content) {
+    for (const m of p.content.matchAll(/#[\w&]+/gi)) {
+      if (aliases.includes(normalizeTag(m[0]))) return true;
+    }
+  }
+  return false;
+}
+
+function useTaggedPosts(supabase: TypedSupabaseClient, aliases: string[], channelName: string) {
   const [posts, setPosts] = useState<Post[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     const load = async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('*')
-        .eq('status', 'approved')
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (error) { console.error(error); setPosts([]); }
+      const { data, error } = await withRetry(() =>
+        supabase
+          .from('posts')
+          .select('*')
+          .eq('status', 'approved')
+          .order('created_at', { ascending: false })
+          .limit(50)
+      );
+      if (error) {
+        logFetchError(`Tagged posts fetch error (${channelName}):`, error);
+        setHasError(true);
+        setPosts([]);
+      }
       else {
-        setPosts((data ?? []).filter((p) => {
-          const tags = (p.tags ?? []) as { label?: string }[];
-          return tags.some((t) => t.label === 'Lost & Found');
-        }));
+        setHasError(false);
+        setPosts((data ?? []).filter((p) => postHasTag(p, aliases)));
       }
       setLoading(false);
     };
-    load();
+    void load();
 
-    const qualifies = (row: Post) => {
-      const tags = (row.tags ?? []) as { label?: string }[];
-      return row.status === 'approved' && tags.some((t) => t.label === 'Lost & Found');
-    };
+    const qualifies = (row: Post) => row.status === 'approved' && postHasTag(row, aliases);
     const channel = supabase
-      .channel(uniqueChannelName('public:posts:lostfound'))
+      .channel(uniqueChannelName(channelName))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts' }, (payload) => {
         setPosts((prev) => {
           if (!prev) return prev;
@@ -278,9 +362,23 @@ export function useLostFoundPosts(supabase: TypedSupabaseClient) {
       .subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [supabase]);
+  }, [supabase, attempt]);
 
-  return { posts, loading };
+  const refresh = useCallback(() => {
+    setHasError(false);
+    setLoading(true);
+    setAttempt((a) => a + 1);
+  }, []);
+
+  return { posts, loading, hasError, refresh };
+}
+
+export function useLostFoundPosts(supabase: TypedSupabaseClient) {
+  return useTaggedPosts(supabase, ['lostfound', 'lostandfound'], 'public:posts:lostfound');
+}
+
+export function useAnnouncementPosts(supabase: TypedSupabaseClient) {
+  return useTaggedPosts(supabase, ['announcement', 'announcements'], 'public:posts:announcements');
 }
 
 export function usePostShares(supabase: TypedSupabaseClient, postId: string) {  const [shares, setShares] = useState<number | null>(null);
@@ -599,24 +697,32 @@ export type { Post, Comment, Conversation, ChatMessage, Notification, ConvMeta, 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type EventRegistration = Database['public']['Tables']['event_registrations']['Row'];
 
-export function useEvents(supabase: TypedSupabaseClient) {
+export function useEvents(supabase: TypedSupabaseClient, role?: string) {
   const [events, setEvents] = useState<EventRow[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  const studentOnly = role === 'student';
 
   useEffect(() => {
+    let cancelled = false;
     const load = async () => {
-      const { data, error } = await supabase
-        .from('events')
-        .select('*')
-        .order('event_date', { ascending: true })
-        .limit(100);
+      let query = supabase.from('events').select('*');
+      if (studentOnly) query = query.eq('visibility', 'public');
+      const { data, error } = await query.order('event_date', { ascending: true }).limit(100);
+      if (cancelled) return;
       if (error) {
+        setHasError(true);
         setEvents([]);
       }
-      else setEvents(data ?? []);
+      else {
+        setHasError(false);
+        setEvents(data ?? []);
+      }
       setLoading(false);
     };
-    load();
+    void load();
 
     const channel = supabase
       .channel(uniqueChannelName('public:events'))
@@ -642,10 +748,16 @@ export function useEvents(supabase: TypedSupabaseClient) {
       })
       .subscribe();
 
-    return () => { supabase.removeChannel(channel); };
-  }, [supabase]);
+    return () => { cancelled = true; supabase.removeChannel(channel); };
+  }, [supabase, studentOnly, attempt]);
 
-  return { events, loading };
+  const refresh = useCallback(() => {
+    setHasError(false);
+    setLoading(true);
+    setAttempt((a) => a + 1);
+  }, []);
+
+  return { events, loading, hasError, refresh };
 }
 
 export function useEventRegistrations(supabase: TypedSupabaseClient, eventIds: string[], me: string) {
@@ -679,13 +791,22 @@ export function useEventRegistrations(supabase: TypedSupabaseClient, eventIds: s
     const channel = supabase
       .channel(uniqueChannelName('public:event_registrations'))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'event_registrations' }, (payload) => {
+        const eventId =
+          (payload.new as Partial<EventRegistration>)?.event_id ??
+          (payload.old as Partial<EventRegistration>)?.event_id;
+        if (!eventId) {
+          // With the table's default (PK-only) replica identity, realtime
+          // DELETE/UPDATE payloads only carry the registration's id, so we
+          // can't tell which event changed. Re-fetch instead of dropping the
+          // update — otherwise a cancelled registration keeps showing
+          // "Cancel Registration" until a full page refresh.
+          void load();
+          return;
+        }
         setRegs((prev) => {
           if (!prev) return prev;
-          const eventId =
-            (payload.new as Partial<EventRegistration>)?.event_id ??
-            (payload.old as Partial<EventRegistration>)?.event_id;
-          const m = eventId ? prev[eventId] : undefined;
-          if (!eventId || !m) return prev;
+          const m = prev[eventId];
+          if (!m) return prev;
           if (payload.eventType === 'INSERT') {
             const row = payload.new as Partial<EventRegistration>;
             return {

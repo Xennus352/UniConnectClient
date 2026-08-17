@@ -20,6 +20,8 @@ export async function POST(request: Request) {
     eventDate?: unknown;
     category?: unknown;
     maxAttendees?: unknown;
+    imageUrl?: unknown;
+    visibility?: unknown;
   } | null;
 
   const title = typeof body?.title === 'string' ? body.title.trim() : '';
@@ -34,6 +36,11 @@ export async function POST(request: Request) {
     typeof body?.maxAttendees === 'number' && Number.isFinite(body.maxAttendees) && body.maxAttendees > 0
       ? Math.floor(body.maxAttendees)
       : null;
+  const imageUrl =
+    typeof body?.imageUrl === 'string' && body.imageUrl.trim().startsWith('https://')
+      ? body.imageUrl.trim().slice(0, 2048)
+      : null;
+  const visibility = body?.visibility === 'private' ? 'private' : 'public';
 
   const supabase = createServerSupabase() as unknown as SupabaseClient;
   const now = Date.now();
@@ -47,6 +54,8 @@ export async function POST(request: Request) {
       event_date: eventDate,
       category,
       max_attendees: maxAttendees,
+      image_url: imageUrl,
+      visibility,
       created_by: identity.email,
       created_by_name: identity.name,
       created_at: now,

@@ -32,6 +32,50 @@ function timeAgo(ts: number): string {
   return new Date(ts).toLocaleDateString();
 }
 
+// The feed list intentionally does NOT select the `image` column (a single
+// image can be several MB of base64; the whole feed then waits on one
+// multi-MB transfer and trips the 30s request guard). Images are fetched
+// lazily per post, in parallel, each with its own request budget, so slow
+// images degrade gracefully instead of blanking the entire feed.
+function PostImage({ postId }: { postId: string }) {
+  const supabase = useSupabase();
+  const [src, setSrc] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('posts')
+        .select('image')
+        .eq('id', postId)
+        .single();
+      if (cancelled) return;
+      setDone(true);
+      if (!error && data?.image) setSrc(data.image);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, postId]);
+
+  if (!done) {
+    return (
+      <div
+        className="mt-3 overflow-hidden flex justify-center"
+        style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', height: 200, background: 'var(--divider)' }}
+      />
+    );
+  }
+  if (!src) return null;
+  return (
+    <div
+      className="mt-3 overflow-hidden flex justify-center"
+      style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}
+    >
+      <img src={src} alt="" className="max-w-full h-auto" style={{ maxHeight: 480, objectFit: 'contain' }} />
+    </div>
+  );
+}
+
 export default function FeedPost({ post }: FeedPostProps) {
   const { user: session } = useSession();
   const supabase = useSupabase();
@@ -136,6 +180,10 @@ export default function FeedPost({ post }: FeedPostProps) {
   const saveEdit = useCallback(async () => {
     const content = editText.trim();
     if (!content) return;
+    if (content === post.content) {
+      setEditing(false);
+      return;
+    }
     try {
       const res = await fetch(`/api/posts/${post.id}`, {
         method: 'PATCH',
@@ -288,13 +336,15 @@ export default function FeedPost({ post }: FeedPostProps) {
             </div>
           </div>
         )}
-        {post.image && (
+        {post.image ? (
           <div
             className="mt-3 overflow-hidden flex justify-center"
             style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}
           >
             <img src={post.image} alt="" className="max-w-full h-auto" style={{ maxHeight: 480, objectFit: 'contain' }} />
           </div>
+        ) : (
+          <PostImage postId={post.id} />
         )}
         <div className="flex gap-[6px] mt-[10px] flex-wrap">
           {(post.item_status === 'lost' || post.item_status === 'found') && (

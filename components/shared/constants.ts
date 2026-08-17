@@ -41,6 +41,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       section: 'University',
       items: [
         { icon: 'CalendarCheck', label: 'Events', id: 'events' },
+        { icon: 'Megaphone', label: 'Announcements', id: 'announcements' },
         { icon: 'Search', label: 'Lost & Found', id: 'lost-found' },
       ],
     },
@@ -74,6 +75,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       section: 'University',
       items: [
         { icon: 'CalendarCheck', label: 'Events', id: 'events' },
+        { icon: 'Megaphone', label: 'Announcements', id: 'announcements' },
         { icon: 'Search', label: 'Lost & Found', id: 'lost-found' },
       ],
     },
@@ -108,6 +110,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       section: 'University',
       items: [
         { icon: 'CalendarCheck', label: 'Events', id: 'events' },
+        { icon: 'Megaphone', label: 'Announcements', id: 'announcements' },
         { icon: 'Search', label: 'Lost & Found', id: 'lost-found' },
       ],
     },
@@ -161,6 +164,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       items: [
         { icon: 'GraduationCap', label: 'Students', id: 'students' },
         { icon: 'CalendarCheck', label: 'Events', id: 'events' },
+        { icon: 'Megaphone', label: 'Announcements', id: 'announcements' },
         { icon: 'Search', label: 'Lost & Found', id: 'lost-found' },
       ],
     },

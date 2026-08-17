@@ -128,7 +128,10 @@ export default function ShareModal({ open, onClose, onShare }: ShareModalProps) 
               >
                 {u.initials}
               </div>
-              <span className="flex-1" style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{u.name}</span>
+              <div className="flex-1 min-w-0">
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>{u.name}</div>
+                <div style={{ fontSize: 11.5, color: 'var(--text-lighter)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.email}</div>
+              </div>
               <div
                 className="w-5 h-5 rounded flex items-center justify-center transition-all"
                 style={{

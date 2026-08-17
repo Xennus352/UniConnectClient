@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { CalendarCheck, MapPin, Users, Plus, X, Trash2 } from 'lucide-react';
+import { CalendarCheck, MapPin, Users, Plus, X, Trash2, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSupabase } from '@/utils/supabase/client';
 import { useEvents, useEventRegistrations } from '@/lib/supabase/hooks';
 import { useSession } from './session';
 import EventRosterModal from './EventRosterModal';
+import EventDetailsModal from './EventDetailsModal';
 import type { Database } from '@/utils/supabase/types';
 
 type EventRow = Database['public']['Tables']['events']['Row'];
@@ -38,7 +39,7 @@ export default function EventsSection() {
   const role = session?.role ?? '';
   const canCreate = role === 'admin' || role === 'student-affair';
 
-  const { events, loading } = useEvents(supabase);
+  const { events, loading, hasError, refresh } = useEvents(supabase, role);
   const eventIds = useMemo(() => (events ?? []).map((e) => e.id), [events]);
   const { registrations } = useEventRegistrations(supabase, eventIds, me);
 
@@ -46,7 +47,11 @@ export default function EventsSection() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({ title: '', description: '', location: '', category: 'Other', date: '', maxAttendees: '' });
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isPrivate, setIsPrivate] = useState(false);
   const [rosterEvent, setRosterEvent] = useState<EventRow | null>(null);
+  const [detailEvent, setDetailEvent] = useState<EventRow | null>(null);
 
   const filtered = useMemo(() => {
     const list = events ?? [];
@@ -57,13 +62,52 @@ export default function EventsSection() {
     return list.filter((e) => e.category === filter);
   }, [events, filter, registrations]);
 
+  const acceptImage = (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast.error('Please choose an image file'); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error('Image must be 5MB or smaller'); return; }
+    setSelectedImage(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    e.target.value = '';
+    acceptImage(file);
+  };
+
+  const handleImageDrop = (e: React.DragEvent<HTMLLabelElement>) => {
+    e.preventDefault();
+    acceptImage(e.dataTransfer.files?.[0] ?? null);
+  };
+
+  const resetForm = () => {
+    setForm({ title: '', description: '', location: '', category: 'Other', date: '', maxAttendees: '' });
+    setSelectedImage(null);
+    setImagePreview(null);
+    setIsPrivate(false);
+  };
+
   const handleCreate = async () => {
     const title = form.title.trim();
     const dateMs = form.date ? new Date(form.date).getTime() : NaN;
     if (!title) { toast.error('Event title is required'); return; }
     if (!Number.isFinite(dateMs)) { toast.error('Please choose an event date'); return; }
     setSaving(true);
+    let uploadedPath: string | null = null;
     try {
+      let imageUrl: string | null = null;
+      if (selectedImage) {
+        const fileExt = selectedImage.name.split('.').pop()?.toLowerCase() || 'jpg';
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage
+          .from('event-images')
+          .upload(fileName, selectedImage);
+        if (uploadError) throw new Error(uploadError.message || 'Could not upload cover image');
+        uploadedPath = fileName;
+        const { data: urlData } = supabase.storage.from('event-images').getPublicUrl(fileName);
+        imageUrl = urlData.publicUrl;
+      }
       const res = await fetch('/api/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -74,14 +118,19 @@ export default function EventsSection() {
           category: form.category,
           eventDate: dateMs,
           maxAttendees: form.maxAttendees.trim() ? Number(form.maxAttendees) : undefined,
+          imageUrl,
+          visibility: isPrivate ? 'private' : 'public',
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.message || 'Could not create event');
       toast.success('Event created and students notified');
       setCreating(false);
-      setForm({ title: '', description: '', location: '', category: 'Other', date: '', maxAttendees: '' });
+      resetForm();
     } catch (err) {
+      if (uploadedPath) {
+        await supabase.storage.from('event-images').remove([uploadedPath]).catch(() => null);
+      }
       toast.error(err instanceof Error ? err.message : 'Could not create event');
     } finally {
       setSaving(false);
@@ -149,12 +198,26 @@ export default function EventsSection() {
       </div>
 
       {loading && (
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
-          Loading events...
+        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center' }}>
+          <span className="loading loading-spinner loading-md" style={{ color: 'var(--primary)' }} />
+          <p style={{ color: 'var(--text-lighter)', fontSize: 14, marginTop: 10 }}>Loading events...</p>
         </div>
       )}
 
-      {!loading && (!events || events.length === 0) && (
+      {!loading && hasError && (
+        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center' }}>
+          <p style={{ color: 'var(--text-light)', fontSize: 14, marginBottom: 14 }}>Could not load events — check your connection and try again.</p>
+          <button
+            onClick={refresh}
+            className="btn btn-sm text-white border-none"
+            style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!loading && !hasError && (!events || events.length === 0) && (
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
           No events yet{canCreate ? ' — create the first one' : ''}
         </div>
@@ -175,11 +238,46 @@ export default function EventsSection() {
             const canDelete = canCreate || e.created_by === me;
             return (
               <div key={e.id} className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+                <figure
+                  onClick={() => e.image_url && setDetailEvent(e)}
+                  className="w-full overflow-hidden flex items-center justify-center"
+                  style={{
+                    borderBottom: '1px solid var(--surface)',
+                    background: e.image_url ? 'var(--divider)' : 'linear-gradient(135deg, var(--secondary-light), var(--secondary-lighter))',
+                    height: 150,
+                    position: 'relative',
+                    cursor: e.image_url ? 'pointer' : 'default',
+                  }}
+                >
+                  {e.image_url ? (
+                    <>
+                      <img src={e.image_url} alt={`${e.title} cover`} className="w-full h-full object-cover" />
+                      <span
+                        className="absolute inset-0 flex items-center justify-center"
+                        style={{ background: 'rgba(2,6,23,0.45)', opacity: 0, transition: 'opacity 0.2s', color: '#fff', fontSize: 12.5, fontWeight: 700, letterSpacing: '0.3px', gap: 6 }}
+                        onMouseEnter={(ev) => { ev.currentTarget.style.opacity = '1'; }}
+                        onMouseLeave={(ev) => { ev.currentTarget.style.opacity = '0'; }}
+                      >
+                        View Details
+                      </span>
+                    </>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, color: 'var(--text-lighter)' }}>
+                      <ImageIcon size={24} />
+                      <span style={{ fontSize: 11.5, fontWeight: 600, letterSpacing: '0.3px' }}>NO COVER IMAGE</span>
+                    </div>
+                  )}
+                </figure>
                 <div style={{ padding: '18px 22px', borderBottom: '1px solid var(--surface)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 700, letterSpacing: '0.3px', textTransform: 'uppercase', background: style.bg, color: style.color }}>
                       {e.category}
                     </span>
+                    {e.visibility === 'private' && (
+                      <span className="badge badge-sm gap-1" style={{ background: 'rgba(251,191,36,0.14)', color: '#b45309', border: 'none', fontSize: 11, fontWeight: 700 }}>
+                        🔒 Private
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <button
@@ -247,7 +345,7 @@ export default function EventsSection() {
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CalendarCheck size={16} /> Create Event
               </div>
-              <button onClick={() => setCreating(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-lighter)' }}>
+              <button onClick={() => { setCreating(false); resetForm(); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-lighter)' }}>
                 <X size={18} />
               </button>
             </div>
@@ -292,7 +390,7 @@ export default function EventsSection() {
                   </select>
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 18 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
                 <div>
                   <label style={{ display: 'block', fontSize: 13, fontWeight: 600, color: 'var(--accent)', marginBottom: 6 }}>Date & Time *</label>
                   <input
@@ -314,6 +412,59 @@ export default function EventsSection() {
                   />
                 </div>
               </div>
+              <div className="form-control w-full" style={{ marginBottom: 14 }}>
+                <label className="label" style={{ padding: 0, marginBottom: 6 }}>
+                  <span className="label-text" style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>Event Cover Image (Optional)</span>
+                </label>
+                <input
+                  type="file"
+                  id="event-cover-input"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageSelect}
+                />
+                <label
+                  htmlFor="event-cover-input"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleImageDrop}
+                  className="flex flex-col items-center justify-center w-full cursor-pointer gap-1.5"
+                  style={{ border: '1.5px dashed var(--secondary)', background: 'var(--secondary-lighter)', borderRadius: 'var(--radius-sm)', padding: '18px 14px', textAlign: 'center', transition: 'border-color 0.2s, background 0.2s' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--primary)'; e.currentTarget.style.background = 'rgba(2,132,199,0.06)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--secondary)'; e.currentTarget.style.background = 'var(--secondary-lighter)'; }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, fontWeight: 600, color: 'var(--accent)' }}>
+                    <ImageIcon size={16} /> Click to upload cover image
+                  </span>
+                  <span style={{ fontSize: 11.5, color: 'var(--text-lighter)' }}>PNG, JPG or WebP up to 5MB — or drag &amp; drop here</span>
+                </label>
+                {imagePreview && (
+                  <div className="relative mt-3" style={{ borderRadius: 'var(--radius-md)', overflow: 'hidden', border: '1px solid var(--surface-border)' }}>
+                    <img src={imagePreview} alt="Cover preview" className="w-full object-cover" style={{ maxHeight: 140 }} />
+                    <button
+                      onClick={() => { setSelectedImage(null); setImagePreview(null); }}
+                      title="Remove image"
+                      className="btn btn-ghost btn-circle btn-xs absolute top-2 right-2 bg-base-100"
+                      style={{ boxShadow: '0 2px 8px rgba(0,0,0,0.2)' }}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="form-control" style={{ marginBottom: 18 }}>
+                <label className="label cursor-pointer justify-start gap-4" style={{ padding: 0 }}>
+                  <span className="label-text font-semibold" style={{ fontSize: 13, color: 'var(--accent)' }}>Make Event Private (Admins/Staff Only)</span>
+                  <input
+                    type="checkbox"
+                    className="toggle toggle-primary"
+                    checked={isPrivate}
+                    onChange={(e) => setIsPrivate(e.target.checked)}
+                  />
+                </label>
+                <span style={{ fontSize: 11.5, color: 'var(--text-lighter)', marginTop: 2 }}>
+                  Private events are hidden from students and only visible to admins &amp; staff.
+                </span>
+              </div>
               <button
                 onClick={handleCreate}
                 disabled={saving}
@@ -328,6 +479,14 @@ export default function EventsSection() {
 
       {rosterEvent && (
         <EventRosterModal event={rosterEvent} onClose={() => setRosterEvent(null)} />
+      )}
+
+      {detailEvent && (
+        <EventDetailsModal
+          event={detailEvent}
+          regCount={registrations?.[detailEvent.id]?.count ?? 0}
+          onClose={() => setDetailEvent(null)}
+        />
       )}
     </div>
   );

@@ -28,6 +28,38 @@ export async function POST(request: Request) {
       ? body.item_location.trim().slice(0, 60)
       : null;
 
+  // Reject oversized images before they reach the DB: every approved post's
+  // image is re-downloaded by every feed reader via select('*'), so a single
+  // multi-MB image makes the whole feed slow and trips client timeouts.
+  const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
+  if (typeof body.image === 'string' && body.image.startsWith('data:image/')) {
+    const payload = body.image.slice(body.image.indexOf(',') + 1);
+    if (payload.length > (MAX_IMAGE_BYTES * 4) / 3 + 8) {
+      return NextResponse.json(
+        { message: 'Image is too large — please use an image under 2 MB' },
+        { status: 400 }
+      );
+    }
+  }
+
+  const HASHTAG_TAGS: Record<string, { label: string; color: string; emoji: string }> = {
+    lostfound: { label: 'Lost & Found', color: 'badge-warning', emoji: '🔍' },
+    announcement: { label: 'Announcement', color: 'badge-info', emoji: '📢' },
+    event: { label: 'Event', color: 'badge-success', emoji: '🎉' },
+    general: { label: 'General', color: 'badge-ghost', emoji: '💬' },
+  };
+  const normalizeTag = (s: string) => s.replace(/^#/, '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+  const tags = Array.isArray(body.tags) ? (body.tags as { label?: string }[]) : [];
+  const tagLabels = new Set(tags.map((t) => normalizeTag(t.label ?? '')));
+  for (const match of content.matchAll(/#[\w&]+/gi)) {
+    const key = normalizeTag(match[0]);
+    const canon = HASHTAG_TAGS[key === 'lostandfound' ? 'lostfound' : key];
+    if (canon && !tagLabels.has(normalizeTag(canon.label))) {
+      tags.push(canon);
+      tagLabels.add(normalizeTag(canon.label));
+    }
+  }
+
   const supabase = createServerSupabase() as unknown as SupabaseClient;
   const now = Date.now();
 
@@ -50,7 +82,7 @@ export async function POST(request: Request) {
       author_role: identity.role,
       content,
       image: body.image ?? null,
-      tags: Array.isArray(body.tags) ? body.tags : [],
+      tags,
       item_status,
       item_location,
       status: 'pending_review',

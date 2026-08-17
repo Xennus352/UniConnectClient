@@ -11,7 +11,7 @@ const PRESET_LOCATIONS = ['Library', 'CS Building', 'Cafeteria'];
 
 export default function LostFoundSection() {
   const supabase = useSupabase();
-  const { posts, loading } = useLostFoundPosts(supabase);
+  const { posts, loading, hasError, refresh } = useLostFoundPosts(supabase);
 
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -148,10 +148,25 @@ export default function LostFoundSection() {
       </div>
 
       <div className="max-w-[860px] mx-auto">
-        {!posts && loading && (
-          <div className="text-center py-12 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading lost &amp; found items...</div>
+        {loading && (
+          <div className="text-center py-12">
+            <span className="loading loading-spinner loading-md" style={{ color: 'var(--primary)' }} />
+            <p className="mt-2 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading lost &amp; found items...</p>
+          </div>
         )}
-        {filtered.length === 0 && !loading && (
+        {hasError && !loading && (
+          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: '24px 22px', textAlign: 'center' }}>
+            <p className="text-sm mb-4" style={{ color: 'var(--text-light)' }}>Could not load lost &amp; found items — check your connection and try again.</p>
+            <button
+              onClick={refresh}
+              className="btn btn-sm text-white border-none"
+              style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+            >
+              Retry
+            </button>
+          </div>
+        )}
+        {!loading && !hasError && filtered.length === 0 && (
           <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: '24px 22px', textAlign: 'center' }}>
             <div style={{ fontSize: 12, color: 'var(--text-lighter)' }}>
               {posts && posts.length === 0 ? 'No lost &amp; found items yet' : 'No items match your search or filters'}
