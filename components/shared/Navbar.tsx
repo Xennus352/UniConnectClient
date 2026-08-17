@@ -67,7 +67,7 @@ export default function Navbar({ onMenuToggle, basePath }: NavbarProps) {
           onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--surface-border)'; e.currentTarget.style.boxShadow = 'none'; }}
         >
           <Search size={15} />
-          <span className="font-medium">Search people, courses...</span>
+          <span className="font-medium">Search people, posts...</span>
         </button>
       </div>
 

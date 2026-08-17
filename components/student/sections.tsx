@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
-export { ExploreSection } from '@/components/admin/sections';
+
 import BlockedSection from '@/components/shared/BlockedSection';
 
 interface TimetableEntry {
@@ -114,8 +114,6 @@ export function Dashboard() {
     </div>
   );
 }
-
-
 
 export function TimetableSection() {
   const { user: session } = useSession();

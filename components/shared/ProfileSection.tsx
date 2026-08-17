@@ -6,6 +6,7 @@ import { User, Newspaper, BadgeCheck, Pencil, Trash2, Check, X, LogOut, ImageOff
 import { useSupabase } from '@/utils/supabase/client';
 import { usePostImageDownload } from '@/lib/supabase/usePostImage';
 import PostImageDownload from './PostImageDownload';
+import ImageLightbox from './ImageLightbox';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
 import { useSession } from './session';
 import { toast } from 'sonner';
@@ -28,6 +29,7 @@ const POST_STATUS_META: Record<string, { label: string; badge: string; color: st
 // image can't block the whole posts list.
 function MyPostImage({ postId }: { postId: string }) {
   const { src, phase, progress, attemptsLeft } = usePostImageDownload(postId);
+  const [showImage, setShowImage] = useState(false);
 
   if (phase === 'downloading' || phase === 'retrying') {
     return <PostImageDownload height={120} progress={progress} retrying={phase === 'retrying'} attemptsLeft={attemptsLeft} />;
@@ -44,7 +46,19 @@ function MyPostImage({ postId }: { postId: string }) {
     );
   }
   if (phase === 'empty' || !src) return null;
-  return <img src={src} alt="" loading="lazy" className="rounded-lg mt-2 w-full object-cover" style={{ maxHeight: 180 }} />;
+  return (
+    <>
+      <img src={src} alt="" loading="lazy" onClick={() => setShowImage(true)} className="rounded-lg mt-2 w-full object-cover cursor-zoom-in transition-opacity duration-200 hover:opacity-90" style={{ maxHeight: 180 }} />
+      {showImage && (
+        <ImageLightbox
+          open={showImage}
+          onClose={() => setShowImage(false)}
+          src={src}
+          postId={postId}
+        />
+      )}
+    </>
+  );
 }
 
 const FILTERS: { id: PostFilter; label: string }[] = [

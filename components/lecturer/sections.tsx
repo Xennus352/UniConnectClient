@@ -30,7 +30,7 @@ import type {
 import { useUniversityData } from '@/components/shared/useUniversityData';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
-export { ExploreSection } from '@/components/admin/sections';
+
 import BlockedSection from '@/components/shared/BlockedSection';
 
 interface TimetableEntry {
@@ -154,7 +154,6 @@ export function Dashboard() {
     </div>
   );
 }
-
 
 export function StudentsSection() {
   const { data, loading, error } = useUniversityData<StudentRecord[]>(
@@ -598,7 +597,6 @@ export function TimetableSection() {
   );
 }
 
-
 export { default as EventsSection } from '@/components/shared/EventsSection';
 
 export function LostFoundSection() {
@@ -608,7 +606,6 @@ export function LostFoundSection() {
 export function AnnouncementsSection() {
   return <AnnouncementsPage />;
 }
-
 
 export function SettingsSection() {
   const [settingsTab, setSettingsTab] = useState('Profile');

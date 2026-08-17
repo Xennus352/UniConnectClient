@@ -1,4 +1,4 @@
-import type { NavItem, FeedItemData, EventItemData, MessageData, InboxItemData, StudentData, LecturerData, StaffData, ExploreItemData, Email, ExamResultItem, ChatMessage, Contact, Notification } from './types';
+import type { NavItem, FeedItemData, EventItemData, MessageData, InboxItemData, StudentData, LecturerData, StaffData, Email, ExamResultItem, ChatMessage, Contact, Notification } from './types';
 
 export type UserRole = 'student' | 'lecturer' | 'student-affair' | 'admin';
 
@@ -26,7 +26,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
-        { icon: 'Compass', label: 'Explore', id: 'explore' },
       ],
     },
     {
@@ -60,7 +59,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
-        { icon: 'Compass', label: 'Explore', id: 'explore' },
       ],
     },
     {
@@ -93,7 +91,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
       items: [
         { icon: 'LayoutDashboard', label: 'Dashboard', id: 'dashboard' },
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
-        { icon: 'Compass', label: 'Explore', id: 'explore' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
       ],
@@ -150,7 +147,6 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'Newspaper', label: 'Feed', id: 'feed' },
         { icon: 'MessageSquare', label: 'Messages', id: 'messages' },
         { icon: 'Bell', label: 'Notifications', id: 'notifications' },
-        { icon: 'Compass', label: 'Explore', id: 'explore' },
       ],
     },
     {
@@ -228,14 +224,6 @@ export const MOCK_INBOX: InboxItemData[] = [
 
 
 
-export const MOCK_EXPLORE: ExploreItemData[] = [
-  { title: 'Robotics Club', meta: '45 members', description: 'Building the future, one robot at a time. Join us for weekly builds and competitions!', tags: [{ label: 'Robotics', color: 'badge-info' }, { label: 'Engineering', color: 'badge-secondary' }] },
-  { title: 'Photography Workshop', meta: 'Jul 25, 2026', description: 'Learn the art of photography from professional photographers.', tags: [{ label: 'Photography', color: 'badge-success' }, { label: 'Workshop', color: 'badge-info' }] },
-  { title: 'Sarah Chen', meta: 'CS - Year 3', description: 'Computer Science - Year 3 - AI Enthusiast', tags: [{ label: 'CS', color: 'badge-info' }, { label: 'AI', color: 'badge-secondary' }] },
-  { title: 'Web Development 101', meta: '128 enrolled', description: 'Learn modern web development with React and Next.js', tags: [{ label: 'Web Dev', color: 'badge-info' }, { label: 'React', color: 'badge-secondary' }] },
-  { title: 'Chess Club', meta: '32 members', description: 'Strategic minds unite! Casual and competitive chess for all skill levels.', tags: [{ label: 'Chess', color: 'badge-info' }, { label: 'Strategy', color: 'badge-secondary' }] },
-  { title: 'Career Fair 2026', meta: 'Aug 5, 2026', description: 'Meet top employers and find your dream internship or job.', tags: [{ label: 'Career', color: 'badge-success' }, { label: 'Networking', color: 'badge-info' }] },
-];
 
 export const MOCK_EMAILS: Email[] = [
   { id: 1, from: 'University Admin', subject: 'Exam Schedule Released', preview: 'The final examination schedule for Semester 2 has been published...', body: 'Dear Student,\n\nThe final examination schedule for Semester 2 (2025-2026) has been published on the academic portal. Please log in to check your personalized exam timetable, including dates, venues, and seat numbers.\n\nBest regards,\nUniversity Administration', time: '10m ago', read: false, starred: true, avatar: 'UA', role: 'Administration' },

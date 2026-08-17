@@ -85,13 +85,6 @@ export interface StaffData {
   email: string;
 }
 
-export interface ExploreItemData {
-  title: string;
-  meta: string;
-  description: string;
-  tags: { label: string; color: string }[];
-}
-
 export interface NavItem {
   section: string;
   items: { icon: string; label: string; id: string; badge?: string | number }[];

@@ -7,6 +7,8 @@ import { Heart, MessageCircle, Share2, CircleCheck, Send, Pencil, Trash2, X, Che
 import { useSupabase } from '@/utils/supabase/client';
 import { usePostImageDownload } from '@/lib/supabase/usePostImage';
 import PostImageDownload from './PostImageDownload';
+import ImageLightbox from './ImageLightbox';
+import LikersModal from './LikersModal';
 import { useSession } from './session';
 import { toast } from 'sonner';
 import ShareModal from './ShareModal';
@@ -41,6 +43,7 @@ function timeAgo(ts: number): string {
 // images degrade gracefully instead of blanking the entire feed.
 function PostImage({ postId }: { postId: string }) {
   const { src, phase, progress, attemptsLeft } = usePostImageDownload(postId);
+  const [showImage, setShowImage] = useState(false);
 
   if (phase === 'downloading' || phase === 'retrying') {
     return <PostImageDownload height={160} progress={progress} retrying={phase === 'retrying'} attemptsLeft={attemptsLeft} />;
@@ -58,12 +61,23 @@ function PostImage({ postId }: { postId: string }) {
   }
   if (phase === 'empty' || !src) return null;
   return (
-    <div
-      className="mt-3 overflow-hidden flex justify-center"
-      style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}
-    >
-      <img src={src} alt="" loading="lazy" className="max-w-full h-auto" style={{ maxHeight: 480, objectFit: 'contain' }} />
-    </div>
+    <>
+      <div
+        className="mt-3 overflow-hidden flex justify-center cursor-zoom-in transition-opacity duration-200 hover:opacity-90"
+        style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}
+        onClick={() => setShowImage(true)}
+      >
+        <img src={src} alt="" loading="lazy" className="max-w-full h-auto" style={{ maxHeight: 480, objectFit: 'contain' }} />
+      </div>
+      {showImage && (
+        <ImageLightbox
+          open={showImage}
+          onClose={() => setShowImage(false)}
+          src={src}
+          postId={postId}
+        />
+      )}
+    </>
   );
 }
 
@@ -73,10 +87,13 @@ export default function FeedPost({ post }: FeedPostProps) {
   const me = session?.email ?? '';
   const myName = session?.name ?? me;
   const meInitials = session?.initials ?? 'U';
+  const isOwner = post.author_email?.toLowerCase() === me.toLowerCase();
 
   const { liked, likes } = usePostLikes(supabase, post.id, me);
   const { comments, loadingMore, hasMore, loadMore } = useComments(supabase, post.id);
   const { shares } = usePostShares(supabase, post.id);
+
+  const [showLikers, setShowLikers] = useState(false);
 
   const [optimisticLiked, setOptimisticLiked] = useState<boolean | null>(null);
   const [optimisticLikes, setOptimisticLikes] = useState<number | null>(null);
@@ -388,31 +405,42 @@ export default function FeedPost({ post }: FeedPostProps) {
           className="flex items-center gap-[18px] mt-3 pt-3"
           style={{ borderTop: '1px solid var(--divider)' }}
         >
-          <button
-            onClick={toggleLike}
-            className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
-            style={{
-              color: isLiked ? 'var(--primary)' : 'var(--text-light)',
-              backgroundColor: isLiked ? 'rgba(40, 114, 161,0.12)' : 'transparent',
-            }}
-            onMouseEnter={(e) => {
-              if (!isLiked) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }
-            }}
-            onMouseLeave={(e) => {
-              if (!isLiked) { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }
-            }}
-          >
-            <motion.span
-              key={likePulse}
-              initial={{ scale: 1 }}
-              animate={{ scale: [1, 1.35, 1] }}
-              transition={{ duration: 0.35, ease: 'easeOut' }}
-              className="inline-flex"
+          <div className="flex items-center" style={{ gap: 2 }}>
+            <button
+              onClick={toggleLike}
+              className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
+              style={{
+                color: isLiked ? 'var(--primary)' : 'var(--text-light)',
+                backgroundColor: isLiked ? 'rgba(40, 114, 161,0.12)' : 'transparent',
+              }}
+              onMouseEnter={(e) => {
+                if (!isLiked) { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }
+              }}
+              onMouseLeave={(e) => {
+                if (!isLiked) { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }
+              }}
             >
-              <Heart size={14} fill={isLiked ? 'currentColor' : 'none'} />
-            </motion.span>
-            {' '}{likesCount ?? '—'}
-          </button>
+              <motion.span
+                key={likePulse}
+                initial={{ scale: 1 }}
+                animate={{ scale: [1, 1.35, 1] }}
+                transition={{ duration: 0.35, ease: 'easeOut' }}
+                className="inline-flex"
+              >
+                <Heart size={14} fill={isLiked ? 'currentColor' : 'none'} />
+              </motion.span>
+            </button>
+            <button
+              onClick={isOwner ? () => setShowLikers(true) : toggleLike}
+              title={isOwner ? 'See who liked this post' : undefined}
+              className="text-xs font-semibold cursor-pointer px-2 py-1 rounded-lg transition-all duration-200 hover:scale-105"
+              style={{ color: 'var(--text-light)', background: 'transparent' }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--primary)'; e.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--text-light)'; e.currentTarget.style.backgroundColor = 'transparent'; }}
+            >
+              {likesCount ?? '—'}
+            </button>
+          </div>
           <button
             onClick={() => { setShowComments(prev => !prev); setTimeout(() => commentInputRef.current?.focus(), 50); }}
             className="flex items-center gap-[5px] text-xs font-semibold cursor-pointer transition-all px-2 py-1 rounded-lg"
@@ -517,6 +545,15 @@ export default function FeedPost({ post }: FeedPostProps) {
         onClose={() => setShowShareModal(false)}
         onShare={handleShare}
       />
+
+      {showLikers && (
+        <LikersModal
+          open={showLikers}
+          onClose={() => setShowLikers(false)}
+          postId={post.id}
+          me={me}
+        />
+      )}
     </div>
   );
 }

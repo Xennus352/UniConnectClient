@@ -6,6 +6,7 @@ import { ShieldCheck, Check, X, Trash2, Loader2, AlertTriangle, ImageOff } from 
 import { useSupabase } from '@/utils/supabase/client';
 import { usePostImageDownload } from '@/lib/supabase/usePostImage';
 import PostImageDownload from './PostImageDownload';
+import ImageLightbox from './ImageLightbox';
 import { usePendingPosts } from '@/lib/supabase/hooks';
 import { toast } from 'sonner';
 import PostTag from './PostTag';
@@ -32,6 +33,7 @@ const TABS = ['All Pending', 'Latest', 'Lost & Found'];
 // per post so one slow transfer can't block the moderation queue.
 function PendingPostImage({ postId }: { postId: string }) {
   const { src, phase, progress, attemptsLeft } = usePostImageDownload(postId);
+  const [showImage, setShowImage] = useState(false);
 
   if (phase === 'downloading' || phase === 'retrying') {
     return <PostImageDownload height={150} progress={progress} retrying={phase === 'retrying'} attemptsLeft={attemptsLeft} />;
@@ -49,13 +51,24 @@ function PendingPostImage({ postId }: { postId: string }) {
   }
   if (phase === 'empty' || !src) return null;
   return (
-    <img
-      src={src}
-      alt=""
-      loading="lazy"
-      className="rounded-xl w-full object-cover mt-3"
-      style={{ maxHeight: 150, border: '1px solid var(--surface-border)' }}
-    />
+    <>
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        onClick={() => setShowImage(true)}
+        className="rounded-xl w-full object-cover mt-3 cursor-zoom-in transition-opacity duration-200 hover:opacity-90"
+        style={{ maxHeight: 150, border: '1px solid var(--surface-border)' }}
+      />
+      {showImage && (
+        <ImageLightbox
+          open={showImage}
+          onClose={() => setShowImage(false)}
+          src={src}
+          postId={postId}
+        />
+      )}
+    </>
   );
 }
 

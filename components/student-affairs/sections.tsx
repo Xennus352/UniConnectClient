@@ -27,7 +27,7 @@ import { useSession } from '@/components/shared/session';
 import { useMyProfile } from '@/components/shared/useMyProfile';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
-export { ExploreSection } from '@/components/admin/sections';
+
 export { default as ExamResultsSection } from '@/components/shared/ExamResultDistributionSection';
 import BlockedSection from '@/components/shared/BlockedSection';
 
@@ -172,8 +172,6 @@ export function Dashboard() {
   );
 }
 
-
-
 export function StudentsSection() {
   const { data, loading, error } = useUniversityData<StudentRecord[]>(
     useCallback(() => apiFetch<StudentRecord[]>('/api/students'), [])
@@ -306,8 +304,6 @@ export function LostFoundSection() {
 export function AnnouncementsSection() {
   return <AnnouncementsPage />;
 }
-
-
 
 export function SettingsSection() {
   const [settingsTab, setSettingsTab] = useState('Profile');

@@ -15,7 +15,6 @@ import * as Icons from 'lucide-react';
 const iconMap: Record<string, React.ComponentType<any>> = {
   LayoutDashboard: Icons.LayoutDashboard,
   Newspaper: Icons.Newspaper,
-  Compass: Icons.Compass,
   Mail: Icons.Mail,
   MessageSquare: Icons.MessageSquare,
   GraduationCap: Icons.GraduationCap,
