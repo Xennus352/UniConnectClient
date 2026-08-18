@@ -168,6 +168,21 @@ export default function EventsSection() {
     }
   };
 
+  const handleToggleVisibility = async (id: string, next: 'public' | 'private') => {
+    try {
+      const res = await fetch(`/api/events/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility: next }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || 'Could not update visibility');
+      toast.success(next === 'private' ? 'Event is now private — hidden from students' : 'Event is now public — visible to everyone');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Could not update visibility');
+    }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
@@ -280,6 +295,22 @@ export default function EventsSection() {
                     )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    {canCreate && (
+                      <button
+                        onClick={() => handleToggleVisibility(e.id, e.visibility === 'private' ? 'public' : 'private')}
+                        title={e.visibility === 'private' ? 'Make this event public' : 'Make this event private (hidden from students)'}
+                        className="btn btn-sm btn-ghost gap-1.5"
+                        style={{
+                          fontSize: 12,
+                          color: e.visibility === 'private' ? '#b45309' : 'var(--primary)',
+                          background: e.visibility === 'private' ? 'rgba(251,191,36,0.14)' : 'transparent',
+                        }}
+                        onMouseEnter={(ev) => { if (e.visibility !== 'private') ev.currentTarget.style.backgroundColor = 'rgba(40, 114, 161,0.12)'; }}
+                        onMouseLeave={(ev) => { if (e.visibility !== 'private') ev.currentTarget.style.backgroundColor = 'transparent'; }}
+                      >
+                        {e.visibility === 'private' ? '🔒 Make Public' : '🌐 Make Private'}
+                      </button>
+                    )}
                     <button
                       onClick={() => setRosterEvent(e)}
                       title="View registrants"

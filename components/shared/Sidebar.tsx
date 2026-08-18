@@ -17,6 +17,7 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   Newspaper: Icons.Newspaper,
   Mail: Icons.Mail,
   MessageSquare: Icons.MessageSquare,
+  Clapperboard: Icons.Clapperboard,
   GraduationCap: Icons.GraduationCap,
   Presentation: Icons.Presentation,
   Users: Icons.Users,

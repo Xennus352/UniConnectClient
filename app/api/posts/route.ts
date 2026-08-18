@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { createServerSupabase } from '@/utils/supabase/server';
 import { getSessionIdentity } from '@/utils/supabase/auth';
-import { moderateContent } from '@/utils/moderate';
+import { moderateContent, type ModerationType } from '@/utils/moderate';
 
 
 export async function POST(request: Request) {
@@ -13,13 +13,23 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => null)) as {
     content?: string;
     image?: string | null;
+    videoUrl?: string | null;
+    videoFrame?: string | null;
     tags?: unknown;
     item_status?: unknown;
     item_location?: unknown;
   } | null;
   const content = (body?.content ?? '').trim();
-  if (!body || (!content && !body.image)) {
-    return NextResponse.json({ message: 'Write something or add a photo first' }, { status: 400 });
+  if (!body || (!content && !body.image && !body.videoUrl)) {
+    return NextResponse.json({ message: 'Write something or add a photo or video first' }, { status: 400 });
+  }
+
+  const videoUrl =
+    typeof body.videoUrl === 'string' && body.videoUrl.trim().startsWith('https://')
+      ? body.videoUrl.trim().slice(0, 2048)
+      : null;
+  if (videoUrl && body.image) {
+    return NextResponse.json({ message: 'A post can have either a photo or a video, not both' }, { status: 400 });
   }
 
   const item_status = body.item_status === 'lost' || body.item_status === 'found' ? body.item_status : null;
@@ -72,18 +82,31 @@ export async function POST(request: Request) {
     }
   }
 
+  const hasLostFound = tagLabels.has('lostfound');
+  const moderationPolicy: 'auto' | 'review' = hasLostFound ? 'review' : 'auto';
+
   const supabase = createServerSupabase() as unknown as SupabaseClient;
   const now = Date.now();
 
+  // Pick the AI model group by media type: text post -> text models, photo
+  // post -> image models, video post -> video models (frame + caption).
+  const moderationType: ModerationType = videoUrl ? 'video' : body.image ? 'image' : 'text';
+  // Client-extracted frame (JPEG data URL) used ONLY for video moderation —
+  // it is never stored; the video itself lives in the post-media bucket.
+  const videoFrame =
+    typeof body.videoFrame === 'string' && body.videoFrame.startsWith('data:') ? body.videoFrame : null;
+
   // AI content filter runs BEFORE the post is stored (filter before upload).
   // Flagged content is never uploaded to the feed.
-  const moderate = await moderateContent(content, body.image ?? null);
+  const moderate = await moderateContent(content, videoUrl ? videoFrame : body.image ?? null, moderationType);
   if (!moderate.safe) {
     return NextResponse.json(
       { message: `Your post was flagged by the AI content filter${moderate.reason ? `: ${moderate.reason}` : ''}` },
       { status: 422 }
     );
   }
+
+  const status = moderationPolicy === 'review' ? 'pending_review' : 'approved';
 
   const { data: post, error } = await supabase
     .from('posts')
@@ -93,11 +116,12 @@ export async function POST(request: Request) {
       author_initials: identity.initials,
       author_role: identity.role,
       content,
-      image: body.image ?? null,
+      image: videoUrl ? null : (body.image ?? null),
+      video_url: videoUrl,
       tags,
       item_status,
       item_location,
-      status: 'pending_review',
+      status,
       ai_flags: null,
       moderation_note: null,
       created_at: now,
@@ -107,16 +131,27 @@ export async function POST(request: Request) {
 
   if (error || !post) return NextResponse.json({ message: error?.message || 'Insert failed' }, { status: 500 });
 
-  // Notify admins (post awaits moderation).
-  await supabase.from('notifications').insert({
-    recipient_role: 'admin',
-    type: 'moderation',
-    message: `New post by ${identity.name} is awaiting moderation`,
-    post_id: post.id,
-    created_at: now,
-  });
+  if (status === 'pending_review') {
+    // Lost & Found posts need a human decision from admin or student affairs.
+    await supabase.from('notifications').insert([
+      {
+        recipient_role: 'admin',
+        type: 'moderation',
+        message: `New Lost & Found post by ${identity.name} is awaiting moderation`,
+        post_id: post.id,
+        created_at: now,
+      },
+      {
+        recipient_role: 'student-affair',
+        type: 'moderation',
+        message: `New Lost & Found post by ${identity.name} is awaiting moderation`,
+        post_id: post.id,
+        created_at: now,
+      },
+    ]);
+  }
 
-  return NextResponse.json({ post, status: 'pending_review' }, { status: 201 });
+  return NextResponse.json({ post, status }, { status: 201 });
 }
 
 export async function GET() {

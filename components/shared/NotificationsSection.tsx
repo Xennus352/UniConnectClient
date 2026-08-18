@@ -92,7 +92,11 @@ export default function NotificationsSection() {
       return;
     }
     if (['like', 'comment', 'share'].includes(n.type)) {
-      router.push(n.post_id ? `${base}/feed?post=${n.post_id}` : `${base}/feed`);
+      if (n.type === 'share' && n.activity_id) {
+        router.push(`${base}/activity?activity=${n.activity_id}`);
+      } else {
+        router.push(n.post_id ? `${base}/feed?post=${n.post_id}` : `${base}/feed`);
+      }
       return;
     }
     if (n.type === 'moderation') {

@@ -7,9 +7,10 @@ interface Props {
   progress: number;
   retrying: boolean;
   attemptsLeft: number;
+  label?: string;
 }
 
-export default function PostImageDownload({ height, progress, retrying, attemptsLeft }: Props) {
+export default function PostImageDownload({ height, progress, retrying, attemptsLeft, label = 'Downloading image…' }: Props) {
   return (
     <div
       className="mt-3 w-full flex flex-col items-center justify-center gap-2"
@@ -17,7 +18,7 @@ export default function PostImageDownload({ height, progress, retrying, attempts
     >
       <div className="flex items-center gap-1.5" style={{ color: 'var(--text-lighter)', fontSize: 11.5 }}>
         <Download size={13} />
-        <span>{retrying ? `Retrying… (${attemptsLeft} attempt${attemptsLeft === 1 ? '' : 's'} left)` : 'Downloading image…'}</span>
+        <span>{retrying ? `Retrying… (${attemptsLeft} attempt${attemptsLeft === 1 ? '' : 's'} left)` : label}</span>
       </div>
       <div
         className="w-full max-w-[70%] h-1.5 overflow-hidden"

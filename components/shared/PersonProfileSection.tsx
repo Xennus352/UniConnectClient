@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeft, BadgeCheck, Ban, MessageSquare, Newspaper, RotateCcw, User } from 'lucide-react';
+import { ArrowLeft, BadgeCheck, Ban, Clapperboard, MessageSquare, Newspaper, Play, RotateCcw, User } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useSupabase } from '@/utils/supabase/client';
 import { uniqueChannelName } from '@/lib/supabase/hooks';
+import type { Activity } from '@/lib/supabase/hooks';
 import { useSession } from './session';
 import FeedPost from './FeedPost';
 import { useUniversityPeople, useUniversityRaw } from './useUniversityPeople';
@@ -43,6 +44,7 @@ export default function PersonProfileSection({ email }: { email: string }) {
   const { users, students, staff, loading: rawLoading } = useUniversityRaw();
 
   const [posts, setPosts] = useState<Post[] | null>(null);
+  const [activities, setActivities] = useState<Activity[] | null>(null);
   const [detail, setDetail] = useState<PersonDetail>(EMPTY_DETAIL);
   const [convId, setConvId] = useState<string | null>(null);
   const [convStatus, setConvStatus] = useState<ConvStatus | null>(null);
@@ -69,6 +71,26 @@ export default function PersonProfileSection({ email }: { email: string }) {
     const ch = supabase
       .channel(uniqueChannelName(`public:posts:author:${email}`))
       .on('postgres_changes', { event: '*', schema: 'public', table: 'posts', filter: `author_email=eq.${email}` }, load)
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [supabase, email]);
+
+  useEffect(() => {
+    if (!email) return;
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('activities')
+        .select('*')
+        .eq('author_email', email)
+        .order('created_at', { ascending: false })
+        .limit(30);
+      if (error) setActivities([]);
+      else setActivities(data ?? []);
+    };
+    load();
+    const ch = supabase
+      .channel(uniqueChannelName(`public:activities:author:${email}`))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activities', filter: `author_email=eq.${email}` }, load)
       .subscribe();
     return () => { supabase.removeChannel(ch); };
   }, [supabase, email]);
@@ -129,7 +151,16 @@ export default function PersonProfileSection({ email }: { email: string }) {
     return () => { supabase.removeChannel(ch); };
   }, [supabase, me, email]);
 
-  const backPath = `/${session?.role ?? 'student'}/feed`;
+  const [backPath] = useState(() => {
+    const role = session?.role ?? 'student';
+    if (typeof window === 'undefined') return `/${role}/feed`;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('back') === 'activity') {
+      const activityId = params.get('activity');
+      return `/${role}/activity${activityId ? `?activity=${activityId}` : ''}`;
+    }
+    return `/${role}/feed`;
+  });
   const roleKey = person?.role.toLowerCase() ?? '';
   const avatarGradient =
     roleKey === 'student' ? 'from-info to-info/70' :
@@ -317,6 +348,58 @@ export default function PersonProfileSection({ email }: { email: string }) {
             <FeedPost post={post} />
           </div>
         ))}
+      </div>
+
+      <div className="bg-base-100 backdrop-blur-xl mt-4" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+        <div className="flex items-center gap-2 px-5 py-4" style={{ borderBottom: '1px solid var(--surface)' }}>
+          <Clapperboard size={16} style={{ color: 'var(--primary)' }} />
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)' }}>Activities</div>
+          {activities && <span className="text-xs" style={{ color: 'var(--text-lighter)' }}>({activities.length})</span>}
+        </div>
+        {!activities && (
+          <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>Loading activities...</div>
+        )}
+        {activities && activities.length === 0 && (
+          <div className="text-center py-10 text-sm" style={{ color: 'var(--text-lighter)' }}>
+            No activities yet.
+          </div>
+        )}
+        {activities && activities.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4">
+            {activities.map((a) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => router.push(`/${session?.role ?? 'student'}/activity?activity=${a.id}`)}
+                className="group relative aspect-video w-full overflow-hidden cursor-pointer text-left"
+                style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', background: 'var(--surface)' }}
+                title={a.caption || undefined}
+              >
+                {a.kind === 'video' && a.media_url && (
+                  <>
+                    <video src={a.media_url} muted preload="metadata" className="w-full h-full object-cover" />
+                    <span className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.25)' }}>
+                      <Play size={22} fill="#fff" color="#fff" />
+                    </span>
+                  </>
+                )}
+                {a.kind === 'photo' && a.media_url && (
+                  <img src={a.media_url} alt={a.caption || 'Activity photo'} loading="lazy" className="w-full h-full object-cover" />
+                )}
+                {(a.kind === 'text' || !a.media_url) && (
+                  <span className="absolute inset-0 p-2.5 text-xs leading-snug overflow-hidden" style={{ color: 'var(--text-light)', display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical' }}>
+                    {a.caption}
+                  </span>
+                )}
+                {a.kind !== 'text' && a.caption && (
+                  <span className="absolute inset-x-0 bottom-0 px-2 pb-1.5 text-[10.5px] text-white truncate" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.65), transparent)' }}>
+                    {a.caption}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

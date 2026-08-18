@@ -17,6 +17,7 @@ interface ToastNotification {
   recipient_email: string | null;
   recipient_role: string | null;
   post_id?: string | null;
+  activity_id?: string | null;
 }
 
 const TYPE_META: Record<string, { icon: React.ReactNode }> = {
@@ -42,6 +43,7 @@ function destinationFor(n: ToastNotification, role: string): { path: string } | 
     case 'like':
     case 'comment':
     case 'share':
+      if (n.type === 'share' && n.activity_id) return { path: `${base}/activity` };
       return { path: `${base}/feed` };
     case 'follow':
       return { path: `${base}/notifications` };

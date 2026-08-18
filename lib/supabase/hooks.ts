@@ -108,7 +108,7 @@ export function usePendingPosts(supabase: TypedSupabaseClient) {
     const { data, error } = await supabase
       .from('posts')
       .select(
-        'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+        'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location,video_url'
       )
       .in('status', PENDING_STATUSES)
       .order('created_at', { ascending: false })
@@ -132,7 +132,7 @@ export function usePendingPosts(supabase: TypedSupabaseClient) {
       const { data, error } = await supabase
         .from('posts')
         .select(
-          'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+          'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location,video_url'
         )
         .in('status', PENDING_STATUSES)
         .order('created_at', { ascending: false })
@@ -208,7 +208,7 @@ export function useFeedPosts(supabase: TypedSupabaseClient) {
         supabase
           .from('posts')
           .select(
-            'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+            'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location,video_url'
           )
           .eq('status', 'approved')
           .order('created_at', { ascending: false })
@@ -269,7 +269,7 @@ export function useFeedPosts(supabase: TypedSupabaseClient) {
         supabase
           .from('posts')
           .select(
-            'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location'
+            'id,author_email,author_name,author_initials,author_role,content,tags,status,ai_flags,moderation_note,created_at,updated_at,likes_count,comments_count,shares_count,item_status,item_location,video_url'
           )
           .eq('status', 'approved')
           .order('created_at', { ascending: false })
@@ -693,6 +693,190 @@ export function useNotifications(supabase: TypedSupabaseClient, recipientEmail: 
 }
 
 export type { Post, Comment, Conversation, ChatMessage, Notification, ConvMeta, ChatMeta, ParticipantMeta };
+
+type Activity = Database['public']['Tables']['activities']['Row'];
+type ActivityLike = Database['public']['Tables']['activity_likes']['Row'];
+type ActivityComment = Database['public']['Tables']['activity_comments']['Row'];
+
+const ACTIVITIES_PAGE_SIZE = 20;
+
+export function useActivities(supabase: TypedSupabaseClient) {
+  const [items, setItems] = useState<Activity[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [hasError, setHasError] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    const load = async () => {
+      const { data, error } = await withRetry(() =>
+        supabase
+          .from('activities')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(ACTIVITIES_PAGE_SIZE)
+      );
+      if (error) {
+        logFetchError('Activities fetch error (2 attempts failed):', error);
+        setHasError(true);
+        setItems((prev) => prev ?? []);
+        setHasMore(false);
+      }
+      else { setHasError(false); setItems((data ?? []) as Activity[]); setHasMore((data?.length ?? 0) === ACTIVITIES_PAGE_SIZE); }
+      setLoading(false);
+    };
+    void load();
+
+    const channel = supabase
+      .channel(uniqueChannelName('public:activities'))
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'activities' }, (payload) => {
+        setItems((prev) => {
+          if (!prev) return prev;
+          const row = payload.new as Partial<Activity>;
+          if (!row.id || prev.some((a) => a.id === row.id)) return prev;
+          return [row as Activity, ...prev];
+        });
+      })
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'activities' }, (payload) => {
+        setItems((prev) => (prev ?? []).filter((a) => a.id !== (payload.old as Activity).id));
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase, attempt]);
+
+  const refresh = useCallback(() => {
+    setHasError(false);
+    setLoading(true);
+    setAttempt((a) => a + 1);
+  }, []);
+
+  const loadMore = useCallback(async () => {
+    if (loadingMore || !hasMore || !items || items.length === 0) return;
+    setLoadingMore(true);
+    const last = items[items.length - 1];
+    const { data, error } = await withRetry(
+      () =>
+        supabase
+          .from('activities')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .lt('created_at', last.created_at)
+          .limit(ACTIVITIES_PAGE_SIZE),
+      2,
+      600
+    );
+    if (error) {
+      logFetchError('Activities load-more error (2 attempts failed):', error);
+    } else if (data) {
+      setItems((prev) => {
+        const existing = new Set((prev ?? []).map((a) => a.id));
+        return [...(prev ?? []), ...(data.filter((a) => !existing.has(a.id)) as Activity[])];
+      });
+      setHasMore(data.length === ACTIVITIES_PAGE_SIZE);
+    }
+    setLoadingMore(false);
+  }, [loadingMore, hasMore, items, supabase]);
+
+  return { activities: items, loading, loadingMore, hasMore, loadMore, hasError, refresh };
+}
+
+export function useActivityShares(supabase: TypedSupabaseClient, activityId: string) {
+  const [shares, setShares] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('activities')
+      .select('shares_count')
+      .eq('id', activityId)
+      .single()
+      .then(({ data, error }) => {
+        if (cancelled || error) return;
+        setShares((data?.shares_count as number) ?? 0);
+      });
+    const channel = supabase
+      .channel(uniqueChannelName(`public:activities:shares:${activityId}`))
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'activities', filter: `id=eq.${activityId}` }, (payload) => {
+        setShares((payload.new as Activity)?.shares_count ?? 0);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); cancelled = true; };
+  }, [supabase, activityId]);
+  return { shares, loading: shares === null };
+}
+
+export function useActivityLikes(supabase: TypedSupabaseClient, activityId: string, meEmail: string) {
+  const [liked, setLiked] = useState(false);
+  const [likes, setLikes] = useState<number | null>(null);
+  const me = meEmail.toLowerCase();
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('activity_likes')
+      .select('user_email')
+      .eq('activity_id', activityId)
+      .then(({ data }) => {
+        if (cancelled) return;
+        setLikes(data?.length ?? 0);
+        setLiked(data?.some((l) => (l.user_email ?? '').toLowerCase() === me) ?? false);
+      });
+    const channel = supabase
+      .channel(uniqueChannelName(`public:activity_likes:activity:${activityId}`))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_likes', filter: `activity_id=eq.${activityId}` }, (payload) => {
+        setLikes((prev) => {
+          if (prev === null) return prev;
+          if (payload.eventType === 'INSERT') return prev + 1;
+          if (payload.eventType === 'DELETE') return Math.max(prev - 1, 0);
+          return prev;
+        });
+        const row = payload.new as ActivityLike | undefined;
+        if (payload.eventType === 'INSERT' && (row?.user_email ?? '').toLowerCase() === me) setLiked(true);
+        if (payload.eventType === 'DELETE' && ((payload.old as ActivityLike)?.user_email ?? '').toLowerCase() === me) setLiked(false);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); cancelled = true; };
+  }, [supabase, activityId, me]);
+  return { liked, likes, loading: likes === null };
+}
+
+export function useActivityComments(supabase: TypedSupabaseClient, activityId: string) {
+  const [comments, setComments] = useState<ActivityComment[] | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    const load = async () => {
+      const { data, error } = await supabase
+        .from('activity_comments')
+        .select('*')
+        .eq('activity_id', activityId)
+        .order('created_at', { ascending: true })
+        .limit(100);
+      if (error) setComments([]);
+      else setComments(data ?? []);
+      setLoading(false);
+    };
+    void load();
+    const channel = supabase
+      .channel(uniqueChannelName(`public:activity_comments:activity:${activityId}`))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_comments', filter: `activity_id=eq.${activityId}` }, (payload) => {
+        setComments((prev) => {
+          if (!prev) return prev;
+          if (payload.eventType === 'INSERT') {
+            const c = payload.new as ActivityComment;
+            if (prev.some((x) => x.id === c.id)) return prev;
+            return [...prev, c].sort((a, b) => a.created_at - b.created_at);
+          }
+          if (payload.eventType === 'DELETE') return prev.filter((c) => c.id !== (payload.old as ActivityComment).id);
+          return prev.map((c) => (c.id === (payload.new as ActivityComment)?.id ? (payload.new as ActivityComment) : c));
+        });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [supabase, activityId]);
+  return { comments, loading };
+}
+
+export type { Activity, ActivityComment };
 
 type EventRow = Database['public']['Tables']['events']['Row'];
 type EventRegistration = Database['public']['Tables']['event_registrations']['Row'];

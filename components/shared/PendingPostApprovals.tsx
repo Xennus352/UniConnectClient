@@ -192,7 +192,7 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
             <Check size={26} style={{ color: 'var(--success)' }} />
           </div>
           <p className="text-sm font-semibold" style={{ color: 'var(--text-light)' }}>All caught up! No pending posts requiring approval.</p>
-          <p className="text-xs mt-1" style={{ color: 'var(--text-lighter)' }}>New student posts will appear here instantly</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-lighter)' }}>New Lost &amp; Found posts will appear here instantly</p>
         </div>
       )}
 
@@ -237,6 +237,14 @@ export default function PendingPostApprovals({ viewAllHref }: { viewAllHref?: st
             <img
               src={post.image}
               alt=""
+              className="rounded-xl w-full object-cover mt-3"
+              style={{ maxHeight: 150, border: '1px solid var(--surface-border)' }}
+            />
+          ) : post.video_url ? (
+            <video
+              src={post.video_url}
+              controls
+              playsInline
               className="rounded-xl w-full object-cover mt-3"
               style={{ maxHeight: 150, border: '1px solid var(--surface-border)' }}
             />

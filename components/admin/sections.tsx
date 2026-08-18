@@ -33,6 +33,7 @@ import type {
 } from '@/components/shared/types';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { default as ActivitySection } from '@/components/shared/ActivitySection';
 export { default as LostFoundSection } from '@/components/shared/LostFoundSection';
 export { default as AnnouncementsSection } from '@/components/shared/AnnouncementsSection';
 import BlockedSection from '@/components/shared/BlockedSection';

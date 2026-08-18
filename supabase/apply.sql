@@ -367,3 +367,134 @@ end $$;
 -- server-side authorization in API routes; RLS blocks all reads otherwise)
 alter table public.exam_results disable row level security;
 alter table public.exam_result_batches disable row level security;
+
+------------------------------------------------------------
+-- Activities (TikTok-style vertical feed) — see
+-- migrations/20260827000000_activities.sql
+------------------------------------------------------------
+create table if not exists public.activities (
+  id              uuid primary key default gen_random_uuid(),
+  author_email    text not null,
+  author_name     text not null,
+  author_initials text not null,
+  author_role     text not null,
+  kind            text not null default 'text', -- video | photo | text
+  caption         text,
+  media_url       text,
+  created_at      bigint not null default (extract(epoch from now()) * 1000),
+  likes_count     int not null default 0,
+  comments_count  int not null default 0,
+  shares_count    int not null default 0
+);
+create index if not exists idx_activities_created on public.activities (created_at desc);
+create index if not exists idx_activities_author on public.activities (author_email);
+
+create table if not exists public.activity_likes (
+  id          uuid primary key default gen_random_uuid(),
+  activity_id uuid references public.activities on delete cascade,
+  user_email  text not null,
+  created_at  bigint not null default (extract(epoch from now()) * 1000)
+);
+create unique index if not exists idx_activity_likes_unique on public.activity_likes (activity_id, user_email);
+
+create table if not exists public.activity_comments (
+  id              uuid primary key default gen_random_uuid(),
+  activity_id     uuid references public.activities on delete cascade,
+  author_email    text not null,
+  author_name     text not null,
+  author_initials text not null,
+  content         text not null,
+  created_at      bigint not null default (extract(epoch from now()) * 1000),
+  updated_at      bigint not null default (extract(epoch from now()) * 1000)
+);
+create index if not exists idx_activity_comments_activity on public.activity_comments (activity_id, created_at);
+
+create table if not exists public.activity_shares (
+  id           uuid primary key default gen_random_uuid(),
+  activity_id  uuid references public.activities on delete cascade,
+  sharer_email text not null,
+  sharer_name  text not null,
+  recipients   jsonb not null default '[]'::jsonb,
+  created_at   bigint not null default (extract(epoch from now()) * 1000)
+);
+create index if not exists idx_activity_shares_activity on public.activity_shares (activity_id, created_at);
+
+insert into storage.buckets (id, name, public) values ('activity-media', 'activity-media', true) on conflict (id) do nothing;
+drop policy if exists "activity-media upload" on storage.objects;
+create policy "activity-media upload" on storage.objects
+  for insert to anon, authenticated with check (bucket_id = 'activity-media');
+drop policy if exists "activity-media update" on storage.objects;
+create policy "activity-media update" on storage.objects
+  for update to anon, authenticated using (bucket_id = 'activity-media') with check (bucket_id = 'activity-media');
+drop policy if exists "activity-media delete" on storage.objects;
+create policy "activity-media delete" on storage.objects
+  for delete to anon, authenticated using (bucket_id = 'activity-media');
+drop policy if exists "activity-media read" on storage.objects;
+create policy "activity-media read" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'activity-media');
+
+grant select, insert, update, delete on
+  public.activities,
+  public.activity_likes,
+  public.activity_comments,
+  public.activity_shares
+  to anon, authenticated;
+grant usage on all sequences in schema public to anon, authenticated;
+
+alter table public.activity_likes replica identity full;
+alter table public.activity_comments replica identity full;
+
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'activities', 'activity_likes', 'activity_comments', 'activity_shares'
+  ]
+  loop
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = t
+    ) then
+      execute format('alter publication supabase_realtime add table public.%I', t);
+    end if;
+  end loop;
+end $$;
+
+alter table public.activities disable row level security;
+alter table public.activity_likes disable row level security;
+alter table public.activity_comments disable row level security;
+alter table public.activity_shares disable row level security;
+
+-- ============================================================================
+-- Migrations added later (paste above if you already ran the old file once):
+--   migrations/20260818000000_events.sql           (events + event_registrations)
+--   migrations/20260820000000_exam_results.sql     (exam_results)
+--   migrations/20260821000000_exam_result_batches.sql (exam_result_batches)
+--   migrations/20260825000000_event_images.sql     (events.image_url + event-images bucket)
+--   migrations/20260827000000_activities.sql       (activities + activity-media bucket)
+--   migrations/20260829000000_post_video.sql       (posts.video_url + post-media bucket)
+-- ============================================================================
+
+-- posts.video_url + post-media bucket (migration 20260829000000)
+alter table public.posts add column if not exists video_url text;
+
+insert into storage.buckets (id, name, public) values ('post-media', 'post-media', true) on conflict (id) do nothing;
+
+drop policy if exists "post-media upload" on storage.objects;
+create policy "post-media upload" on storage.objects
+  for insert to anon, authenticated with check (bucket_id = 'post-media');
+
+drop policy if exists "post-media update" on storage.objects;
+create policy "post-media update" on storage.objects
+  for update to anon, authenticated using (bucket_id = 'post-media') with check (bucket_id = 'post-media');
+
+drop policy if exists "post-media delete" on storage.objects;
+create policy "post-media delete" on storage.objects
+  for delete to anon, authenticated using (bucket_id = 'post-media');
+
+drop policy if exists "post-media read" on storage.objects;
+create policy "post-media read" on storage.objects
+  for select to anon, authenticated using (bucket_id = 'post-media');
+
+-- notifications.activity_id (migration 20260831000000)
+alter table public.notifications add column if not exists activity_id text;

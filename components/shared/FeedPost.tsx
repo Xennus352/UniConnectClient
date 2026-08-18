@@ -3,9 +3,10 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Link from 'next/link';
-import { Heart, MessageCircle, Share2, CircleCheck, Send, Pencil, Trash2, X, Check, Reply, ImageOff } from 'lucide-react';
+import { Heart, MessageCircle, Share2, CircleCheck, Send, Pencil, Trash2, X, Check, Reply, ImageOff, VideoOff } from 'lucide-react';
 import { useSupabase } from '@/utils/supabase/client';
 import { usePostImageDownload } from '@/lib/supabase/usePostImage';
+import { usePostVideoDownload } from '@/lib/supabase/usePostVideo';
 import PostImageDownload from './PostImageDownload';
 import ImageLightbox from './ImageLightbox';
 import LikersModal from './LikersModal';
@@ -78,6 +79,30 @@ function PostImage({ postId }: { postId: string }) {
         />
       )}
     </>
+  );
+}
+
+function PostVideo({ videoUrl }: { videoUrl: string }) {
+  const { src, phase, progress, attemptsLeft } = usePostVideoDownload(videoUrl);
+  return (
+    <div
+      className="mt-3 overflow-hidden flex justify-center"
+      style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}
+    >
+      {phase === 'done' && src ? (
+        <video src={src} controls playsInline className="max-w-full" style={{ maxHeight: 480 }} />
+      ) : phase === 'failed' ? (
+        <div
+          className="w-full flex flex-col items-center justify-center gap-1"
+          style={{ height: 200, borderRadius: 'var(--radius-md)', border: '1px dashed var(--surface-border)', background: 'var(--divider-soft)', color: 'var(--text-lighter)', fontSize: 12 }}
+        >
+          <VideoOff size={18} />
+          <span>Video unavailable</span>
+        </div>
+      ) : (
+        <PostImageDownload height={200} progress={progress} retrying={phase === 'retrying'} attemptsLeft={attemptsLeft} label="Downloading video…" />
+      )}
+    </div>
   );
 }
 
@@ -360,7 +385,9 @@ export default function FeedPost({ post }: FeedPostProps) {
             </div>
           </div>
         )}
-        {post.image ? (
+        {post.video_url ? (
+          <PostVideo videoUrl={post.video_url} />
+        ) : post.image ? (
           <div
             className="mt-3 overflow-hidden flex justify-center"
             style={{ borderRadius: 'var(--radius-md)', border: '1px solid var(--surface-border)', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}

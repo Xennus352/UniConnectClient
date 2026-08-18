@@ -26,6 +26,7 @@ type PostRow = {
   author_role: string;
   content: string;
   image?: string | null;
+  video_url?: string | null;
   tags: { label: string; color: string; emoji?: string }[];
   created_at: number;
   ai_flags?: string | null;
@@ -108,7 +109,7 @@ export default function ModerationSection() {
           <ShieldCheck size={36} className="mx-auto mb-3 opacity-40" style={{ color: 'var(--success)' }} />
           <p className="text-sm" style={{ color: 'var(--text-light)' }}>No posts awaiting review</p>
           <p className="text-xs mt-1" style={{ color: 'var(--text-lighter)' }}>
-            Posts that pass the AI content filter land here for approval
+            Lost &amp; Found posts that pass the AI content filter land here for approval
           </p>
         </div>
       )}
@@ -137,6 +138,11 @@ export default function ModerationSection() {
           {post.image && (
             <div className="px-5 pb-2">
               <img src={post.image} alt="" className="rounded-xl w-full object-cover" style={{ maxHeight: 260, border: '1px solid var(--surface-border)' }} />
+            </div>
+          )}
+          {post.video_url && (
+            <div className="px-5 pb-2">
+              <video src={post.video_url} controls playsInline className="rounded-xl w-full object-cover" style={{ maxHeight: 260, border: '1px solid var(--surface-border)' }} />
             </div>
           )}
           {post.tags.length > 0 && (

@@ -31,6 +31,7 @@ export interface Database {
           author_role: string;
           content: string;
           image: string | null;
+          video_url: string | null;
           tags: Json;
           status: string;
           ai_flags: string | null;
@@ -56,6 +57,7 @@ export interface Database {
         Update: {
           content?: string;
           image?: string | null;
+          video_url?: string | null;
           tags?: Json;
           status?: string;
           ai_flags?: string | null;
@@ -117,6 +119,83 @@ export interface Database {
         > &
           Pick<{ content: string }, 'content'>;
         Update: { content?: string; updated_at?: number; deleted_at?: number | null };
+        Relationships: [];
+      };
+      activities: {
+        Row: {
+          id: string;
+          author_email: string;
+          author_name: string;
+          author_initials: string;
+          author_role: string;
+          kind: string;
+          caption: string | null;
+          media_url: string | null;
+          created_at: number;
+          likes_count: number;
+          comments_count: number;
+          shares_count: number;
+        };
+        Insert: Pick<
+          {
+            author_email: string;
+            author_name: string;
+            author_initials: string;
+            author_role: string;
+          },
+          'author_email' | 'author_name' | 'author_initials' | 'author_role'
+        > &
+          Partial<{ kind: string; caption: string | null; media_url: string | null; created_at: number; likes_count: number; comments_count: number; shares_count: number }>;
+        Update: Partial<{ kind: string; caption: string | null; media_url: string | null; likes_count: number; comments_count: number; shares_count: number }>;
+        Relationships: [];
+      };
+      activity_likes: {
+        Row: { id: string; activity_id: string; user_email: string; created_at: number };
+        Insert: { activity_id: string; user_email: string };
+        Update: Record<string, never>;
+        Relationships: [];
+      };
+      activity_comments: {
+        Row: {
+          id: string;
+          activity_id: string;
+          author_email: string;
+          author_name: string;
+          author_initials: string;
+          content: string;
+          created_at: number;
+          updated_at: number;
+        };
+        Insert: Pick<
+          {
+            activity_id: string;
+            author_email: string;
+            author_name: string;
+            author_initials: string;
+          },
+          'activity_id' | 'author_email' | 'author_name' | 'author_initials'
+        > &
+          Pick<{ content: string }, 'content'>;
+        Update: { content?: string; updated_at?: number };
+        Relationships: [];
+      };
+      activity_shares: {
+        Row: {
+          id: string;
+          activity_id: string;
+          sharer_email: string;
+          sharer_name: string;
+          recipients: Json;
+          created_at: number;
+        };
+        Insert: {
+          activity_id: string;
+          sharer_email: string;
+          sharer_name: string;
+          recipients?: Json | null;
+          created_at?: number | null;
+        };
+        Update: { recipients?: Json | null };
         Relationships: [];
       };
       conversations: {
@@ -214,6 +293,7 @@ export interface Database {
           read: boolean;
           created_at: number;
           post_id: string | null;
+          activity_id: string | null;
           conversation_id: string | null;
           actor_email: string | null;
           actor_name: string | null;
@@ -226,6 +306,7 @@ export interface Database {
           created_at?: number | null;
           read?: boolean | null;
           post_id?: string | null;
+          activity_id?: string | null;
           conversation_id?: string | null;
           actor_email?: string | null;
           actor_name?: string | null;

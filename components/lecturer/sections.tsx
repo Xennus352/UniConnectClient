@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSupabase } from '@/utils/supabase/client';
 import { useFeedPosts, useConversations } from '@/lib/supabase/hooks';
 import WelcomeBar from '@/components/shared/WelcomeBar';
@@ -21,6 +21,7 @@ import {
   Search, MessageSquare, Newspaper,
   Filter, Download, Plus, Check, X, Eye, Users, Ban,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import type { StudentData, RollCallData } from '@/components/shared/types';
 import { apiFetch, markAttendance } from '@/components/shared/api';
 import type {
@@ -30,6 +31,7 @@ import type {
 import { useUniversityData } from '@/components/shared/useUniversityData';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { default as ActivitySection } from '@/components/shared/ActivitySection';
 
 import BlockedSection from '@/components/shared/BlockedSection';
 
@@ -155,11 +157,111 @@ export function Dashboard() {
   );
 }
 
+function ordinalLabel(n: number): string {
+  return ['1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th'][n - 1] ?? `${n}th`;
+}
+
+function StudentInfoModal({ student, onClose }: { student: StudentRecord; onClose: () => void }) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = dialogRef.current;
+    if (d && !d.open) d.showModal();
+  }, []);
+  const fields: Array<{ label: string; value: string }> = [
+    { label: 'Roll No', value: student.rollNo },
+    { label: 'Major', value: student.majorCode },
+    { label: 'Semester', value: ordinalLabel(student.semesterNo) },
+    { label: 'Section', value: student.sectionName || '—' },
+    { label: 'Academic Year', value: student.academicYear ? `${student.academicYear}` : '—' },
+    { label: 'Phone', value: student.phoneNo || '—' },
+    { label: 'Address', value: student.address || '—' },
+  ];
+  return (
+    <>
+      <style>{`
+        dialog.sim-pop::backdrop { background: rgba(4, 10, 16, 0.55); animation: sim-fade 0.2s ease-out; }
+        dialog.sim-pop[open] { animation: sim-pop 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
+        @keyframes sim-fade { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes sim-pop { from { opacity: 0; transform: scale(0.94) translateY(8px); } to { opacity: 1; transform: none; } }
+      `}</style>
+      <dialog
+        ref={dialogRef}
+        className="sim-pop"
+        onClick={(e) => { if (e.target === dialogRef.current) onClose(); }}
+        style={{
+          border: '1px solid var(--surface-border)',
+          borderRadius: 'var(--radius-lg)',
+          background: 'var(--modal-bg)',
+          color: 'var(--text)',
+          padding: 0,
+          margin: 'auto',
+          width: 'min(420px, calc(100vw - 32px))',
+          maxHeight: 'min(520px, calc(100vh - 64px))',
+          boxShadow: '0 24px 64px rgba(0,0,0,0.5)',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--surface)', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div className="w-11 h-11 rounded-full bg-gradient-to-br from-info to-info/70 flex items-center justify-center text-white font-bold text-sm shrink-0">{initialsOf(student.studentName)}</div>
+          <div className="flex-1 min-w-0">
+            <h3 style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{student.studentName}</h3>
+            <div style={{ fontSize: 12, color: 'var(--text-light)' }}>{student.email}</div>
+          </div>
+          <button
+            onClick={(e) => { e.stopPropagation(); onClose(); }}
+            aria-label="Close"
+            className="cursor-pointer border-none flex items-center justify-center transition-transform duration-200 hover:scale-110 hover:rotate-90 shrink-0"
+            style={{ color: 'var(--text-light)', background: 'none', padding: 4 }}
+          >
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ padding: '18px 20px', display: 'grid', gap: 10 }}>
+          {fields.map((f) => (
+            <div key={f.label} className="flex items-start justify-between gap-4" style={{ paddingBottom: 10, borderBottom: '1px solid var(--divider)' }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-lighter)', textTransform: 'uppercase', letterSpacing: '0.4px' }}>{f.label}</span>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', textAlign: 'right', wordBreak: 'break-word' }}>{f.value}</span>
+            </div>
+          ))}
+        </div>
+      </dialog>
+    </>
+  );
+}
+
 export function StudentsSection() {
   const { data, loading, error } = useUniversityData<StudentRecord[]>(
     useCallback(() => apiFetch<StudentRecord[]>('/api/students'), [])
   );
-  const rows: StudentData[] = (data ?? []).map((s) => ({
+  const router = useRouter();
+  const { user: session } = useSession();
+  const [query, setQuery] = useState('');
+  const [course, setCourse] = useState('all');
+  const [semester, setSemester] = useState('all');
+  const [viewing, setViewing] = useState<StudentRecord | null>(null);
+
+  const students = useMemo(() => data ?? [], [data]);
+
+  const courseOptions = useMemo(() => [...new Set(students.map((s) => s.majorCode).filter(Boolean))].sort(), [students]);
+  const semesterOptions = useMemo(
+    () => [...new Set(students.map((s) => s.semesterNo).filter((n) => n > 0))].sort((a, b) => a - b),
+    [students]
+  );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return students.filter((s) => {
+      if (course !== 'all' && s.majorCode !== course) return false;
+      if (semester !== 'all' && s.semesterNo !== Number(semester)) return false;
+      if (q) {
+        const haystack = `${s.studentName} ${s.rollNo} ${s.email} ${s.majorCode} ${s.semesterNo}`.toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [students, query, course, semester]);
+
+  const rows: (StudentData & { student: StudentRecord })[] = filtered.map((s) => ({
     name: s.studentName,
     initials: initialsOf(s.studentName),
     color: 'from-info to-info/70',
@@ -167,8 +269,29 @@ export function StudentsSection() {
     major: s.majorCode,
     majorColor: 'badge-primary',
     email: s.email,
-    semester: `${s.semesterNo}`,
+    semester: ordinalLabel(s.semesterNo),
+    student: s,
   }));
+
+  const openMessages = useCallback(async (student: StudentRecord) => {
+    if (!session) return;
+    try {
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          otherEmail: student.email,
+          otherName: student.studentName,
+          otherInitials: initialsOf(student.studentName),
+        }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ message: 'Could not start conversation' }))).message);
+      const { conversationId } = await res.json();
+      router.push(`/${session?.role ?? 'student'}/messages?conv=${conversationId}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not start conversation');
+    }
+  }, [router, session]);
 
   return (
     <div>
@@ -177,37 +300,94 @@ export function StudentsSection() {
           University server unreachable — retrying…
         </div>
       )}
-      {loading && !data && <div style={{ fontSize: 13, color: 'var(--text-light)', marginBottom: 12 }}>Loading...</div>}
       <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Students</h1>
       <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Manage and view your enrolled students</p>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
-        <StatCard icon={<Users size={20} />} iconBgClass="bg-primary/10 text-primary" value={data?.length ?? 0} label="Total Students" trend="Across courses" />
-        <StatCard icon={<Check size={20} />} iconBgClass="bg-success/10 text-success" value={data?.length ?? 0} label="Active" trend="All enrolled" />
-        <StatCard icon={<X size={20} />} iconBgClass="bg-error/10 text-error" value={0} label="Pending" trend="Need review" />
-      </div>
+      {loading && !data ? (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+            {[0, 1, 2].map((i) => (
+              <div key={i} className="bg-base-100 backdrop-blur-xl p-5" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-strong)', boxShadow: 'var(--shadow-sm)' }}>
+                <div className="flex items-center justify-between mb-3">
+                  <div className="w-11 h-11 rounded-[var(--radius-md)] bg-base-300 animate-pulse" />
+                  <div className="h-5 w-20 rounded-full bg-base-300 animate-pulse" />
+                </div>
+                <div className="h-7 w-16 rounded-md bg-base-300 animate-pulse" />
+                <div className="mt-3 h-3.5 w-28 rounded bg-base-300 animate-pulse" />
+              </div>
+            ))}
+          </div>
+          <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+            <div style={{ padding: '18px 22px' }}>
+              <div className="flex items-center gap-3 mb-[18px] flex-wrap">
+                <div className="h-10 flex-1 min-w-[200px] rounded-[var(--radius-sm)] bg-base-300 animate-pulse" />
+                <div className="h-10 w-[140px] rounded-[var(--radius-sm)] bg-base-300 animate-pulse" />
+                <div className="h-10 w-[140px] rounded-[var(--radius-sm)] bg-base-300 animate-pulse" />
+              </div>
+              <div className="flex items-center gap-6 px-4 py-3" style={{ borderBottom: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)' }}>
+                <div className="h-3 w-24 rounded bg-base-300 animate-pulse" />
+                <div className="h-3 w-16 rounded bg-base-300 animate-pulse" />
+                <div className="h-3 w-14 rounded bg-base-300 animate-pulse" />
+                <div className="h-3 w-20 rounded bg-base-300 animate-pulse" />
+                <div className="h-3 w-10 rounded bg-base-300 animate-pulse ml-auto" />
+              </div>
+              {Array.from({ length: 7 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-6 px-4 py-[14px]" style={{ borderBottom: '1px solid var(--divider)' }}>
+                  <div className="flex items-center gap-3 flex-1">
+                    <div className="w-8 h-8 rounded-full bg-base-300 animate-pulse shrink-0" />
+                    <div className="space-y-2">
+                      <div className="h-3.5 w-44 rounded bg-base-300 animate-pulse" />
+                      <div className="h-3 w-32 rounded bg-base-300 animate-pulse" />
+                    </div>
+                  </div>
+                  <div className="h-3.5 w-20 rounded bg-base-300 animate-pulse" />
+                  <div className="h-5 w-14 rounded-full bg-base-300 animate-pulse" />
+                  <div className="h-3.5 w-8 rounded bg-base-300 animate-pulse" />
+                  <div className="ml-auto flex gap-2">
+                    <div className="h-6 w-6 rounded bg-base-300 animate-pulse" />
+                    <div className="h-6 w-6 rounded bg-base-300 animate-pulse" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-5">
+            <StatCard icon={<Users size={20} />} iconBgClass="bg-primary/10 text-primary" value={data?.length ?? 0} label="Total Students" trend="Across courses" />
+            <StatCard icon={<Check size={20} />} iconBgClass="bg-success/10 text-success" value={data?.length ?? 0} label="Active" trend="All enrolled" />
+            <StatCard icon={<X size={20} />} iconBgClass="bg-error/10 text-error" value={0} label="Pending" trend="Need review" />
+          </div>
       <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
         <div style={{ padding: '18px 22px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 3, marginBottom: 18, flexWrap: 'wrap' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--secondary-lighter)', flex: 1, minWidth: 200 }}>
               <Search size={14} style={{ color: 'var(--text-light)' }} />
-              <input type="text" placeholder="Search students..." style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', width: '100%' }} />
+              <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by name, roll no, email, or major..."
+                style={{ border: 'none', background: 'transparent', outline: 'none', fontSize: 13, color: 'var(--text)', width: '100%' }}
+              />
             </div>
-            <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, cursor: 'pointer', minWidth: 140 }}>
-              <option>All Courses</option>
-              <option>CS-401</option>
-              <option>CS-402</option>
-              <option>CS-403</option>
+            <select value={course} onChange={(e) => setCourse(e.target.value)} style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, cursor: 'pointer', minWidth: 140 }}>
+              <option value="all">All Courses</option>
+              {courseOptions.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
-            <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, cursor: 'pointer', minWidth: 140 }}>
-              <option>All Semesters</option>
-              <option>1st</option>
-              <option>2nd</option>
-              <option>3rd</option>
-              <option>4th</option>
+            <select value={semester} onChange={(e) => setSemester(e.target.value)} style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, cursor: 'pointer', minWidth: 140 }}>
+              <option value="all">All Semesters</option>
+              {semesterOptions.map((s) => (
+                <option key={s} value={s}>{ordinalLabel(s)}</option>
+              ))}
             </select>
           </div>
           {rows.length === 0 ? (
-            <div style={{ padding: '18px 22px', fontSize: 13, color: 'var(--text-lighter)' }}>No students yet</div>
+            <div style={{ padding: '18px 22px', fontSize: 13, color: 'var(--text-lighter)' }}>
+              {students.length > 0 ? 'No students match your search or filters' : 'No students yet'}
+            </div>
           ) : (
             <DataTable
               columns={[
@@ -229,26 +409,35 @@ export function StudentsSection() {
                   }}>{v}</span>
                 )},
                 { key: 'semester', label: 'Semester', render: (v: string) => <span style={{ fontSize: 12.5, fontWeight: 500 }}>{v}</span> },
-                { key: 'actions', label: '', render: () => (
+                { key: 'actions', label: '', render: (_: string | number, row: StudentData) => {
+                  const st = (row as StudentData & { student: StudentRecord }).student;
+                  return (
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button
+                      title="View student"
+                      onClick={() => setViewing(st)}
                       style={{ background: 'transparent', color: 'var(--text-light)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface)'; e.currentTarget.style.color = 'var(--primary)'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-light)'; }}
                     ><Eye size={14} /></button>
                     <button
+                      title="Message student"
+                      onClick={() => void openMessages(st)}
                       style={{ background: 'transparent', color: 'var(--text-light)', border: 'none', borderRadius: 'var(--radius-sm)', padding: '6px 10px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
                       onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--surface)'; e.currentTarget.style.color = 'var(--primary)'; }}
                       onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--text-light)'; }}
                     ><MessageSquare size={14} /></button>
                   </div>
-                )},
+                );}},
               ]}
               data={rows}
             />
           )}
         </div>
       </div>
+        </>
+      )}
+      {viewing && <StudentInfoModal student={viewing} onClose={() => setViewing(null)} />}
     </div>
   );
 }

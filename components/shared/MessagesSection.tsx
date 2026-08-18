@@ -64,6 +64,7 @@ interface SharedPostData {
   image?: string | null;
   created_at?: number;
   tags?: unknown;
+  activity?: boolean;
 }
 
 type SharedPostEntry = { kind: 'post'; post: SharedPostData };
@@ -86,6 +87,7 @@ function normalizeAttachments(raw: unknown): MessageAttachment[] | undefined {
           image: (post.image ?? null) as string | null,
           created_at: post.created_at as number | undefined,
           tags: post.tags as unknown,
+          activity: post.activity === true,
         },
       } as SharedPostEntry;
     }
@@ -224,7 +226,8 @@ function MessageAttachments({ convId, attachments, mine }: { convId: string; att
 
 function SharedPostCard({ data, mine }: { data: SharedPostData; mine: boolean }) {
   const { user: session } = useSession();
-  const href = `/${session?.role ?? ''}/feed?post=${data.id}`;
+  const base = `/${session?.role ?? ''}`;
+  const href = data.activity ? `${base}/activity?activity=${data.id}` : `${base}/feed?post=${data.id}`;
   const tags = Array.isArray(data.tags) ? (data.tags as { label: string; emoji?: string }[]) : [];
   return (
     <Link
@@ -236,7 +239,7 @@ function SharedPostCard({ data, mine }: { data: SharedPostData; mine: boolean })
         className="flex items-center gap-1.5 px-2.5 py-1.5"
         style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: 0.5, textTransform: 'uppercase', color: mine ? 'rgba(255,255,255,0.9)' : 'var(--primary)', borderBottom: `1px solid ${mine ? 'rgba(255,255,255,0.2)' : 'var(--surface)'}` }}
       >
-        <Share2 size={11} /> Shared post
+        <Share2 size={11} /> {data.activity ? 'Shared activity' : 'Shared post'}
       </div>
       {data.image && (
         <img
@@ -264,7 +267,7 @@ function SharedPostCard({ data, mine }: { data: SharedPostData; mine: boolean })
         )}
       </div>
       <div style={{ padding: '0 10px 8px', fontSize: 10.5, fontWeight: 600, color: mine ? 'rgba(255,255,255,0.85)' : 'var(--primary)' }}>
-        View post →
+        {data.activity ? 'View activity →' : 'View post →'}
       </div>
     </Link>
   );

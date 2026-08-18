@@ -253,3 +253,50 @@ select option {
   animation: bell-shake 1.1s ease-in-out infinite;
   transform-origin: center;
 }
+
+/* TikTok-style activities feed: hide scrollbars on the snap scroller. */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Marquee for the activities "music" ticker. */
+@keyframes activity-marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
+}
+.activity-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: activity-marquee 6s linear infinite;
+}
+
+/* AI scanning sweep for the post composer. */
+@keyframes scan-sweep {
+  0% { top: -16%; opacity: 0; }
+  8% { opacity: 1; }
+  92% { opacity: 1; }
+  100% { top: 112%; opacity: 0; }
+}
+.scan-sweep-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 34px;
+  animation: scan-sweep 1.3s ease-in-out infinite;
+}
+.scan-grid {
+  background-image:
+    linear-gradient(rgba(34, 255, 136, 0.1) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(34, 255, 136, 0.1) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Blinking scan cursor. */
+@keyframes scan-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.15; }
+}

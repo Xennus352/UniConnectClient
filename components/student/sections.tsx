@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 export { default as FeedSection } from '@/components/shared/FeedSection';
 export { default as MessagesSection } from '@/components/shared/MessagesSection';
+export { default as ActivitySection } from '@/components/shared/ActivitySection';
 
 import BlockedSection from '@/components/shared/BlockedSection';
 
