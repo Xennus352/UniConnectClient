@@ -69,6 +69,7 @@ export const MAIN_NAV: Record<UserRole, NavItem[]> = {
         { icon: 'GraduationCap', label: 'Students', id: 'students' },
         { icon: 'ClipboardCheck', label: 'Roll Call', id: 'roll-call' },
         { icon: 'CalendarDays', label: 'Timetable', id: 'timetable' },
+        { icon: 'CalendarCog', label: 'Timetable Generation', id: 'timetable-generation' },
       ],
     },
     {

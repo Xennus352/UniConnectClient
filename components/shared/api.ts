@@ -331,3 +331,462 @@ export function markAttendance(sessionId: string, entries: MarkAttendanceEntry[]
 export function isBackendError(e: unknown): boolean {
   return e instanceof Error;
 }
+
+// ============================================================================
+// Timetable generation & shared draft workspace
+// ============================================================================
+
+export type GenerationStatus = 'PENDING' | 'GENERATING' | 'COMPLETED' | 'FAILED' | 'PUBLISHED';
+export type LobbyStatus = 'OPEN' | 'GENERATING' | 'COMPLETED' | 'CANCELLED';
+export type ScheduleStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED';
+export type ScheduleType = 'COURSE' | 'LMS' | 'ASSIGNMENT' | 'BREAK';
+export type MeetingType = 'LECTURE' | 'LAB';
+export type AssignmentStatus = 'ACTIVE' | 'INACTIVE' | 'COMPLETED';
+
+export const MEETING_TYPE_LABELS: Record<MeetingType, string> = {
+  LECTURE: 'Lecture',
+  LAB: 'Lab',
+};
+
+export interface ScheduleResponse {
+  scheduleId: string;
+  generationId: string;
+  teachingAssignmentId: string | null;
+  teachingGroupId: string | null;
+  courseCode: string;
+  courseName: string;
+  staffName: string;
+  sectionName: string;
+  semesterNo: number;
+  dayOfWeek: number;
+  startSlotId: string;
+  startPeriodNo: number;
+  endSlotId: string;
+  endPeriodNo: number;
+  scheduleStatus: ScheduleStatus;
+  scheduleType: ScheduleType;
+  sections: string[];
+  staffNames: string[];
+  createdAt: string;
+}
+
+export interface GenerationSessionResponse {
+  generationId: string;
+  termId: string;
+  academicYear: string;
+  generatedByStaffId: string;
+  generatedByStaffNo: string;
+  status: GenerationStatus;
+  startedAt: string | null;
+  publishedAt: string | null;
+  finishedAt: string | null;
+  createdAt: string;
+}
+
+export interface GenerationManageResponse {
+  isHod: boolean;
+  canManage: boolean;
+  generation: GenerationSessionResponse | null;
+}
+
+export interface GenerationScopeSemester {
+  semesterId: string;
+  semesterNo: number;
+  sections: SectionInfoResponse[];
+}
+
+export interface SectionInfoResponse {
+  sectionId: string;
+  sectionName: string;
+}
+
+export interface TimetableLobbyMemberResponse {
+  memberId: string;
+  staffId: string;
+  staffNo: string;
+  staffName: string;
+  unitName: string;
+  invitedAt: string;
+  joinedAt: string | null;
+  joined: boolean;
+}
+
+export interface TimetableLobbyResponse {
+  lobbyId: string;
+  termId: string;
+  academicYear: string;
+  leaderStaffId: string;
+  leaderStaffNo: string;
+  leaderName: string;
+  status: LobbyStatus;
+  generationId: string | null;
+  createdAt: string;
+  members: TimetableLobbyMemberResponse[];
+}
+
+export interface TimetableLockResponse {
+  generationId: string;
+  locked: boolean;
+  staffId: string | null;
+  staffName: string | null;
+  expiresAt: string | null;
+}
+
+export function lockIsFree(lock: TimetableLockResponse | null | undefined): boolean {
+  return !lock || !lock.locked;
+}
+
+export interface SwapScheduleResponse {
+  swapped: boolean;
+  conflicts: string[];
+  schedules: ScheduleResponse[];
+}
+
+export interface MeetingRequirementResponse {
+  requirementId: string;
+  courseId: string;
+  courseCode: string;
+  meetingType: MeetingType;
+  sessionsPerWeek: number;
+  periodsPerSession: number;
+}
+
+export interface TeachingGroupMemberResponse {
+  assignmentId: string;
+  staffId: string;
+  staffNo: string;
+  staffName: string;
+  sectionId: string;
+  sectionName: string;
+}
+
+export interface TeachingGroupResponse {
+  groupId: string;
+  termId: string;
+  academicYear: string;
+  courseId: string;
+  courseCode: string;
+  courseName: string;
+  semesterNo: number;
+  groupName: string;
+  createdAt: string;
+  members: TeachingGroupMemberResponse[];
+}
+
+export interface TeachingAssignmentResponse {
+  assignmentId: string;
+  courseId: string;
+  courseCode: string;
+  courseName: string;
+  staffId: string;
+  staffNo: string;
+  staffName: string;
+  staffEmail: string;
+  unitId: string;
+  unitName: string;
+  sectionId: string;
+  sectionName: string;
+  termId: string;
+  academicYear: string;
+  assignmentStatus: AssignmentStatus;
+  assignedAt: string;
+  assignedByStaffId: string;
+}
+
+export interface ExamTypeResponse {
+  examTypeId: string;
+  examTypeName: string;
+}
+
+export interface CourseRecord {
+  courseId: string;
+  unitId: string;
+  unitCode: string;
+  courseCode: string;
+  courseName: string;
+  creditUnit: number | null;
+  majorId: string | null;
+  majorCode: string;
+  semesterId: string;
+  semesterNo: number;
+  isRequired: boolean;
+  displayOrder: number;
+}
+
+export interface SemesterSelection {
+  semesterId: string;
+  sectionIds: string[];
+}
+
+export interface GenerateTimetableRequest {
+  examTypeId: string;
+  semesters: SemesterSelection[];
+}
+
+export interface MeetingRequirementRequest {
+  courseId: string;
+  meetingType: MeetingType;
+  sessionsPerWeek: number;
+  periodsPerSession: number;
+}
+
+export interface SwapScheduleRequest {
+  scheduleId: string;
+  targetDay: number;
+  targetPeriod: number;
+  force: boolean;
+}
+
+export interface DragStatusRequest {
+  action: 'start' | 'move' | 'end';
+  scheduleId: string | null;
+  day: number | null;
+  period: number | null;
+}
+
+export interface CreateGenerationRequest {
+  termId: string;
+  generatedByStaffId?: string | null;
+}
+
+export interface CreateLobbyRequest {
+  termId: string;
+}
+
+export interface InviteLobbyMemberRequest {
+  staffId: string;
+}
+
+function queryString(params: Record<string, string | number | undefined | null>): string {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+  return parts.length > 0 ? `?${parts.join('&')}` : '';
+}
+
+// ---------- Staff ----------
+
+export function getCurrentStaff(): Promise<StaffRecord> {
+  return apiFetch('/api/staff/me');
+}
+
+// ---------- Schedules ----------
+
+export function getSchedules(params?: {
+  termId?: string;
+  sectionId?: string;
+  staffId?: string;
+  dayOfWeek?: number;
+}): Promise<ScheduleResponse[]> {
+  return apiFetch(`/api/schedules${queryString(params ?? {})}`);
+}
+
+export function getPublishedSchedules(termId: string): Promise<ScheduleResponse[]> {
+  return apiFetch(`/api/schedules/published${queryString({ termId })}`);
+}
+
+export interface TimeSlotResponse {
+  slotId: string;
+  periodNo: number;
+  startTime: string;
+  endTime: string;
+  displayOrder: number;
+}
+
+export function getTimeSlots(): Promise<TimeSlotResponse[]> {
+  return apiFetch('/api/time-slots');
+}
+
+// ---------- Courses ----------
+
+export function getCourses(params?: {
+  majorId?: string;
+  semesterId?: string;
+  unitId?: string;
+}): Promise<CourseRecord[]> {
+  return apiFetch(`/api/courses${queryString(params ?? {})}`);
+}
+
+// ---------- Meeting requirements ----------
+
+export function getMeetingRequirements(params?: {
+  unitId?: string;
+  semesterId?: string;
+}): Promise<MeetingRequirementResponse[]> {
+  return apiFetch(`/api/meeting-requirements${queryString(params ?? {})}`);
+}
+
+export function createMeetingRequirement(
+  request: MeetingRequirementRequest,
+): Promise<MeetingRequirementResponse> {
+  return apiFetch('/api/meeting-requirements', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+export function updateMeetingRequirement(
+  requirementId: string,
+  request: MeetingRequirementRequest,
+): Promise<MeetingRequirementResponse> {
+  return apiFetch(`/api/meeting-requirements/${requirementId}`, {
+    method: 'PUT',
+    body: JSON.stringify(request),
+  });
+}
+
+export function deleteMeetingRequirement(requirementId: string): Promise<void> {
+  return apiFetch(`/api/meeting-requirements/${requirementId}`, { method: 'DELETE' });
+}
+
+// ---------- Teaching groups ----------
+
+export function getTeachingGroups(termId?: string): Promise<TeachingGroupResponse[]> {
+  return apiFetch(`/api/teaching-groups${queryString({ termId })}`);
+}
+
+export function createTeachingGroup(request: {
+  termId: string;
+  courseId: string;
+  assignmentIds: string[];
+}): Promise<TeachingGroupResponse> {
+  return apiFetch('/api/teaching-groups', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+export function deleteTeachingGroup(groupId: string): Promise<void> {
+  return apiFetch(`/api/teaching-groups/${groupId}`, { method: 'DELETE' });
+}
+
+// ---------- Teaching assignments ----------
+
+export function getTeachingAssignments(): Promise<TeachingAssignmentResponse[]> {
+  return apiFetch('/api/teaching-assignments');
+}
+
+// ---------- Exam types ----------
+
+export function getExamTypes(): Promise<ExamTypeResponse[]> {
+  return apiFetch('/api/exam-types');
+}
+
+// ---------- Generations ----------
+
+export function getGenerations(termId?: string): Promise<GenerationSessionResponse[]> {
+  return apiFetch(`/api/generations${queryString({ termId })}`);
+}
+
+export function getGenerationManage(termId?: string): Promise<GenerationManageResponse> {
+  return apiFetch(`/api/generations/manage${queryString({ termId })}`);
+}
+
+export function getGenerationScope(termId: string, examTypeId?: string): Promise<GenerationScopeSemester[]> {
+  return apiFetch(`/api/generations/scope${queryString({ termId, examTypeId })}`);
+}
+
+export function getGeneration(generationId: string): Promise<GenerationSessionResponse> {
+  return apiFetch(`/api/generations/${generationId}`);
+}
+
+export function createGeneration(request: CreateGenerationRequest): Promise<GenerationSessionResponse> {
+  return apiFetch('/api/generations', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+export function generateTimetable(
+  generationId: string,
+  request?: GenerateTimetableRequest,
+): Promise<GenerationSessionResponse> {
+  return apiFetch(`/api/generations/${generationId}/generate`, {
+    method: 'POST',
+    body: request ? JSON.stringify(request) : undefined,
+  });
+}
+
+export function publishGeneration(generationId: string): Promise<GenerationSessionResponse> {
+  return apiFetch(`/api/generations/${generationId}/publish`, { method: 'POST' });
+}
+
+export function cancelGeneration(generationId: string): Promise<GenerationSessionResponse> {
+  return apiFetch(`/api/generations/${generationId}/cancel`, { method: 'POST' });
+}
+
+export function getGenerationSchedules(generationId: string): Promise<ScheduleResponse[]> {
+  return apiFetch(`/api/generations/${generationId}/schedules`);
+}
+
+export function deleteGeneration(generationId: string): Promise<void> {
+  return apiFetch(`/api/generations/${generationId}`, { method: 'DELETE' });
+}
+
+export function publishDragStatus(generationId: string, request: DragStatusRequest): Promise<void> {
+  return apiFetch(`/api/generations/${generationId}/drag`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+export function swapSchedules(generationId: string, request: SwapScheduleRequest): Promise<SwapScheduleResponse> {
+  return apiFetch(`/api/generations/${generationId}/swap`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+// ---------- Single-operator editing lock ----------
+
+export function getTimetableLock(generationId: string): Promise<TimetableLockResponse> {
+  return apiFetch(`/api/generations/${generationId}/lock`);
+}
+
+export function acquireTimetableLock(generationId: string): Promise<TimetableLockResponse> {
+  return apiFetch(`/api/generations/${generationId}/lock`, { method: 'POST' });
+}
+
+export function heartbeatTimetableLock(generationId: string): Promise<TimetableLockResponse> {
+  return apiFetch(`/api/generations/${generationId}/lock/heartbeat`, { method: 'POST' });
+}
+
+export function releaseTimetableLock(generationId: string): Promise<TimetableLockResponse> {
+  return apiFetch(`/api/generations/${generationId}/lock/release`, { method: 'POST' });
+}
+
+// ---------- Generation lobbies ----------
+
+export function getGenerationLobbies(): Promise<TimetableLobbyResponse[]> {
+  return apiFetch('/api/timetable-lobbies');
+}
+
+export function getGenerationLobby(lobbyId: string): Promise<TimetableLobbyResponse> {
+  return apiFetch(`/api/timetable-lobbies/${lobbyId}`);
+}
+
+export function createGenerationLobby(request: CreateLobbyRequest): Promise<TimetableLobbyResponse> {
+  return apiFetch('/api/timetable-lobbies', {
+    method: 'POST',
+    body: JSON.stringify(request),
+  });
+}
+
+export function joinGenerationLobby(lobbyId: string): Promise<TimetableLobbyResponse> {
+  return apiFetch(`/api/timetable-lobbies/${lobbyId}/join`, { method: 'POST' });
+}
+
+export function inviteLobbyMember(lobbyId: string, staffId: string): Promise<TimetableLobbyResponse> {
+  return apiFetch(`/api/timetable-lobbies/${lobbyId}/invite`, {
+    method: 'POST',
+    body: JSON.stringify({ staffId }),
+  });
+}
+
+export function cancelGenerationLobby(lobbyId: string): Promise<TimetableLobbyResponse> {
+  return apiFetch(`/api/timetable-lobbies/${lobbyId}/cancel`, { method: 'POST' });
+}
+
+export function generateFromLobby(lobbyId: string): Promise<TimetableLobbyResponse> {
+  return apiFetch(`/api/timetable-lobbies/${lobbyId}/generate`, { method: 'POST' });
+}

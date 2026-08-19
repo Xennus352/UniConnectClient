@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { TypedSupabaseClient } from '@/utils/supabase/client';
 import type { Database } from '@/utils/supabase/types';
+import { getCurrentStaff } from '@/components/shared/api';
+import type { StaffRecord } from '@/components/shared/api';
 
 type Post = Database['public']['Tables']['posts']['Row'];
 type PostLike = Database['public']['Tables']['post_likes']['Row'];
@@ -1020,4 +1022,30 @@ export function useEventRegistrations(supabase: TypedSupabaseClient, eventIds: s
   }, [supabase, idsKey, me]);
 
   return { registrations: regs };
+}
+
+// ============================================================================
+// Timetable: current staff profile (backend)
+// ============================================================================
+
+export function useCurrentStaff() {
+  const [staff, setStaff] = useState<StaffRecord | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const record = await getCurrentStaff();
+      setStaff(record);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load staff profile');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+  return { staff, loading, error, refresh: load };
 }

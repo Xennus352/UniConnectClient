@@ -120,6 +120,20 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
     const tokens = JSON.parse(tokensRaw);
     const res = await execute(tokens.accessToken);
 
+    // Server-Sent Events must flow through untouched: buffering the body (as
+    // below) would delay every event until the stream closes. Relay the
+    // upstream stream as-is so the browser EventSource receives pushes live.
+    if (res.headers.get('content-type')?.includes('text/event-stream')) {
+      return new Response(res.body, {
+        status: res.status,
+        headers: {
+          'content-type': 'text/event-stream',
+          'cache-control': 'no-cache',
+          'x-accel-buffering': 'no',
+        },
+      });
+    }
+
     const body = await res.text();
     const nullBodyStatus = res.status === 204 || res.status === 205 || res.status === 304;
     const response = new NextResponse(nullBodyStatus ? null : body, {

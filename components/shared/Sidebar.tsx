@@ -24,6 +24,7 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   FileText: Icons.FileText,
   ClipboardCheck: Icons.ClipboardCheck,
   CalendarDays: Icons.CalendarDays,
+  CalendarCog: Icons.CalendarCog,
   Megaphone: Icons.Megaphone,
   CalendarCheck: Icons.CalendarCheck,
   Coins: Icons.Coins,
