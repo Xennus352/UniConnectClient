@@ -69,8 +69,12 @@ export interface ScheduleRecord {
   generationId: string;
   teachingAssignmentId: string | null;
   courseCode: string;
+  courseName?: string;
   staffName: string;
+  staffNames?: string[];
   sectionName: string;
+  sections?: string[];
+  semesterNo?: number;
   dayOfWeek: number;
   startSlotId: string;
   startPeriodNo: number;
@@ -176,7 +180,10 @@ export async function backendLogin(email: string, password: string): Promise<Log
     return res.json();
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('Request timed out — please try again');
+      throw new Error('Request timed out — the university server took too long to respond. Please try again.');
+    }
+    if (err instanceof TypeError) {
+      throw new Error('Cannot reach the university server. Check your connection and try again.');
     }
     throw err;
   } finally {
@@ -189,6 +196,12 @@ export async function backendLogout(): Promise<void> {
 }
 
 const API_TIMEOUT_MS = 60000;
+// Timetable generation dispatch runs synchronous scope validation against the
+// remote university database before handing the solve to a background worker.
+// On degraded database days that validation alone can outlive the general 60s
+// budget even though generation itself succeeds server-side right after — so
+// the start call gets its own generous budget (same rationale as uploads).
+const GENERATION_TIMEOUT_MS = 5 * 60 * 1000;
 // Bulk imports run one row at a time against the (remote) university server and
 // can take several minutes for large spreadsheets. The general 60s timeout would
 // abort the request while the server keeps inserting rows, leaving the UI to
@@ -196,10 +209,10 @@ const API_TIMEOUT_MS = 60000;
 // use a much larger budget so the response is awaited to completion.
 const UPLOAD_TIMEOUT_MS = 20 * 60 * 1000;
 
-export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const { signal: callerSignal, ...initRest } = init ?? {};
+export async function apiFetch<T>(path: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const { signal: callerSignal, timeoutMs, ...initRest } = init ?? {};
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs ?? API_TIMEOUT_MS);
   const signal = callerSignal
     ? AbortSignal.any([callerSignal, controller.signal])
     : controller.signal;
@@ -218,13 +231,20 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     }
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err?.message || `Request failed (${res.status})`);
+      const message =
+        typeof err?.message === 'string' && err.message.trim().length > 0
+          ? err.message
+          : `Server error (${res.status})`;
+      throw new Error(message);
     }
     const text = await res.text();
     return text ? (JSON.parse(text) as T) : (undefined as T);
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('Request timed out — please try again');
+      throw new Error('Request timed out — the university server took too long to respond. Please try again.');
+    }
+    if (err instanceof TypeError) {
+      throw new Error('Cannot reach the university server. Check your connection and try again.');
     }
     throw err;
   } finally {
@@ -318,6 +338,8 @@ export interface MarkAttendanceEntry {
   studentId: string;
   attendanceStatus: 'PRESENT' | 'ABSENT';
   remark?: string;
+  /** Slots the student actually attended (subset of the schedule span). */
+  periodSlotIds?: string[];
 }
 
 export function markAttendance(sessionId: string, entries: MarkAttendanceEntry[]): Promise<AttendanceRecord[]> {
@@ -326,6 +348,72 @@ export function markAttendance(sessionId: string, entries: MarkAttendanceEntry[]
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ entries }),
   });
+}
+
+// ============================================================================
+// Roll Call (lecturer) — latest PUBLISHED timetable only
+// ============================================================================
+
+export interface RollCallSchedule {
+  scheduleId: string;
+  dayOfWeek: number;
+  dayName: string;
+  startTime: string;
+  endTime: string;
+  periodCount: number;
+  courseCode: string;
+  courseName: string;
+  semesterNo: number | null;
+  sectionNames: string[];
+  sharedDelivery: boolean;
+  todaySessionId: string | null;
+  todaySessionCompleted: boolean;
+}
+
+export interface RollCallSlot {
+  slotId: string;
+  periodNo: number;
+  startTime: string;
+  endTime: string;
+}
+
+export interface RollCallStudent {
+  studentId: string;
+  rollNo: string;
+  studentName: string;
+  attendanceId: string | null;
+  attendanceStatus: string | null;
+  remark: string | null;
+  attendedSlotIds: string[];
+  attendedPeriods: number;
+}
+
+export interface RollCallStudentsResponse {
+  scheduleId: string;
+  sectionNames: string[];
+  scheduledPeriods: number;
+  slots: RollCallSlot[];
+  students: RollCallStudent[];
+}
+
+export function getRollCallMySchedule(): Promise<RollCallSchedule[]> {
+  return apiFetch('/api/rollcall/my-schedule');
+}
+
+export function ensureRollCallSession(scheduleId: string): Promise<ClassSessionRecord> {
+  return apiFetch('/api/rollcall/sessions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scheduleId }),
+  });
+}
+
+export function getRollCallStudents(
+  scheduleId: string,
+  sessionId?: string
+): Promise<RollCallStudentsResponse> {
+  const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+  return apiFetch(`/api/rollcall/students?scheduleId=${encodeURIComponent(scheduleId)}${q}`);
 }
 
 export function isBackendError(e: unknown): boolean {
@@ -381,6 +469,7 @@ export interface GenerationSessionResponse {
   publishedAt: string | null;
   finishedAt: string | null;
   createdAt: string;
+  failureReport: string | null;
 }
 
 export interface GenerationManageResponse {
@@ -597,6 +686,88 @@ export function getTimeSlots(): Promise<TimeSlotResponse[]> {
   return apiFetch('/api/time-slots');
 }
 
+/**
+ * The persisted university timetable grid (source of truth in the time_slots
+ * table): P1=09:00-10:00 … P3=11:00-12:00, Lunch=12:00-13:00,
+ * P4=13:00-14:00 … P6=15:00-16:00. The school day runs 09:00-16:00.
+ */
+export const PERSISTED_PERIOD_LABELS: readonly string[] = [
+  '09:00 \u2013 10:00',
+  '10:00 \u2013 11:00',
+  '11:00 \u2013 12:00',
+  '13:00 \u2013 14:00',
+  '14:00 \u2013 15:00',
+  '15:00 \u2013 16:00',
+];
+export const PERSISTED_LUNCH_LABEL = '12:00 \u2013 13:00';
+
+export interface TimeGridLabels {
+  periodLabels: string[];
+  lunchLabel: string;
+}
+
+const minutesOf = (hm: string): number | null => {
+  const m = /^(\d{1,2}):(\d{2})/.exec(hm);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+};
+
+const hmOf = (min: number): string =>
+  `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+
+const timeLabelOf = (a: number | null, b: number | null): string | null =>
+  a !== null && b !== null ? `${hmOf(a)} \u2013 ${hmOf(b)}` : null;
+
+/**
+ * The persisted grid is authoritative: P1 must start at 09:00 and the school
+ * day must end at 16:00 (P6 end). The server can return either the exact
+ * values or a uniform timezone-shifted copy; either way the labels are
+ * re-anchored onto the persisted grid so the timetable always shows the real
+ * university hours. A grid that does not re-anchor to 09:00-16:00 falls back
+ * to the persisted labels.
+ */
+export function normalizeTimeSlots(slots: TimeSlotResponse[]): TimeGridLabels {
+  const fallback: TimeGridLabels = { periodLabels: [...PERSISTED_PERIOD_LABELS], lunchLabel: PERSISTED_LUNCH_LABEL };
+  if (!Array.isArray(slots) || slots.length === 0) return fallback;
+  const sorted = [...slots].sort((a, b) => a.displayOrder - b.displayOrder || a.periodNo - b.periodNo);
+  const p1 = sorted.find((s) => s.periodNo === 1);
+  const p1Start = p1 ? minutesOf(p1.startTime) : null;
+  if (p1Start === null) return fallback;
+  const offset = p1Start - 9 * 60;
+  const p6 = sorted.find((s) => s.periodNo === 6);
+  const p6End = p6 ? minutesOf(p6.endTime) : null;
+  if (p6End !== null && p6End - offset !== 16 * 60) return fallback;
+  const labels: string[] = [];
+  for (let p = 1; p <= 6; p++) {
+    const slot = sorted.find((s) => s.periodNo === p);
+    const start = slot ? minutesOf(slot.startTime) : null;
+    const end = slot ? minutesOf(slot.endTime) : null;
+    const label = start !== null && end !== null ? timeLabelOf(start - offset, end - offset) : null;
+    if (!label) return fallback;
+    labels[p - 1] = label;
+  }
+  const p3 = sorted.find((s) => s.periodNo === 3);
+  const p4 = sorted.find((s) => s.periodNo === 4);
+  const p3End = p3 ? minutesOf(p3.endTime) : null;
+  const p4Start = p4 ? minutesOf(p4.startTime) : null;
+  const lunch =
+    p3End !== null && p4Start !== null
+      ? timeLabelOf(p3End - offset, p4Start - offset)
+      : PERSISTED_LUNCH_LABEL;
+  return { periodLabels: labels, lunchLabel: lunch ?? PERSISTED_LUNCH_LABEL };
+}
+
+/**
+ * Fetches the persisted time-slot configuration and normalizes it onto the
+ * authoritative 09:00-16:00 grid. Never rejects: falls back to the persisted
+ * labels when the server is unreachable.
+ */
+export function getTimetableTimeGrid(): Promise<TimeGridLabels> {
+  return getTimeSlots()
+    .then(normalizeTimeSlots)
+    .catch(() => ({ periodLabels: [...PERSISTED_PERIOD_LABELS], lunchLabel: PERSISTED_LUNCH_LABEL }));
+}
+
 // ---------- Courses ----------
 
 export function getCourses(params?: {
@@ -788,5 +959,5 @@ export function cancelGenerationLobby(lobbyId: string): Promise<TimetableLobbyRe
 }
 
 export function generateFromLobby(lobbyId: string): Promise<TimetableLobbyResponse> {
-  return apiFetch(`/api/timetable-lobbies/${lobbyId}/generate`, { method: 'POST' });
+  return apiFetch(`/api/timetable-lobbies/${lobbyId}/generate`, { method: 'POST', timeoutMs: GENERATION_TIMEOUT_MS });
 }

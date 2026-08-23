@@ -13,7 +13,7 @@ import ThemeSwitcher from '@/components/shared/ThemeSwitcher';
 import FeedPost from '@/components/shared/FeedPost';
 import LostFoundPage from '@/components/shared/LostFoundSection';
 import AnnouncementsPage from '@/components/shared/AnnouncementsSection';
-import { apiFetch } from '@/components/shared/api';
+import { apiFetch, getTimetableTimeGrid, PERSISTED_PERIOD_LABELS, PERSISTED_LUNCH_LABEL } from '@/components/shared/api';
 import { useSession } from '@/components/shared/session';
 import { useMyProfile } from '@/components/shared/useMyProfile';
 import { initialsOf } from '@/components/shared/useUniversityPeople';
@@ -30,19 +30,23 @@ export { default as ActivitySection } from '@/components/shared/ActivitySection'
 
 import BlockedSection from '@/components/shared/BlockedSection';
 
-interface TimetableEntry {
-  time: string;
-  mon: string; tue: string; wed: string; thu: string; fri: string;
-}
-
 const cardStyle = { borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' } as const;
 
-const TIME_SLOTS: { period: number; time: string; empty: string }[] = [
-  { period: 1, time: '8:00 – 9:30', empty: '— Free —' },
-  { period: 2, time: '9:45 – 11:15', empty: '— Free —' },
-  { period: 3, time: '11:30 – 13:00', empty: '— Lunch —' },
-  { period: 4, time: '14:00 – 15:30', empty: '— Free —' },
-  { period: 5, time: '15:45 – 17:15', empty: '— Free —' },
+type TimeRow = { kind: 'period'; period: number } | { kind: 'lunch' };
+
+/**
+ * The persisted university timetable grid (source of truth in the time_slots
+ * table): P1=09:00-10:00 … P3=11:00-12:00, Lunch=12:00-13:00,
+ * P4=13:00-14:00 … P6=15:00-16:00. The school day runs 09:00-16:00.
+ */
+const TIME_ROWS: TimeRow[] = [
+  { kind: 'period', period: 1 },
+  { kind: 'period', period: 2 },
+  { kind: 'period', period: 3 },
+  { kind: 'lunch' },
+  { kind: 'period', period: 4 },
+  { kind: 'period', period: 5 },
+  { kind: 'period', period: 6 },
 ];
 
 const DAY_COLUMNS: { key: 'mon' | 'tue' | 'wed' | 'thu' | 'fri'; dayOfWeek: number }[] = [
@@ -53,15 +57,62 @@ const DAY_COLUMNS: { key: 'mon' | 'tue' | 'wed' | 'thu' | 'fri'; dayOfWeek: numb
   { key: 'fri', dayOfWeek: 5 },
 ];
 
-function buildTimetable(schedules: ScheduleRecord[]): TimetableEntry[] {
-  return TIME_SLOTS.map((slot) => {
-    const entry: TimetableEntry = { time: slot.time, mon: slot.empty, tue: slot.empty, wed: slot.empty, thu: slot.empty, fri: slot.empty };
-    DAY_COLUMNS.forEach((col) => {
-      const course = schedules.find((s) => s.dayOfWeek === col.dayOfWeek && s.startPeriodNo === slot.period);
-      if (course) entry[col.key] = course.courseCode;
-    });
-    return entry;
-  });
+interface StudentDayCell {
+  text: string;
+  sub: string;
+  rowSpan: number;
+  lunch: boolean;
+}
+
+/**
+ * Builds the 7-row weekly grid (P1,P2,P3,Lunch,P4,P5,P6; rows 1..7) for one
+ * day. The lunch hour (12:00-13:00) is a structural break: it is never part
+ * of a continuous course card. A 2-period course scheduled P3→P4 (11:00-12:00
+ * + 13:00-14:00) is rendered as two separated cells — one in the P3 row and
+ * one in the P4 row — with the Lunch row empty between them. Courses that do
+ * not cross the lunch boundary (P1-P2, P2-P3, P4-P5, P5-P6) stay one
+ * continuous rowSpan. Co-located electives in the same window are joined into
+ * one cell.
+ */
+function buildDayCells(schedules: ScheduleRecord[]): (StudentDayCell | null)[] {
+  const rows = TIME_ROWS.length;
+  const cells: (StudentDayCell | null)[] = Array(rows).fill(null);
+  const merged: Record<number, { text: string[]; sub: string[]; span: number }> = {};
+  for (const s of schedules) {
+    const start = s.startPeriodNo;
+    const end = Math.max(start, s.endPeriodNo ?? s.startPeriodNo);
+    const crossesLunch = start <= 3 && end >= 4;
+    const segments = crossesLunch
+      ? [
+          { row: start, span: 3 - start + 1 },
+          { row: 5, span: end - 4 + 1 },
+        ]
+      : [
+          {
+            row: start <= 3 ? start : start + 1,
+            span: (end <= 3 ? end : end + 1) - (start <= 3 ? start : start + 1) + 1,
+          },
+        ];
+    for (const seg of segments) {
+      const cur = merged[seg.row] ?? { text: [], sub: [], span: 0 };
+      if (!cur.text.includes(s.courseCode)) cur.text.push(s.courseCode);
+      if (s.staffName && !cur.sub.includes(s.staffName)) cur.sub.push(s.staffName);
+      cur.span = Math.max(cur.span, seg.span);
+      merged[seg.row] = cur;
+    }
+  }
+  for (let r = 1; r <= 7; r++) {
+    const m = merged[r];
+    if (m) {
+      cells[r - 1] = { text: m.text.join(' / '), sub: m.sub.join(', '), rowSpan: Math.min(m.span, 8 - r), lunch: false };
+      continue;
+    }
+    const rowDef = TIME_ROWS[r - 1];
+    cells[r - 1] = rowDef.kind === 'lunch'
+      ? { text: 'Lunch', sub: '', rowSpan: 1, lunch: true }
+      : { text: '\u2014 Free \u2014', sub: '', rowSpan: 1, lunch: false };
+  }
+  return cells;
 }
 
 export function Dashboard() {
@@ -120,6 +171,19 @@ export function TimetableSection() {
   const { user: session } = useSession();
   const me = session?.email ?? '';
   const [ttTab, setTtTab] = useState('weekly');
+  const [timeGrid, setTimeGrid] = useState<{ periodLabels: string[]; lunchLabel: string }>({
+    periodLabels: [...PERSISTED_PERIOD_LABELS],
+    lunchLabel: PERSISTED_LUNCH_LABEL,
+  });
+  useEffect(() => {
+    let on = true;
+    getTimetableTimeGrid().then((g) => {
+      if (on) setTimeGrid(g);
+    });
+    return () => {
+      on = false;
+    };
+  }, []);
 
   const { data: schedules, loading, error } = useUniversityData<ScheduleRecord[]>(
     useCallback(async () => {
@@ -133,7 +197,16 @@ export function TimetableSection() {
     }, [me])
   );
 
-  const timetableRows = buildTimetable(schedules ?? []);
+  const dayCells = useMemo(
+    () =>
+      DAY_COLUMNS.map((col) =>
+        buildDayCells((schedules ?? []).filter((s) => s.dayOfWeek === col.dayOfWeek))
+      ),
+    [schedules]
+  );
+  const hasAnyCourse = dayCells.some((cells) =>
+    cells.some((c) => !!c && !c.lunch && c.text !== '\u2014 Free \u2014')
+  );
 
   return (
     <div>
@@ -179,34 +252,93 @@ export function TimetableSection() {
               </tr>
             </thead>
             <tbody>
-              {timetableRows.map((row, i) => (
-                <tr key={i} style={{ transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--divider-soft)'; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>
-                  <td style={{ padding: '12px 14px', fontSize: 11, fontWeight: 600, color: 'var(--text-light)', borderBottom: '1px solid var(--divider)', whiteSpace: 'pre-line' }}>{row.time}</td>
-                  {['mon', 'tue', 'wed', 'thu', 'fri'].map((day) => {
-                    const val = row[day as keyof typeof row];
-                    const isLunch = val.includes('Lunch');
-                    const isFree = val.includes('Free');
-                    return (
-                      <td key={day} style={{ padding: '12px 14px', fontSize: 12.5, color: isLunch ? 'var(--text-lighter)' : isFree ? 'var(--text-lighter)' : 'var(--text)', fontStyle: isLunch || isFree ? 'italic' : 'normal', borderBottom: '1px solid var(--divider)', whiteSpace: 'pre-line' }}>
-                        {isLunch || isFree ? (
-                          <span style={{ fontSize: 12 }}>{val.replace('— ', '')}</span>
-                        ) : (
-                          <div style={{ display: 'flex', flexDirection: 'column' }}>
-                            <span style={{ fontSize: 12.5, fontWeight: 600 }}>{val.split('\n')[0]}</span>
-                            <span style={{ fontSize: 10, color: 'var(--text-lighter)' }}>{val.split('\n')[1]}</span>
-                          </div>
-                        )}
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
+              {TIME_ROWS.map((rowDef, r) => {
+                const timeLabel =
+                  rowDef.kind === 'lunch' ? timeGrid.lunchLabel : timeGrid.periodLabels[rowDef.period - 1] ?? `P${rowDef.period}`;
+                return (
+                  <tr key={r} style={{ transition: 'background 0.15s' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--divider-soft)'; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>
+                    <td style={{ padding: '12px 14px', fontSize: 11, fontWeight: 700, color: 'var(--accent)', borderBottom: '1px solid var(--divider)', whiteSpace: 'nowrap' }}>
+                      {rowDef.kind === 'lunch' ? `Lunch ${timeLabel}` : `P${rowDef.period} ${timeLabel}`}
+                    </td>
+                    {DAY_COLUMNS.map((col, ci) => {
+                      const cell = dayCells[ci]?.[r];
+                      if (!cell) return null;
+                      const isLunch = cell.lunch;
+                      const isFree = !isLunch && cell.text === '\u2014 Free \u2014';
+                      return (
+                        <td
+                          key={col.key}
+                          rowSpan={cell.rowSpan > 1 ? cell.rowSpan : undefined}
+                          style={{
+                            padding: '12px 14px',
+                            fontSize: 12.5,
+                            color: isLunch || isFree ? 'var(--text-lighter)' : 'var(--text)',
+                            fontStyle: isLunch || isFree ? 'italic' : 'normal',
+                            borderBottom: '1px solid var(--divider)',
+                            background: isLunch ? 'repeating-linear-gradient(45deg, var(--divider), var(--divider) 6px, var(--secondary-lighter) 6px, var(--secondary-lighter) 12px)' : 'transparent',
+                            verticalAlign: 'middle',
+                          }}
+                        >
+                          {isLunch || isFree ? (
+                            <span style={{ fontSize: 12 }}>{isLunch ? 'Lunch break' : cell.text}</span>
+                          ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--primary)', overflowWrap: 'anywhere' }}>{cell.text}</span>
+                              {cell.sub && <span style={{ fontSize: 10, color: 'var(--text-lighter)' }}>{cell.sub}</span>}
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
-          {!loading && !error && timetableRows.length === 0 && (
+          {!loading && !error && !hasAnyCourse && (
             <div style={{ padding: '18px 22px', fontSize: 12, color: 'var(--text-lighter)' }}>No schedules published yet</div>
           )}
+          {!loading && !error && hasAnyCourse && <CourseInfoPanel schedules={schedules ?? []} />}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function CourseInfoPanel({ schedules }: { schedules: ScheduleRecord[] }) {
+  const rows = useMemo(() => {
+    const byCode = new Map<string, { code: string; name: string; staff: Set<string> }>();
+    for (const s of schedules) {
+      const staff = (s.staffNames && s.staffNames.length > 0 ? s.staffNames : s.staffName ? [s.staffName] : []).join(', ');
+      const cur = byCode.get(s.courseCode) ?? { code: s.courseCode, name: s.courseName ?? s.courseCode, staff: new Set<string>() };
+      if (staff) cur.staff.add(staff);
+      byCode.set(s.courseCode, cur);
+    }
+    return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code));
+  }, [schedules]);
+  if (rows.length === 0) return null;
+  return (
+    <div style={{ marginTop: 16, border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', background: 'var(--surface-soft)', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--surface-border)' }}>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--accent)' }}>
+          Course Information
+        </span>
+        <span style={{ fontSize: 10.5, color: 'var(--text-lighter)', fontWeight: 600 }}>
+          ({rows.length} {rows.length === 1 ? 'course' : 'courses'})
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', padding: '8px 14px', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+        {rows.map((r) => (
+          <div key={r.code} style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--accent)', fontFamily: 'Consolas, Menlo, monospace', flexShrink: 0 }}>{r.code}</span>
+            <span title={r.name} style={{ fontSize: 11.5, color: 'var(--text)', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {r.name}
+            </span>
+            <span title={Array.from(r.staff).join(', ')} style={{ fontSize: 11, color: 'var(--text-light)', flexShrink: 0, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {Array.from(r.staff).join(', ') || '\u2014'}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );

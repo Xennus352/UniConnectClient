@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiFetch, markAttendance } from '@/components/shared/api';
+import { apiFetch, markAttendance, getTimetableTimeGrid, PERSISTED_PERIOD_LABELS, PERSISTED_LUNCH_LABEL } from '@/components/shared/api';
 import type {
   StudentRecord, StaffRecord, AttendanceRecord,
   ClassSessionRecord, ScheduleRecord, AcademicTermRecord,
@@ -41,6 +41,8 @@ import BlockedSection from '@/components/shared/BlockedSection';
 const initialsOf = (name: string) =>
   name.trim().split(/\s+/).slice(0, 2).map((w) => (w[0] || '').toUpperCase()).join('');
 
+const UPCOMING_NOW = Date.now();
+
 const semesterLabel = (n: number) =>
   `${n}${n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'}`;
 
@@ -62,7 +64,7 @@ export function Dashboard() {
   const eventIds = useMemo(() => (events ?? []).map((e) => e.id), [events]);
   const { registrations } = useEventRegistrations(useSupabase(), eventIds, me);
   const upcomingEvents = useMemo(
-    () => (events ?? []).filter((e) => e.event_date >= Date.now()).slice(0, 3),
+    () => (events ?? []).filter((e) => e.event_date >= UPCOMING_NOW).slice(0, 3),
     [events]
   );
   const { data: users, loading: usersLoading } = useUniversityData<UserRecord[]>(
@@ -671,9 +673,136 @@ function RollCallBoard({ session }: { session: ClassSessionRecord | null }) {
   );
 }
 
-interface TimetableEntry {
-  time: string;
-  mon: string; tue: string; wed: string; thu: string; fri: string;
+interface CohortGroup {
+  semesterNo: number;
+  section: string;
+  items: ScheduleRecord[];
+}
+
+const sectionsOf = (s: ScheduleRecord): string[] => {
+  const list = s.sections && s.sections.length > 0 ? s.sections : s.sectionName ? [s.sectionName] : [];
+  return list.map((x) => String(x).trim()).filter(Boolean);
+};
+
+/**
+ * Presentation grouping key: semester + section. Schedules from different
+ * semesters or sections are never merged into the same visual cell.
+ */
+const groupSchedulesByCohort = (schedules: ScheduleRecord[]): CohortGroup[] => {
+  const map = new Map<string, CohortGroup>();
+  for (const s of schedules) {
+    const semesterNo = s.semesterNo ?? 0;
+    for (const section of sectionsOf(s)) {
+      const key = `${semesterNo}|${section}`;
+      const group = map.get(key) ?? { semesterNo, section, items: [] };
+      if (!map.has(key)) map.set(key, group);
+      group.items.push(s);
+    }
+  }
+  return [...map.values()].sort(
+    (a, b) => a.semesterNo - b.semesterNo || a.section.localeCompare(b.section)
+  );
+};
+
+interface AdminDayCell {
+  row: number;
+  span: number;
+  text: string;
+  sub: string;
+}
+
+/**
+ * One day column of the 7-row body grid (P1,P2,P3,Lunch,P4,P5,P6; rows 1..7).
+ * The lunch hour (12:00-13:00) is a structural break: it is never part of a
+ * continuous course card. A 2-period course scheduled P3→P4 (11:00-12:00 +
+ * 13:00-14:00) is rendered as two separated cells — one in the P3 row and one
+ * in the P4 row — with the Lunch row empty between them. Courses that do not
+ * cross the lunch boundary (P1-P2, P2-P3, P4-P5, P5-P6) stay one continuous
+ * grid-row span. Co-located electives in the same window are joined into one
+ * cell. Rows covered by a span yield null (nothing is emitted for them).
+ */
+function buildAdminDay(schedules: ScheduleRecord[]): (AdminDayCell | 'lunch' | 'empty' | null)[] {
+  const placed: (AdminDayCell | null)[] = Array(8).fill(null);
+  for (const s of schedules) {
+    const start = s.startPeriodNo;
+    const end = Math.max(start, s.endPeriodNo ?? s.startPeriodNo);
+    const crossesLunch = start <= 3 && end >= 4;
+    const segments = crossesLunch
+      ? [
+          { row: start, span: 3 - start + 1 },
+          { row: 5, span: end - 4 + 1 },
+        ]
+      : [
+          {
+            row: start <= 3 ? start : start + 1,
+            span: (end <= 3 ? end : end + 1) - (start <= 3 ? start : start + 1) + 1,
+          },
+        ];
+    for (const seg of segments) {
+      const cur = placed[seg.row] ?? { row: seg.row, span: 0, text: '', sub: '' };
+      const codes = cur.text ? cur.text.split(' / ') : [];
+      if (!codes.includes(s.courseCode)) codes.push(s.courseCode);
+      cur.text = codes.join(' / ');
+      cur.sub = cur.sub ? `${cur.sub}, ${s.staffName}` : s.staffName;
+      cur.span = Math.max(cur.span, seg.span);
+      placed[seg.row] = cur;
+    }
+  }
+  const rows: (AdminDayCell | 'lunch' | 'empty' | null)[] = [];
+  for (let r = 1; r <= 7; r++) {
+    if (placed[r]) {
+      rows.push(placed[r] as AdminDayCell);
+      continue;
+    }
+    let covered = false;
+    for (const c of placed) {
+      if (c && c.row < r && c.row + c.span - 1 >= r) {
+        covered = true;
+        break;
+      }
+    }
+    rows.push(covered ? null : r === 4 ? 'lunch' : 'empty');
+  }
+  return rows;
+}
+
+function CohortCourseInfo({ items }: { items: ScheduleRecord[] }) {
+  const rows = useMemo(() => {
+    const byCode = new Map<string, { code: string; name: string; staff: Set<string> }>();
+    for (const s of items) {
+      const staff = (s.staffNames && s.staffNames.length > 0 ? s.staffNames : s.staffName ? [s.staffName] : []).join(', ');
+      const cur = byCode.get(s.courseCode) ?? { code: s.courseCode, name: s.courseName ?? s.courseCode, staff: new Set<string>() };
+      if (staff) cur.staff.add(staff);
+      byCode.set(s.courseCode, cur);
+    }
+    return [...byCode.values()].sort((a, b) => a.code.localeCompare(b.code));
+  }, [items]);
+  if (rows.length === 0) return null;
+  return (
+    <div style={{ borderTop: '1px solid var(--surface)', padding: '10px 18px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--accent)' }}>
+          Course Information
+        </span>
+        <span style={{ fontSize: 10.5, color: 'var(--text-lighter)', fontWeight: 600 }}>
+          ({rows.length} {rows.length === 1 ? 'course' : 'courses'})
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxHeight: 220, overflowY: 'auto' }}>
+        {rows.map((r) => (
+          <div key={r.code} style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: 'var(--accent)', fontFamily: 'Consolas, Menlo, monospace', flexShrink: 0 }}>{r.code}</span>
+            <span title={r.name} style={{ fontSize: 11.5, color: 'var(--text)', fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {r.name}
+            </span>
+            <span title={Array.from(r.staff).join(', ')} style={{ fontSize: 11, color: 'var(--text-light)', flexShrink: 0, maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {Array.from(r.staff).join(', ') || '\u2014'}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function TimetableSection() {
@@ -689,27 +818,52 @@ export function TimetableSection() {
     useCallback(() => (activeTerm ? apiFetch<ScheduleRecord[]>(`/api/schedules?termId=${activeTerm.termId}`) : Promise.resolve([])), [activeTerm])
   );
 
-  const timetable = useMemo(() => {
-    const map: Record<number, Record<number, string>> = {};
-    (schedules.data ?? []).forEach((s) => {
-      if (s.dayOfWeek >= 1 && s.dayOfWeek <= 5) {
-        (map[s.dayOfWeek] ??= {})[s.startPeriodNo] = s.courseCode;
-      }
+  const [timeGrid, setTimeGrid] = useState<{ periodLabels: string[]; lunchLabel: string }>({
+    periodLabels: [...PERSISTED_PERIOD_LABELS],
+    lunchLabel: PERSISTED_LUNCH_LABEL,
+  });
+  useEffect(() => {
+    let on = true;
+    getTimetableTimeGrid().then((g) => {
+      if (on) setTimeGrid(g);
     });
-    const maxPeriod = Math.max(0, ...(schedules.data ?? []).map((s) => s.startPeriodNo));
-    const rows: TimetableEntry[] = [];
-    for (let p = 1; p <= maxPeriod; p++) {
-      rows.push({
-        time: `Period ${p}`,
-        mon: map[1]?.[p] ?? '',
-        tue: map[2]?.[p] ?? '',
-        wed: map[3]?.[p] ?? '',
-        thu: map[4]?.[p] ?? '',
-        fri: map[5]?.[p] ?? '',
-      });
-    }
-    return rows;
-  }, [schedules.data]);
+    return () => {
+      on = false;
+    };
+  }, []);
+
+  const [viewSemester, setViewSemester] = useState<number | 'all'>('all');
+  const [viewSection, setViewSection] = useState<string>('all');
+
+  const all = useMemo(() => schedules.data ?? [], [schedules.data]);
+  const semesterOptions = useMemo(
+    () => [...new Set(all.map((s) => s.semesterNo ?? 0).filter((n) => n > 0))].sort((a, b) => a - b),
+    [all]
+  );
+  const sectionOptions = useMemo(
+    () => [...new Set(all.flatMap(sectionsOf))].sort(),
+    [all]
+  );
+
+  const groups = useMemo(() => {
+    const filtered = all.filter(
+      (s) =>
+        (viewSemester === 'all' || (s.semesterNo ?? 0) === viewSemester) &&
+        (viewSection === 'all' || sectionsOf(s).includes(viewSection))
+    );
+    return groupSchedulesByCohort(filtered);
+  }, [all, viewSemester, viewSection]);
+
+  const dayByGroup = useMemo(
+    () =>
+      groups.map((g) => ({
+        group: g,
+        days: [1, 2, 3, 4, 5].map((d) =>
+          buildAdminDay(g.items.filter((s) => s.dayOfWeek === d))
+        ),
+      })),
+    [groups]
+  );
 
   return (
     <div>
@@ -717,47 +871,114 @@ export function TimetableSection() {
       <p style={{ fontSize: 14, color: 'var(--text-light)', marginBottom: 20 }}>Weekly class schedule</p>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, flexWrap: 'wrap' }}>
         <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, minWidth: 140 }}><option>{activeTerm ? `AY ${activeTerm.academicYear} — ${activeTerm.status.toLowerCase()}` : 'No active term'}</option></select>
-        <select style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, minWidth: 140 }}><option>All Courses</option></select>
+        <select
+          value={viewSemester === 'all' ? 'all' : String(viewSemester)}
+          onChange={(e) => setViewSemester(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+          style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, minWidth: 140, cursor: 'pointer' }}
+        >
+          <option value="all">All semesters (overview)</option>
+          {semesterOptions.map((n) => (
+            <option key={n} value={n}>Semester {n}</option>
+          ))}
+        </select>
+        <select
+          value={viewSection}
+          onChange={(e) => setViewSection(e.target.value)}
+          style={{ padding: '9px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--secondary)', background: 'var(--surface)', fontSize: 14, color: 'var(--text)', fontWeight: 500, minWidth: 140, cursor: 'pointer' }}
+        >
+          <option value="all">All sections</option>
+          {sectionOptions.map((n) => (
+            <option key={n} value={n}>Section {n}</option>
+          ))}
+        </select>
         <button style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', color: '#fff', borderRadius: 'var(--radius-sm)', padding: '8px 16px', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
           <Download size={14} /> Export
         </button>
       </div>
       {(terms.loading || schedules.loading) && !terms.data && <div style={{ fontSize: 13, color: 'var(--text-light)', marginBottom: 12 }}>Loading...</div>}
       {(terms.error || schedules.error) && !terms.data && <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>University server unreachable — retrying…</div>}
-      {!terms.loading && !terms.error && terms.data && !schedules.loading && !schedules.error && timetable.length === 0 && (
+      {!terms.loading && !terms.error && terms.data && !schedules.loading && !schedules.error && groups.length === 0 && (
         <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', padding: 40, textAlign: 'center', color: 'var(--text-lighter)', fontSize: 14 }}>
           No schedules published yet
         </div>
       )}
-      {timetable.length > 0 && (
-        <div className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '80px repeat(5, 1fr)', gap: 1, background: 'var(--secondary)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', border: '1px solid var(--secondary)' }}>
-            {['Time', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((h, i) => (
-              <div key={i} style={{ background: i === 0 ? 'linear-gradient(135deg, var(--primary), var(--primary-dark))' : 'linear-gradient(135deg, var(--primary), var(--primary-dark))', padding: '12px 8px', fontSize: 12, textAlign: 'center', fontWeight: 700, color: '#fff' }}>{h}</div>
-            ))}
-            {timetable.flatMap((row) =>
-              ['time', 'mon', 'tue', 'wed', 'thu', 'fri'].map((day) => {
-                if (day === 'time') {
-                  return <div key={row.time + day} style={{ background: 'var(--secondary-lighter)', padding: '12px 8px', fontSize: 11, textAlign: 'center', fontWeight: 700, color: 'var(--accent)' }}>{row.time}</div>;
-                }
-                const val = row[day as keyof typeof row];
-                const isLunch = val.includes('Lunch');
-                const isFree = val.includes('Free');
-                if (isLunch) {
-                  return <div key={row.time + day} style={{ background: 'var(--surface-soft)', padding: '12px 8px', fontSize: 11.5, textAlign: 'center', minHeight: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-lighter)', fontStyle: 'italic' }}>{val.replace('— ', '')}</div>;
-                }
-                if (isFree) {
-                  return <div key={row.time + day} style={{ background: 'var(--surface-soft)', padding: '12px 8px', fontSize: 11.5, textAlign: 'center', minHeight: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-lighter)', fontStyle: 'italic' }}>{val.replace('— ', '')}</div>;
-                }
-                if (val) {
-                  return <div key={row.time + day} style={{ background: 'linear-gradient(135deg, #e8f4fc, #d0e8f5)', borderRadius: 6, margin: 2, padding: '12px 8px', fontSize: 11.5, textAlign: 'center', minHeight: 70, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 11 }}>{val}</div>
-                  </div>;
-                }
-                return <div key={row.time + day} style={{ background: 'var(--surface-soft)', padding: '12px 8px', fontSize: 11.5, textAlign: 'center', minHeight: 70 }} />;
-              })
-            )}
-          </div>
+      {dayByGroup.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
+          {dayByGroup.map(({ group, days }) => (
+            <div key={`${group.semesterNo}|${group.section}`} className="bg-base-100 backdrop-blur-xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, padding: '12px 18px', borderBottom: '1px solid var(--surface)' }}>
+                <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent)' }}>
+                  Semester {group.semesterNo} — Section {group.section}
+                </span>
+                <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-lighter)' }}>
+                  {group.items.length} {group.items.length === 1 ? 'session' : 'sessions'}
+                </span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(5, 1fr)', gap: 1, background: 'var(--secondary)', borderTop: '1px solid var(--secondary)' }}>
+                <div style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', padding: '12px 8px', fontSize: 12, textAlign: 'center', fontWeight: 700, color: '#fff' }}>Time</div>
+                {['Mon', 'Tue', 'Wed', 'Thu', 'Fri'].map((h) => (
+                  <div key={h} style={{ background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))', padding: '12px 8px', fontSize: 12, textAlign: 'center', fontWeight: 700, color: '#fff' }}>{h}</div>
+                ))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '120px repeat(5, 1fr)', gridTemplateRows: 'repeat(7, minmax(64px, auto))', gap: 1, background: 'var(--secondary)', borderTop: '1px solid var(--secondary)' }}>
+                {[1, 2, 3, 4, 5, 6, 7].map((r) => {
+                  const isLunchRow = r === 4;
+                  const periodNo = r <= 3 ? r : r - 1;
+                  const timeLabel = isLunchRow
+                    ? `Lunch ${timeGrid.lunchLabel}`
+                    : `P${periodNo} ${timeGrid.periodLabels[periodNo - 1] ?? ''}`;
+                  return (
+                    <div key={`time-${r}`} style={{ gridColumn: 1, gridRow: r, background: 'var(--secondary-lighter)', padding: '12px 8px', fontSize: 11, textAlign: 'center', fontWeight: 700, color: 'var(--accent)', whiteSpace: 'nowrap' }}>
+                      {timeLabel}
+                    </div>
+                  );
+                })}
+                {days.map((dayCells, di) =>
+                  dayCells.map((cell, r) => {
+                    const row = r + 1;
+                    if (cell === null) return null;
+                    if (cell === 'lunch') {
+                      return (
+                        <div key={`${di}-${row}`} style={{ gridColumn: di + 2, gridRow: row, background: 'repeating-linear-gradient(45deg, var(--divider), var(--divider) 6px, var(--secondary-lighter) 6px, var(--secondary-lighter) 12px)', padding: '12px 8px', fontSize: 11.5, textAlign: 'center', minHeight: 64, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: 'var(--text-lighter)', fontStyle: 'italic' }}>
+                          Lunch break
+                        </div>
+                      );
+                    }
+                    if (cell === 'empty') {
+                      return (
+                        <div key={`${di}-${row}`} style={{ gridColumn: di + 2, gridRow: row, background: 'var(--surface-soft)', padding: '12px 8px', minHeight: 64 }} />
+                      );
+                    }
+                    return (
+                      <div
+                        key={`${di}-${row}`}
+                        style={{
+                          gridColumn: di + 2,
+                          gridRow: `${cell.row} / span ${cell.span}`,
+                          background: 'linear-gradient(135deg, #e8f4fc, #d0e8f5)',
+                          borderRadius: 6,
+                          margin: 2,
+                          padding: '12px 8px',
+                          fontSize: 11.5,
+                          textAlign: 'center',
+                          minHeight: 64,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 2,
+                        }}
+                      >
+                        <div style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 11, overflowWrap: 'anywhere' }}>{cell.text}</div>
+                        {cell.sub && <div style={{ fontSize: 9.5, color: 'var(--text-lighter)' }}>{cell.sub}</div>}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <CohortCourseInfo items={group.items} />
+            </div>
+          ))}
         </div>
       )}
     </div>

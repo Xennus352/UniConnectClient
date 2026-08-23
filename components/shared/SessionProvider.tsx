@@ -34,7 +34,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await fetch('/api/session', { cache: 'no-store' });
+      const res = await fetch('/api/session', {
+        cache: 'no-store',
+        signal: AbortSignal.timeout(12000),
+      });
       const data = await res.json();
       const u = data?.user;
       setUser(
