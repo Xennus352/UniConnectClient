@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { apiFetch, markAttendance, getTimetableTimeGrid, PERSISTED_PERIOD_LABELS, PERSISTED_LUNCH_LABEL } from '@/components/shared/api';
+import { apiFetch, markAttendance, getRollCallStudents, getTimetableTimeGrid, PERSISTED_PERIOD_LABELS, PERSISTED_LUNCH_LABEL } from '@/components/shared/api';
 import type {
   StudentRecord, StaffRecord, AttendanceRecord,
   ClassSessionRecord, ScheduleRecord, AcademicTermRecord,
@@ -506,8 +506,30 @@ interface RollCallRow extends RollCallData {
 function RollCallBoard({ session }: { session: ClassSessionRecord | null }) {
   const [rollData, setRollData] = useState<RollCallRow[]>([]);
   const [yearPill, setYearPill] = useState('All');
+  const [spanRange, setSpanRange] = useState<{ startId: string; endId: string } | null>(null);
   const yearPills = ['All', '1st', '2nd', '3rd', '4th'];
   const totalPresent = rollData.filter(r => r.present).length;
+
+  // The attendance backend stores an actual contiguous range per student.
+  // This simple board marks whole-class presence, so resolve the schedule's
+  // full slot span once per session and submit it as the range.
+  useEffect(() => {
+    let alive = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset per-session cache
+    setSpanRange(null);
+    if (session) {
+      getRollCallStudents(session.scheduleId, session.sessionId)
+        .then((roster) => {
+          if (!alive || roster.slots.length === 0) return;
+          setSpanRange({
+            startId: roster.slots[0].slotId,
+            endId: roster.slots[roster.slots.length - 1].slotId,
+          });
+        })
+        .catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [session]);
 
   const fetcher = useCallback(() => {
     if (!session) return Promise.resolve([] as RollCallRow[]);
@@ -538,12 +560,14 @@ function RollCallBoard({ session }: { session: ClassSessionRecord | null }) {
       await markAttendance(session.sessionId, next.map((r) => ({
         studentId: r.studentId,
         attendanceStatus: r.present ? 'PRESENT' as const : 'ABSENT' as const,
+        attendanceStartSlotId: r.present ? spanRange?.startId ?? null : null,
+        attendanceEndSlotId: r.present ? spanRange?.endId ?? null : null,
       })));
     } catch {
       setRollData(prev);
       toast.error('Failed to save attendance');
     }
-  }, [session]);
+  }, [session, spanRange]);
 
   const togglePresent = (studentId: string, present: boolean) => {
     const prev = rollData;

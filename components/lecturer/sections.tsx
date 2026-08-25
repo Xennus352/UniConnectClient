@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { DragEvent as DragEvt, ReactNode } from 'react';
 import { useSupabase } from '@/utils/supabase/client';
+import { RollCallHistorySection } from '@/components/lecturer/RollCallHistory';
 import { useFeedPosts, useConversations } from '@/lib/supabase/hooks';
 import WelcomeBar from '@/components/shared/WelcomeBar';
 import StatCard from '@/components/shared/StatCard';
@@ -26,7 +27,10 @@ import {
   AlertTriangle, Radio, UserPlus, ChevronDown, Timer,
   XCircle, Blocks, Layers, ShieldCheck, Send, Move,
   ClipboardCheck,
+  History,
 } from 'lucide-react';
+import Link from 'next/link';
+import { fmt12h, fmtRange12 } from '@/components/shared/time';
 import { useRouter } from 'next/navigation';
 import type { StudentData, RollCallData } from '@/components/shared/types';
 import {
@@ -210,10 +214,10 @@ function StudentInfoModal({ student, onClose }: { student: StudentRecord; onClos
     { label: 'Roll No', value: student.rollNo },
     { label: 'Major', value: student.majorCode },
     { label: 'Semester', value: ordinalLabel(student.semesterNo) },
-    { label: 'Section', value: student.sectionName || 'â€”' },
-    { label: 'Academic Year', value: student.academicYear ? `${student.academicYear}` : 'â€”' },
-    { label: 'Phone', value: student.phoneNo || 'â€”' },
-    { label: 'Address', value: student.address || 'â€”' },
+    { label: 'Section', value: student.sectionName || '—' },
+    { label: 'Academic Year', value: student.academicYear ? `${student.academicYear}` : '—' },
+    { label: 'Phone', value: student.phoneNo || '—' },
+    { label: 'Address', value: student.address || '—' },
   ];
   return (
     <>
@@ -336,7 +340,7 @@ export function StudentsSection() {
     <div>
       {error && !data && (
         <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>
-          University server unreachable â€” retryingâ€¦
+          University server unreachable — retrying—
         </div>
       )}
       <h1 style={{ fontSize: 26, fontWeight: 700, color: 'var(--accent)', marginBottom: 4 }}>Students</h1>
@@ -481,20 +485,37 @@ export function StudentsSection() {
   );
 }
 
-export function RollCallSection() {
+export function RollCallSection({ mode = 'today', onViewHistory }: {
+  mode?: 'today' | 'schedules';
+  onViewHistory?: (scheduleId: string, month: string) => void;
+} = {}) {
+  const isSchedulesMode = mode === 'schedules';
   const [schedules, setSchedules] = useState<RollCallSchedule[] | null>(null);
   const [scheduleId, setScheduleId] = useState<string>('');
-  const [sessionId, setSessionId] = useState<string>('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalPhase, setModalPhase] = useState<'confirm' | 'form'>('confirm');
+  const [modalLoading, setModalLoading] = useState(false);
+  const [mOccurrence, setMOccurrence] = useState('');
   const [roster, setRoster] = useState<RollCallStudentsResponse | null>(null);
   const [rows, setRows] = useState<{
     studentId: string; rollNo: string; name: string;
     present: boolean; checked: Set<string>; remark: string;
+    attendanceId: string | null;
   }[]>([]);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 6;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+  const [submittedInfo, setSubmittedInfo] = useState<{ scheduleId: string; month: string } | null>(null);
+  const [showUpdateConfirm, setShowUpdateConfirm] = useState(false);
+  const pendingRef = useRef<{ sessionId: string; entries: unknown[] } | null>(null);
   const todayIso = new Date().toISOString().slice(0, 10);
-  const autoPicked = useRef(false);
+  const todayName = new Date().toLocaleDateString('en-US', { weekday: 'long' });
+  // Today tab records TODAY only; Schedules tab uses its own picked month/day.
+  const [sessionDateToday] = useState(todayIso);
+  const [occMonth, setOccMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [selCourseCode, setSelCourseCode] = useState('');
+  const [selDay, setSelDay] = useState<number | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -504,17 +525,94 @@ export function RollCallSection() {
     return () => { alive = false; };
   }, []);
 
-  const loadRoster = useCallback(async (sid: string) => {
-    setBusy(true); setError(null);
+  // ---- Schedules-mode cascade (course -> day -> valid dates), all derived ----
+  const courseCodes = useMemo(
+    () => [...new Set((schedules ?? []).map((s) => s.courseCode))].sort(),
+    [schedules]);
+  const effCourseCode = courseCodes.includes(selCourseCode)
+    ? selCourseCode
+    : (courseCodes[0] ?? '');
+  const courseSchedules = useMemo(
+    () => (schedules ?? []).filter((s) => s.courseCode === effCourseCode),
+    [schedules, effCourseCode]);
+  const courseDays = useMemo(
+    () => [...new Set(courseSchedules.map((s) => s.dayOfWeek))].sort((a, b) => a - b),
+    [courseSchedules]);
+  const effDay: number | null =
+    selDay !== null && courseDays.includes(selDay)
+      ? selDay
+      : (courseDays[0] ?? null);
+  const daySchedules = useMemo(
+    () => (effDay !== null
+      ? courseSchedules.filter((s) => s.dayOfWeek === effDay)
+      : []),
+    [courseSchedules, effDay]);
+
+  // Valid calendar dates for the selected teaching day within occMonth.
+  // Derived ONLY from the timetable weekday of the selected day - never from
+  // a generic Monday-Sunday calendar.
+  const validDates = useMemo(() => {
+    if (isSchedulesMode && effDay === null) return [] as string[];
+    if (!isSchedulesMode) return [todayIso];
+    const [y, m] = occMonth.split('-').map(Number);
+    if (!y || !m) return [] as string[];
+    const dates: string[] = [];
+    const d = new Date(Date.UTC(y, m - 1, 1));
+    while (d.getUTCMonth() === m - 1) {
+      if (d.getUTCDay() % 7 === effDay % 7 || ((d.getUTCDay() === 0 ? 7 : d.getUTCDay()) === effDay)) {
+        dates.push(d.toISOString().slice(0, 10));
+      }
+      d.setUTCDate(d.getUTCDate() + 1);
+    }
+    return dates;
+  }, [isSchedulesMode, effDay, occMonth, todayIso]);
+
+  // Derived occurrence date: in Schedules mode, snap mOccurrence to the
+  // nearest valid date for the selected day. Falls back to the first valid
+  // date if the current selection doesn't match the teaching weekday.
+  const effOccurrence = useMemo(() => {
+    if (!isSchedulesMode) return sessionDateToday;
+    if (validDates.length === 0) return '';
+    return validDates.includes(mOccurrence) ? mOccurrence : validDates[0];
+  }, [isSchedulesMode, validDates, mOccurrence, sessionDateToday]);
+
+  // in Schedules mode, so the class cards always have a valid date context.
+  useEffect(() => {
+  }, [isSchedulesMode, validDates, mOccurrence]);
+
+  const selected = schedules?.find((s) => s.scheduleId === scheduleId) ?? null;
+  const todays = (schedules ?? []).filter((s) => s.dayName === todayName);
+
+  // Two-phase modal: phase 'confirm' asks "Start Roll Call?" — creates
+  // NOTHING. Clicking "Start" calls ensureSessionOn (create/reuse) THEN
+  // loads students WITH the returned sessionId so existing attendance is
+  // pre-filled. The CLASS_SESSION identity flows through the whole flow.
+  const openConfirm = (sid: string, date: string) => {
+    setScheduleId(sid);
+    setMOccurrence(date);
+    setRoster(null);
+    setRows([]);
+    setPage(1);
+    setError(null);
+    setModalPhase('confirm');
+    setModalOpen(true);
+  };
+
+  const startRollCall = async () => {
+    setModalPhase('form');
+    setModalLoading(true);
+    setError(null);
     try {
-      const sess = await ensureRollCallSession(sid);
-      setSessionId(sess.sessionId);
-      const data = await getRollCallStudents(sid, sess.sessionId);
+      // 1. Create/reuse the session for schedule_id + occurrence date.
+      const sess = await ensureRollCallSession(scheduleId, mOccurrence);
+      // 2. Load students WITH existing attendance for that exact session.
+      const data = await getRollCallStudents(scheduleId, sess.sessionId);
       setRoster(data);
       setRows(data.students.map((st) => ({
         studentId: st.studentId,
         rollNo: st.rollNo,
         name: st.studentName,
+        attendanceId: st.attendanceId,
         present: st.attendanceStatus === 'PRESENT',
         checked: new Set(
           st.attendanceStatus === 'PRESENT'
@@ -525,37 +623,70 @@ export function RollCallSection() {
         ),
         remark: st.remark ?? '',
       })));
+      setPage(1);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load roster');
+      setError(e instanceof Error ? e.message : 'Failed to load students');
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
+  const buildEntries = () => {
+    if (!roster) return [];
+    const order = roster.slots.map((sl) => sl.slotId);
+    return rows.map((r) => {
+      const present = r.present && r.checked.size > 0;
+      let startId: string | null = null;
+      let endId: string | null = null;
+      if (present) {
+        const idxs = order.map((id, i) => (r.checked.has(id) ? i : -1)).filter((i) => i >= 0);
+        const contiguous = idxs.length > 0 && idxs.every((v, k) => k === 0 || v === idxs[k - 1] + 1);
+        if (!contiguous) throw new Error('Attendance periods must be consecutive.');
+        startId = order[idxs[0]];
+        endId = order[idxs[idxs.length - 1]];
+      }
+      return {
+        studentId: r.studentId,
+        attendanceStatus: present ? ('PRESENT' as const) : ('ABSENT' as const),
+        remark: r.remark || undefined,
+        attendanceStartSlotId: startId,
+        attendanceEndSlotId: endId,
+      };
+    });
+  };
+
+  // Submit: creates/reuses the CLASS_SESSION for THIS occurrence date, then
+  // saves attendance transactionally. Opening the modal never wrote anything.
+  const doSubmit = async (forceUpdate: boolean) => {
+    if (!selected || !mOccurrence || busy) return;
+    setBusy(true); setError(null);
+    try {
+      const sess = await ensureRollCallSession(selected.scheduleId, mOccurrence);
+      const existing = await getRollCallStudents(selected.scheduleId, sess.sessionId);
+      const hasPrior = existing.students.some((st) => st.attendanceId);
+      if (hasPrior && !forceUpdate) {
+        setShowUpdateConfirm(true);
+        return;
+      }
+      await markAttendance(sess.sessionId, buildEntries() as never);
+      toast.success(forceUpdate ? 'Roll Call updated successfully.' : 'Roll Call submitted successfully.');
+      setSubmittedInfo({ scheduleId: selected.scheduleId, month: mOccurrence.slice(0, 7) });
+      setModalOpen(false);
+      const list = await getRollCallMySchedule();
+      setSchedules(list);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Submit failed');
+      toast.error(e instanceof Error ? e.message : 'Submit failed');
     } finally {
       setBusy(false);
     }
-  }, []);
-
-  useEffect(() => {
-    if (!schedules || schedules.length === 0 || autoPicked.current) return;
-    autoPicked.current = true;
-    const now = new Date();
-    const nowT = now.getHours() * 60 + now.getMinutes();
-    const nm = now.toLocaleDateString('en-US', { weekday: 'long' });
-    const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
-    const todays = schedules.filter((s) => s.dayName === nm);
-    const current = todays.find((s) => {
-      const a = toMin(s.startTime); const b = toMin(s.endTime);
-      return nowT >= a && nowT < b;
-    });
-    const target = current ?? todays[0];
-    if (target) {
-      setScheduleId(target.scheduleId);
-      loadRoster(target.scheduleId).catch(() => {});
-    }
-  }, [schedules, loadRoster]);
+  };
 
   const togglePresent = (studentId: string, present: boolean) => {
     setRows((prev) => prev.map((r) => {
       if (r.studentId !== studentId) return r;
       if (!present) return { ...r, present: false, checked: new Set<string>() };
-      const all = new Set(roster?.slots.map((sl) => sl.slotId) ?? []);
+      const all = new Set<string>(roster?.slots.map((sl) => sl.slotId) ?? []);
       return { ...r, present: true, checked: all };
     }));
   };
@@ -565,59 +696,57 @@ export function RollCallSection() {
       if (r.studentId !== studentId) return r;
       const next = new Set(r.checked);
       if (next.has(slotId)) next.delete(slotId); else next.add(slotId);
-      return { ...r, checked: next, present: next.size > 0 ? true : false };
+      return { ...r, checked: next, present: next.size > 0 };
     }));
   };
 
-  const submitAll = async () => {
-    if (!sessionId || rows.length === 0 || busy) return;
-    setBusy(true); setError(null);
-    try {
-      await markAttendance(sessionId, rows.map((r) => ({
-        studentId: r.studentId,
-        attendanceStatus: r.present && r.checked.size > 0
-          ? ('PRESENT' as const)
-          : ('ABSENT' as const),
-        remark: r.remark || undefined,
-        periodSlotIds: r.present ? Array.from(r.checked) : [],
-      })));
-      toast.success('Roll call submitted');
-      await loadRoster(scheduleId);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Submit failed');
-    } finally {
-      setBusy(false);
-    }
+  const openHistory = (sid: string, month: string) => {
+    if (onViewHistory) onViewHistory(sid, month);
   };
-
-  const selected = schedules?.find((s) => s.scheduleId === scheduleId) ?? null;
-  const todays = (schedules ?? []).filter((s) => s.dayName === todayName);
 
   return (
     <div>
       <div className="flex items-center justify-between gap-3 flex-wrap mb-4">
         <div>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
-            <ClipboardCheck size={20} /> Roll Call
+            <ClipboardCheck size={20} /> {isSchedulesMode ? 'Schedules Roll Call' : "Today's Roll Call"}
           </h1>
           <div style={{ fontSize: 12.5, color: 'var(--text-light)' }}>
-            Latest published timetable &middot; {todayIso}
+            {isSchedulesMode
+              ? <>Any scheduled timetable day &middot; previous / today / upcoming</>
+              : <>{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</>}
           </div>
         </div>
-        <select
-          value={scheduleId}
-          onChange={(e) => { const id = e.target.value; setScheduleId(id); if (id) loadRoster(id).catch(() => {}); }}
-          className="btn btn-ghost btn-sm"
-          style={{ border: '1.5px solid var(--surface-border)', minWidth: 320 }}
-        >
-          {!schedules && <option>Loading…</option>}
-          {(schedules ?? []).map((s) => (
-            <option key={s.scheduleId} value={s.scheduleId}>
-              {s.courseCode} · {s.dayName} {s.startTime.slice(0, 5)}-{s.endTime.slice(0, 5)} · Sem {s.semesterNo ?? '?'} · {s.sectionNames.join('+')}
-            </option>
-          ))}
-        </select>
+        {onViewHistory ? (
+          <button onClick={() => onViewHistory(scheduleId || (submittedInfo?.scheduleId ?? ''), occMonth)}
+            className="btn btn-ghost btn-sm" style={{ border: '1.5px solid var(--surface-border)' }}>
+            <History size={14} /> Roll Call History
+          </button>
+        ) : (
+          <Link href="/lecturer/roll-call-history" className="btn btn-ghost btn-sm" style={{ border: '1.5px solid var(--surface-border)' }}>
+            <History size={14} /> Roll Call History
+          </Link>
+        )}
       </div>
+
+      {/* Schedules mode controls: Course / Teaching days / Month */}
+      {isSchedulesMode && (
+        <div className="flex items-end gap-3 flex-wrap mb-4">
+          <label style={{ fontSize: 12, color: 'var(--text-light)', display: 'grid', gap: 2 }}>
+            Course
+            <select value={effCourseCode} onChange={(e) => { setSelCourseCode(e.target.value); setSelDay(null); }}
+              className="btn btn-ghost btn-sm cursor-pointer" style={{ border: '1.5px solid var(--surface-border)', minWidth: 160 }}>
+              {courseCodes.map((code) => <option key={code} value={code}>{code}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 12, color: 'var(--text-light)', display: 'grid', gap: 2 }}>
+            Month
+            <input type="month" value={occMonth}
+              onChange={(e) => { if (/^\d{4}-\d{2}$/.test(e.target.value)) setOccMonth(e.target.value); }}
+              className="btn btn-ghost btn-sm" style={{ border: '1.5px solid var(--surface-border)' }} />
+          </label>
+        </div>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 mb-4" style={{ borderRadius: 'var(--radius-md)', background: 'rgba(239,68,68,0.1)', border: '1.5px solid rgba(239,68,68,0.3)', color: 'var(--danger)', fontSize: 12.5 }}>
@@ -625,20 +754,95 @@ export function RollCallSection() {
         </div>
       )}
 
+      {/* Teaching-day chips (Schedules) or Today card header (Today) */}
       <div className="mb-5" style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-lg)', background: 'var(--surface-soft)' }}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--surface-border)', fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>
-          Today&rsquo;s Roll Call &mdash; {todayName}
+          {isSchedulesMode
+            ? <>Available Schedule Days &mdash; {occMonth}</>
+            : <>Today&rsquo;s Roll Call &mdash; {todayName}</>}
         </div>
-        {todays.length === 0 && (
+
+        {isSchedulesMode && courseDays.length === 0 && (
           <div style={{ padding: '14px 18px', fontSize: 13, color: 'var(--text-light)' }}>
-            No scheduled roll call for today.
+            No assigned courses available.
           </div>
         )}
-        {todays.map((s) => {
+
+        {isSchedulesMode && (
+          <div style={{ padding: '10px 18px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {courseDays.map((dow) => {
+              const active = effDay === dow;
+              return (
+                <button key={dow} onClick={() => setSelDay(dow)}
+                  className="btn btn-xs cursor-pointer"
+                  style={{
+                    border: '1.5px solid ' + (active ? 'var(--primary)' : 'var(--surface-border)'),
+                    background: active ? 'rgba(35,96,138,0.12)' : 'transparent',
+                    color: active ? 'var(--accent)' : 'var(--text)',
+                    fontWeight: active ? 700 : 500,
+                  }}>
+                  {DOW_NAMES[dow]}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Valid dates for the selected teaching day */}
+        {isSchedulesMode && (
+          <div style={{ padding: '10px 18px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {validDates.length === 0 && (
+              <span style={{ fontSize: 13, color: 'var(--text-light)' }}>No dates in this month.</span>
+            )}
+            {validDates.map((v) => {
+              const active = v === effOccurrence;
+              const rel = v < todayIso ? 'Past' : v === todayIso ? 'Today' : 'Upcoming';
+              return (
+                <button key={v}
+                  onClick={() => setMOccurrence(v)}
+                  className="btn btn-xs cursor-pointer"
+                  style={{
+                    border: '1.5px solid ' + (active ? 'var(--primary)' : 'var(--surface-border)'),
+                    background: active ? 'rgba(35,96,138,0.14)' : 'transparent',
+                    color: active ? 'var(--accent)' : 'var(--text)',
+                    fontWeight: active ? 700 : 500,
+                  }}>
+                  {new Date(v + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  <span style={{ fontSize: 10, marginLeft: 4, opacity: 0.8 }}>{rel}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {!isSchedulesMode && schedules === null && (
+          <div style={{ padding: '14px 18px' }}>
+            {[...Array(3)].map((_, i) => (
+              <div key={i} style={{ display: 'flex', gap: 12, padding: '10px 0', borderBottom: '1px solid var(--surface)' }}>
+                <div style={{ width: 60, height: 12, borderRadius: 4, background: 'var(--surface-border)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                <div style={{ width: 200, height: 12, borderRadius: 4, background: 'var(--surface-border)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+              </div>
+            ))}
+          </div>
+        )}
+        {!isSchedulesMode && todays.length === 0 && (
+          <div style={{ padding: '14px 18px', fontSize: 13, color: 'var(--text-light)' }}>
+            No classes scheduled for today.
+          </div>
+        )}
+
+        {(isSchedulesMode ? daySchedules : todays).map((s) => {
           const isSel = s.scheduleId === scheduleId;
+          // Compute PAST / CURRENT / UPCOMING from actual wall-clock times
+          const nowT = new Date().getHours() * 60 + new Date().getMinutes();
+          const toMin = (t: string) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+          const startM = toMin(s.startTime), endM = toMin(s.endTime);
+          const timeStatus = nowT >= startM && nowT < endM ? 'CURRENT' : nowT >= endM ? 'PAST' : 'UPCOMING';
+          const statusLabel = s.todaySessionCompleted ? 'Completed' : s.todaySessionId ? 'Pending' : timeStatus === 'CURRENT' ? 'Current' : timeStatus === 'PAST' ? 'Past' : 'Upcoming';
+          const statusColor = s.todaySessionCompleted ? '#16a34a' : timeStatus === 'CURRENT' ? 'var(--primary)' : timeStatus === 'PAST' ? 'var(--text-light)' : 'var(--warning)';
           return (
             <button key={s.scheduleId}
-              onClick={() => { setScheduleId(s.scheduleId); loadRoster(s.scheduleId).catch(() => {}); }}
+              onClick={() => openConfirm(s.scheduleId, isSchedulesMode ? effOccurrence : todayIso)}
               className="w-full text-left cursor-pointer"
               style={{
                 padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 10,
@@ -646,14 +850,19 @@ export function RollCallSection() {
                 background: isSel ? 'rgba(35,96,138,0.08)' : 'transparent',
               }}>
               <span style={{ fontSize: 16 }}>
-                {s.todaySessionCompleted ? '☑' : s.todaySessionId ? '☐' : '○'}
+                {s.todaySessionCompleted ? '\u2611' : s.todaySessionId ? '\u2610' : '\u25CB'}
               </span>
               <span style={{ fontSize: 13, fontWeight: 600 }}>
-                {s.startTime.slice(0, 5)}-{s.endTime.slice(0, 5)} &nbsp;{s.courseCode} — Sem {s.semesterNo ?? '?'} {s.sectionNames.join('+')}
+                {fmtRange12(s.startTime, s.endTime)} &nbsp;{s.courseCode} &mdash; Sem {s.semesterNo ?? '?'} {s.sectionNames.join('+')}
               </span>
-              {s.todaySessionId && (
-                <span className="badge badge-xs" style={{ marginLeft: 'auto', background: 'rgba(34,197,94,0.15)', color: '#16a34a', border: 'none' }}>
-                  session created
+              {!isSchedulesMode && (
+                <span className="badge badge-xs" style={{
+                  marginLeft: 'auto',
+                  background: timeStatus === 'CURRENT' ? 'rgba(35,96,138,0.14)' : 'transparent',
+                  color: timeStatus === 'CURRENT' ? 'var(--accent)' : 'var(--text-light)',
+                  fontWeight: timeStatus === 'CURRENT' ? 700 : 400,
+                }}>
+                  {statusLabel}
                 </span>
               )}
             </button>
@@ -661,104 +870,207 @@ export function RollCallSection() {
         })}
       </div>
 
-      {selected && (
+      {selected && !modalOpen && (
         <div className="mb-4 flex items-center gap-2 flex-wrap" style={{ fontSize: 13 }}>
           <span className="badge" style={{ background: 'rgba(35,96,138,0.12)', color: 'var(--accent)', border: 'none', fontWeight: 700 }}>
-            {selected.courseCode} · {selected.courseName}
+            {selected.courseCode} &mdash; {selected.courseName}
           </span>
           <span className="badge badge-xs">Semester {selected.semesterNo ?? '?'}</span>
           <span className="badge badge-xs">{selected.sectionNames.join(' + ')}</span>
-          <span className="badge badge-xs">{selected.dayName}</span>
-          <span className="badge badge-xs">{selected.startTime.slice(0, 5)}-{selected.endTime.slice(0, 5)}</span>
-          <span className="badge badge-xs">{selected.periodCount} period{selected.periodCount > 1 ? 's' : ''}</span>
-          {selected.sharedDelivery && <span className="badge badge-xs">Shared delivery</span>}
+          <span className="badge badge-xs">{fmtRange12(selected.startTime, selected.endTime)}</span>
+          <span className="badge badge-xs">{selected.periodCount} periods</span>
+          <span className="badge badge-xs">Click to open Roll Call</span>
         </div>
       )}
 
-      {roster && (
-        <div className="overflow-x-auto" style={{ border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-lg)' }}>
-          <table className="table w-full">
-            <thead>
-              <tr style={{ fontSize: 11 }}>
-                <th>Student</th>
-                <th>Status</th>
-                <th>Attendance Periods</th>
-                <th>Remark</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.studentId}>
-                  <td>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{r.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-light)' }}>{r.rollNo}</div>
-                  </td>
-                  <td>
-                    <div className="flex gap-2">
-                      <button onClick={() => togglePresent(r.studentId, true)} className="btn btn-xs"
-                        style={{ background: r.present ? 'var(--success)' : 'var(--secondary)', color: r.present ? '#fff' : 'var(--text)', border: 'none' }}>
-                        Present
-                      </button>
-                      <button onClick={() => togglePresent(r.studentId, false)} className="btn btn-xs"
-                        style={{ background: !r.present ? 'var(--danger)' : 'var(--secondary)', color: !r.present ? '#fff' : 'var(--text)', border: 'none' }}>
-                        Absent
-                      </button>
+      {submittedInfo && (
+        <div className="flex items-center justify-between gap-3 flex-wrap mb-4 px-4 py-3"
+          style={{ borderRadius: 'var(--radius-md)', background: 'rgba(34,197,94,0.10)', border: '1.5px solid rgba(34,197,94,0.35)' }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: '#16a34a' }}>
+            Roll Call submitted successfully.
+          </span>
+          {onViewHistory ? (
+            <button onClick={() => onViewHistory(submittedInfo.scheduleId, submittedInfo.month)}
+              className="btn btn-sm btn-primary cursor-pointer">
+              View Roll Call History
+            </button>
+          ) : (
+            <Link href={`/lecturer/roll-call-history?scheduleId=${submittedInfo.scheduleId}&month=${submittedInfo.month}`}
+              className="btn btn-sm btn-primary cursor-pointer">
+              View Roll Call History
+            </Link>
+          )}
+        </div>
+      )}
+
+      {/* ================= Attendance modal ================= */}
+      {modalOpen && (
+        <div role="dialog" aria-modal="true"
+          className="fixed inset-0 z-40 flex items-center justify-center p-6"
+          style={{ background: 'rgba(15,23,42,0.45)' }}
+          onClick={() => { if (!busy) setModalOpen(false); }}>
+          <div className="w-full max-w-2xl rounded-xl flex flex-col"
+            style={{ background: 'var(--surface)', border: '1px solid var(--surface-border)', maxHeight: '85vh' }}
+            onClick={(e) => e.stopPropagation()}>
+
+            {/* fixed header */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--surface-border)' }} className="flex items-start justify-between gap-3">
+              <div>
+                <h3 style={{ fontWeight: 700, fontSize: 16, margin: 0 }}>Roll Call</h3>
+                {selected && (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{selected.courseCode} &middot; {selected.courseName}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-light)' }}>
+                      Semester {selected.semesterNo ?? '?'} &middot; {selected.sectionNames.join(' + ')}
                     </div>
-                  </td>
-                  <td>
-                    {r.present && roster.slots.length > 0 ? (
-                      <div className="flex gap-3 flex-wrap">
-                        {roster.slots.map((sl) => (
-                          <label key={sl.slotId} className="flex items-center gap-1 cursor-pointer"
-                            style={{ fontSize: 12 }}
-                            onClick={(e) => { e.preventDefault(); toggleSlot(r.studentId, sl.slotId); }}>
-                            <input type="checkbox" readOnly checked={r.checked.has(sl.slotId)} style={{ pointerEvents: 'none' }} />
-                            {sl.startTime.slice(0, 5)}-{sl.endTime.slice(0, 5)}
-                          </label>
-                        ))}
-                      </div>
-                    ) : (
-                      <span style={{ color: 'var(--text-light)', fontSize: 12 }}>—</span>
-                    )}
-                  </td>
-                  <td>
-                    <input value={r.remark}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setRows((prev) => prev.map((x) => x.studentId === r.studentId ? { ...x, remark: v } : x));
-                      }}
-                      placeholder="late / medical / …"
-                      style={{
-                        width: 160, padding: '6px 10px', fontSize: 12,
-                        border: '1.5px solid var(--surface-border)',
-                        borderRadius: 'var(--radius-sm)', background: 'var(--surface)',
-                      }} />
-                  </td>
-                </tr>
-              ))}
-              {rows.length === 0 && (
-                <tr><td colSpan={4} className="text-center py-8" style={{ color: 'var(--text-light)' }}>
-                  No students found for this schedule.
-                </td></tr>
+                    <div style={{ fontSize: 12, color: 'var(--text-light)' }}>
+                      {new Date(mOccurrence + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+                      {' \u00B7 '}
+                      {fmtRange12(selected.startTime, selected.endTime)}
+                      {' \u00B7 '}
+                      {selected.periodCount} periods
+                    </div>
+                  </>
+                )}
+              </div>
+              <button className="btn btn-ghost btn-sm cursor-pointer" onClick={() => { if (!busy) setModalOpen(false); }}>&#10005;</button>
+            </div>
+
+            {/* scrollable body */}
+            <div className="flex-1 overflow-y-auto" style={{ padding: '14px 20px', minHeight: 260 }}>
+              {modalPhase === 'confirm' && !modalLoading && selected && (
+                <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>
+                    Start Roll Call for {selected.courseCode}?
+                  </p>
+                  <p style={{ fontSize: 12.5, color: 'var(--text-light)', marginBottom: 16 }}>
+                    Semester {selected.semesterNo} &middot; Section {selected.sectionNames.join(' + ')}
+                    &middot; {mOccurrence}
+                  </p>
+                  <button className="btn btn-primary btn-sm cursor-pointer"
+                    onClick={() => { void startRollCall(); }}>
+                    Start Roll Call
+                  </button>
+                </div>
               )}
-            </tbody>
-          </table>
+              {modalPhase === 'form' && modalLoading && (
+                <div>
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 16, padding: '10px 0', borderBottom: '1px solid var(--surface)' }}>
+                      <div style={{ width: 140, height: 14, borderRadius: 4, background: 'var(--surface-border)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                      <div style={{ width: 60, height: 14, borderRadius: 4, background: 'var(--surface-border)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                      <div style={{ width: 180, height: 14, borderRadius: 4, background: 'var(--surface-border)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    </div>
+                  ))}
+                  <div style={{ textAlign: 'center', paddingTop: 12, fontSize: 13, color: 'var(--text-light)' }}>Loading students&hellip;</div>
+                </div>
+              )}
+              {modalPhase === 'form' && !modalLoading && roster && (
+                <table className="table w-full">
+                  <thead>
+                    <tr style={{ fontSize: 11 }}>
+                      <th>Student</th><th>Status</th><th>Periods</th><th>Remark</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE).map((r) => (
+                      <tr key={r.studentId}>
+                        <td>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>{r.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-light)' }}>{r.rollNo}</div>
+                        </td>
+                        <td>
+                          <div className="flex gap-2">
+                            <button onClick={() => togglePresent(r.studentId, true)} className="btn btn-xs"
+                              style={{ background: r.present ? 'var(--success)' : 'var(--secondary)', color: r.present ? '#fff' : 'var(--text)', border: 'none' }}>Present</button>
+                            <button onClick={() => togglePresent(r.studentId, false)} className="btn btn-xs"
+                              style={{ background: !r.present ? 'var(--danger)' : 'var(--secondary)', color: !r.present ? '#fff' : 'var(--text)', border: 'none' }}>Absent</button>
+                          </div>
+                        </td>
+                        <td>
+                          {r.present && roster.slots.length > 0 ? (
+                            <div className="flex gap-2 flex-wrap">
+                              {roster.slots.map((sl) => (
+                                <label key={sl.slotId} className="flex items-center gap-1 cursor-pointer" style={{ fontSize: 11 }}
+                                  onClick={(e) => { e.preventDefault(); toggleSlot(r.studentId, sl.slotId); }}>
+                                  <input type="checkbox" readOnly checked={r.checked.has(sl.slotId)} style={{ pointerEvents: 'none' }} />
+                                  {fmt12h(sl.startTime)}
+                                </label>
+                              ))}
+                            </div>
+                          ) : <span style={{ color: 'var(--text-light)', fontSize: 12 }}>—</span>}
+                        </td>
+                        <td>
+                          <input value={r.remark}
+                            onChange={(e) => { const v = e.target.value; setRows((prev) => prev.map((x) => x.studentId === r.studentId ? { ...x, remark: v } : x)); }}
+                            placeholder="late / medical / …"
+                            style={{ width: 130, padding: '5px 8px', fontSize: 12, border: '1.5px solid var(--surface-border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface)' }} />
+                        </td>
+                      </tr>
+                    ))}
+                    {rows.length === 0 && (
+                      <tr><td colSpan={4} className="text-center py-6" style={{ color: 'var(--text-light)' }}>
+                        No students found for this course and section.
+                      </td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* fixed footer: pagination + actions */}
+            <div style={{ borderTop: '1px solid var(--surface-border)', padding: '12px 20px' }} className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2" style={{ fontSize: 12 }}>
+                <button className="btn btn-xs cursor-pointer" disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}>&lt; Previous</button>
+                <span>Page {page} of {Math.max(1, Math.ceil(rows.length / PAGE_SIZE))}</span>
+                <button className="btn btn-xs cursor-pointer" disabled={page >= Math.ceil(rows.length / PAGE_SIZE)}
+                  onClick={() => setPage((p) => p + 1)}>Next &gt;</button>
+              </div>
+              <div className="flex gap-2">
+                <button className="btn btn-ghost btn-sm cursor-pointer" onClick={() => { if (!busy) setModalOpen(false); }}>Cancel</button>
+                <button onClick={() => { void doSubmit(false); }} disabled={busy || rows.length === 0}
+                  className="btn btn-sm gap-2 text-white cursor-pointer disabled:opacity-50"
+                  style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', border: 'none' }}>
+                  {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                  Submit Roll Call
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
-      <div className="flex justify-end mt-4">
-        <button onClick={submitAll} disabled={busy || rows.length === 0}
-          className="btn btn-sm gap-2 text-white cursor-pointer disabled:opacity-50"
-          style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))', border: 'none' }}>
-          {busy ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          Submit Roll Call
-        </button>
-      </div>
+      {/* Update-existing confirmation (above modal) */}
+      {showUpdateConfirm && (
+        <div role="dialog" aria-modal="true" className="fixed inset-0 z-50 flex items-center justify-center p-6"
+          style={{ background: 'rgba(15,23,42,0.55)' }} onClick={() => setShowUpdateConfirm(false)}>
+          <div className="w-full max-w-sm rounded-xl" style={{ background: 'var(--surface)', border: '1.5px solid var(--primary)', padding: 20 }}
+            onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>Roll Call already exists</h3>
+            <p style={{ fontSize: 12.5, lineHeight: 1.6 }}>
+              Attendance has already been submitted for this scheduled class.
+              Do you want to update it?
+            </p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button className="btn btn-ghost btn-sm cursor-pointer" onClick={() => setShowUpdateConfirm(false)}>Cancel</button>
+              <button className="btn btn-sm btn-primary cursor-pointer"
+                onClick={() => { setShowUpdateConfirm(false); void doSubmit(true); }}>
+                Update Roll Call
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-
+/** ISO day-of-week (1=Monday … 7=Sunday) — matches java.time.DayOfWeek.getValue(). */
+const DOW_NAMES: Record<number, string> = {
+  1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday',
+  5: 'Friday', 6: 'Saturday', 7: 'Sunday',
+};
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
 const GRID_DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
 const GRID_COLUMN_HEADERS = ['P1', 'P2', 'P3', 'LUNCH', 'P4', 'P5', 'P6'] as const;
@@ -786,7 +1098,7 @@ const MEMBER_COLORS = [
 /**
  * Period time labels come from the persisted TimeSlot configuration
  * (GET /api/time-slots), normalized onto the authoritative 09:00-16:00 grid
- * (P1=09:00-10:00 â€¦ P6=15:00-16:00, Lunch=12:00-13:00). A hardcoded fallback
+ * (P1=09:00-10:00 — P6=15:00-16:00, Lunch=12:00-13:00). A hardcoded fallback
  * of the exact persisted values is used only while the request is in flight
  * or when the server is unreachable.
  */
@@ -1008,6 +1320,8 @@ function ScheduleCard({
         border: cancelled ? '1.5px solid var(--surface-border)' : meta.cardBorder,
         borderRadius: 'var(--radius-md)',
         padding: '6px 10px',
+        width: '100%',
+        minWidth: 0,
         height: '100%',
         minHeight: 0,
         display: 'flex',
@@ -1052,10 +1366,10 @@ function ScheduleCard({
 
 const dayNameOf = (day: number) => GRID_DAY_NAMES[day - 1] ?? `Day ${day}`;
 const slotTextOf = (s: ScheduleResponse) =>
-  `${dayNameOf(s.dayOfWeek)} P${s.startPeriodNo}${(s.endPeriodNo ?? s.startPeriodNo) > s.startPeriodNo ? '-' + s.endPeriodNo : ''}`;
+  `${dayNameOf(s.dayOfWeek)} P${s.startPeriodNo}${s.endPeriodNo > s.startPeriodNo ? '-' + s.endPeriodNo : ''}`;
 const meetingLabelOf = (s: ScheduleResponse) => {
   const meta = SCHEDULE_TYPE_META[s.scheduleType] ?? SCHEDULE_TYPE_META.COURSE;
-  const span = (s.endPeriodNo ?? s.startPeriodNo) - s.startPeriodNo + 1;
+  const span = s.endPeriodNo - s.startPeriodNo + 1;
   return `${meta.label} \u2014 ${span} period${span === 1 ? '' : 's'}`;
 };
 
@@ -1139,12 +1453,12 @@ interface WeeklyTimetableGridProps {
 
 const periodOfColumn = (ci: number) => (ci < LUNCH_HEADER_COL ? ci + 1 : ci);
 
-const windowKeyOf = (s: ScheduleResponse) => `${s.startPeriodNo}|${s.endPeriodNo ?? s.startPeriodNo}`;
+const windowKeyOf = (s: ScheduleResponse) => `${s.startPeriodNo}|${s.endPeriodNo}`;
 
 /**
  * Grouping key for the timetable presentation: semester + section + weekday +
  * period. Schedules from different semesters or sections must never share a
- * visual cell â€” each cohort gets its own table.
+ * visual cell — each cohort gets its own table.
  */
 const groupSchedulesByCohort = (schedules: ScheduleResponse[]): { semesterNo: number; section: string; items: ScheduleResponse[] }[] => {
   const map = new Map<string, { semesterNo: number; section: string; items: ScheduleResponse[] }>();
@@ -1171,8 +1485,8 @@ const groupSchedulesByCohort = (schedules: ScheduleResponse[]): { semesterNo: nu
       const occupied = group.items.some((c) =>
         c.scheduleType === 'COURSE' &&
         c.dayOfWeek === s.dayOfWeek &&
-        c.startPeriodNo <= (s.endPeriodNo ?? s.startPeriodNo) &&
-        (c.endPeriodNo ?? c.startPeriodNo) >= s.startPeriodNo
+        c.startPeriodNo <= s.endPeriodNo &&
+        c.endPeriodNo >= s.startPeriodNo
       );
       if (!occupied) group.items.push(s);
     }
@@ -1186,7 +1500,6 @@ function WeeklyTimetableGrid({
   schedules,
   editable,
   periodLabels,
-  lunchLabel,
   todayIdx = -1,
   dragTarget = null,
   remoteDrag = null,
@@ -1238,7 +1551,7 @@ function WeeklyTimetableGrid({
           >
             <span>{h}</span>
             <span style={{ fontSize: 9.5, fontWeight: 500, color: 'var(--text-lighter)' }}>
-              {isLunch ? lunchLabel : (periodLabels[headerPeriod - 1] ?? '')}
+              {isLunch ? '' : (periodLabels[headerPeriod - 1] ?? '')}
             </span>
           </div>
         );
@@ -1250,10 +1563,10 @@ function WeeklyTimetableGrid({
         return (
           <Fragment key={dayName}>
             <div
-              key={`${dayName}-col`}
               className="bg-base-100"
               style={{
                 gridColumn: 1,
+                gridRow: di + 2,
                 position: 'sticky',
                 left: 0,
                 zIndex: 5,
@@ -1283,38 +1596,16 @@ function WeeklyTimetableGrid({
 
             {GRID_COLUMN_HEADERS.map((h, ci) => {
               const period = periodOfColumn(ci);
-              if (h === 'LUNCH') {
-                return (
-                  <div
-                    key={`${day}-lunch`}
-                    style={{
-                      gridColumn: ci + 2,
-                      minHeight: GRID_CELL_MIN_HEIGHT,
-                      minWidth: 0,
-                      borderRadius: 6,
-                      background: 'repeating-linear-gradient(45deg, var(--divider), var(--divider) 6px, var(--secondary-lighter) 6px, var(--secondary-lighter) 12px)',
-                      border: '1.5px dashed var(--surface-border)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <div style={{ fontSize: 10, color: 'var(--text-lighter)', fontStyle: 'italic' }}>
-                      Lunch break
-                    </div>
-                  </div>
-                );
-              }
+              if (h === 'LUNCH') return null;
               const cellSchedules = items.filter(
                 (s) =>
                   s.dayOfWeek === day &&
                   (s.startPeriodNo === period ||
-                    (period === 4 && s.startPeriodNo <= 3 && (s.endPeriodNo ?? s.startPeriodNo) >= 4))
+                    (period === 4 && s.startPeriodNo <= 3 && s.endPeriodNo >= 4))
               );
               const spannedInto = items.some((s) => {
                 if (s.dayOfWeek !== day) return false;
-                const end = s.endPeriodNo ?? s.startPeriodNo;
-                const segEnd = s.startPeriodNo <= 3 && end >= 4 ? 3 : end;
+                const segEnd = s.startPeriodNo <= 3 && s.endPeriodNo >= 4 ? 3 : s.endPeriodNo;
                 return s.startPeriodNo < period && segEnd >= period;
               });
               const isTarget = dragTarget?.day === day && dragTarget.period === period;
@@ -1327,6 +1618,7 @@ function WeeklyTimetableGrid({
                   onClick={onCellClick ? () => onCellClick(day, period) : undefined}
                   style={{
                     gridColumn: ci + 2,
+                    gridRow: di + 2,
                     minHeight: GRID_CELL_MIN_HEIGHT,
                     minWidth: 0,
                     borderRadius: 6,
@@ -1341,6 +1633,7 @@ function WeeklyTimetableGrid({
                     padding: 5,
                     position: 'relative',
                     zIndex: spannedInto ? 3 : 1,
+                    overflow: 'visible',
                   }}
                 >
                   {remoteHere && (
@@ -1360,14 +1653,13 @@ function WeeklyTimetableGrid({
                     .map((grp, gi) => {
                       const s = grp[0];
                       const combined = grp.length > 1 && new Set(grp.map((x) => x.courseCode)).size === grp.length;
-                      const end = s.endPeriodNo ?? s.startPeriodNo;
-                      const crossesLunch = s.startPeriodNo <= 3 && end >= 4;
+                      const crossesLunch = s.startPeriodNo <= 3 && s.endPeriodNo >= 4;
                       const isContinuation = period === 4 && s.startPeriodNo <= 3 && crossesLunch;
                       const span = isContinuation
-                        ? end - 4 + 1
+                        ? s.endPeriodNo - 4 + 1
                         : crossesLunch
                           ? 3 - s.startPeriodNo + 1
-                          : end - s.startPeriodNo + 1;
+                          : s.endPeriodNo - s.startPeriodNo + 1;
                       return (
                         <div
                           key={s.scheduleId}
@@ -1377,7 +1669,7 @@ function WeeklyTimetableGrid({
                             bottom: 5,
                             left: 5 + gi * 14,
                             width: `calc(${span * 100}% + ${(span - 1) * 1}px - 10px - ${gi * 14}px)`,
-                            zIndex: 2 + gi,
+                            zIndex: 10 + gi,
                             pointerEvents: 'none',
                           }}
                         >
@@ -1397,13 +1689,47 @@ function WeeklyTimetableGrid({
                           )}
                         </div>
                       );
-                    })}
-        </div>
-      );
-            })}
+                    })},
+                </div>
+              );
+            })},
           </Fragment>
         );
-      })}
+      })},
+
+      {/* Lunch strip */}
+      <div
+        style={{
+          gridColumn: 5,
+          gridRow: `2 / ${GRID_DAY_NAMES.length + 2}`,
+          alignSelf: 'stretch',
+          width: '100%',
+          minHeight: GRID_CELL_MIN_HEIGHT * GRID_DAY_NAMES.length,
+          zIndex: 1,
+          background: 'repeating-linear-gradient(45deg, var(--divider), var(--divider) 6px, var(--secondary-lighter) 6px, var(--secondary-lighter) 12px)',
+          borderLeft: '1.5px dashed var(--surface-border)',
+          borderRight: '1.5px dashed var(--surface-border)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'space-evenly',
+        }}
+      >
+        {[...'LUNCH'].reverse().map((ch, li) => (
+          <span
+            key={`${ch}-${li}`}
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: 'var(--text-lighter)',
+              fontStyle: 'italic',
+              lineHeight: 1,
+            }}
+          >
+            {ch}
+          </span>
+        ))}
+      </div>
     </div>
   );
 
@@ -1422,7 +1748,7 @@ function WeeklyTimetableGrid({
         <div key={`${g.semesterNo}|${g.section}`}>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent)' }}>
-              Semester {g.semesterNo} â€” Section {g.section}
+              Semester {g.semesterNo} — Section {g.section}
             </span>
             <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-lighter)' }}>
               {g.items.length} {g.items.length === 1 ? 'session' : 'sessions'}
@@ -1508,7 +1834,7 @@ function CourseInfoPanel({ schedules }: { schedules: ScheduleResponse[] }) {
                 whiteSpace: 'nowrap',
               }}
             >
-              {Array.from(r.staff).join(', ') || 'â€”'}
+              {Array.from(r.staff).join(', ') || '—'}
             </span>
           </div>
         ))}
@@ -1541,10 +1867,80 @@ function GenerationStatusPill({ status }: { status: GenerationStatus }) {
 interface SharedTimetableWorkspaceProps {
   generationId: string;
   onBack: () => void;
+  /** Called when the session genuinely does not exist after bounded retries. */
+  onNotFound?: (generationId: string) => void;
   staff: StaffRecord;
 }
 
-export function SharedTimetableWorkspace({ generationId, onBack, staff }: SharedTimetableWorkspaceProps) {
+// ============================================================================
+// Roll Call workspace: Today / Schedule / History tabs on ONE page
+// ============================================================================
+
+export type RollCallTab = 'today' | 'schedules' | 'history';
+
+function readRollCallTab(): RollCallTab {
+  if (typeof window === 'undefined') return 'today';
+  const t = new URLSearchParams(window.location.search).get('tab');
+  return t === 'schedules' || t === 'history' ? (t as RollCallTab) : 'today';
+}
+
+export function RollCallWorkspace() {
+  // Tab survives browser refresh: mirrored into the URL query string.
+  const [tab, setTab] = useState<RollCallTab>(readRollCallTab);
+
+  const switchTab = (t: RollCallTab) => {
+    setTab(t);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', t);
+      window.history.replaceState(null, '', url.toString());
+    }
+  };
+
+  const [seed, setSeed] = useState<{ sid: string; month: string } | null>(null);
+
+  const openHistory = (sid: string, month: string) => {
+    setSeed({ sid, month });
+    switchTab('history');
+  };
+
+  const tabs: { id: RollCallTab; label: string }[] = [
+    { id: 'today', label: "Today's Roll Call" },
+    { id: 'schedules', label: 'Schedule Roll Call' },
+    { id: 'history', label: 'Roll Call History' },
+  ];
+
+  return (
+    <div>
+      <div className="flex gap-2 flex-wrap mb-4" role="tablist">
+        {tabs.map((t) => (
+          <button key={t.id} role="tab" aria-selected={tab === t.id}
+            onClick={() => switchTab(t.id)}
+            className={'btn btn-sm cursor-pointer ' + (tab === t.id ? 'btn-primary' : 'btn-ghost')}
+            style={{ border: '1.5px solid var(--surface-border)' }}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'today' && (
+        <RollCallSection mode="today" onViewHistory={openHistory} />
+      )}
+      {tab === 'schedules' && (
+        <RollCallSection mode="schedules" onViewHistory={openHistory} />
+      )}
+      {tab === 'history' && (
+        <RollCallHistorySection
+          key={(seed?.sid ?? '') + '|' + (seed?.month ?? '')}
+          seedScheduleId={seed?.sid}
+          seedMonth={seed?.month}
+        />
+      )}
+    </div>
+  );
+}
+
+export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, staff }: SharedTimetableWorkspaceProps) {
   const [generation, setGeneration] = useState<GenerationSessionResponse | null>(null);
   const [lobby, setLobby] = useState<TimetableLobbyResponse | null>(null);
   const [manage, setManage] = useState<GenerationManageResponse | null>(null);
@@ -1591,6 +1987,12 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
   const canEdit = canManage && status !== 'PUBLISHED' && lockOwned;
   const activeLobby = lobby && (lobby.status === 'OPEN' || lobby.status === 'GENERATING') ? lobby : null;
 
+  // Latest-callback refs keep loadAll/subscriptions stable across renders.
+  const onNotFoundRef = useRef(onNotFound);
+  useEffect(() => {
+    onNotFoundRef.current = onNotFound;
+  }, [onNotFound]);
+
   const clearGenerationTimer = useCallback(() => {
     setGenerationTimer((prev) => {
       if (prev) clearTimeout(prev);
@@ -1615,7 +2017,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
           const started = gen.startedAt ? new Date(gen.startedAt).getTime() : Date.now();
           if (Date.now() - started > GENERATION_FALLBACK_MS + GENERATION_GRACE_MS) {
             setStatus('FAILED');
-            setSaveError('Generation took too long â€” the server may be unreachable. Refresh and try again.');
+            setSaveError('Generation took too long — the server may be unreachable. Refresh and try again.');
           } else {
             timer = setTimeout(tick, GENERATION_FALLBACK_MS);
             setGenerationTimer(timer);
@@ -1634,11 +2036,30 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
     setLoading(true);
     setError(null);
     try {
-      const [gen, et, lobbies] = await Promise.all([
-        getGeneration(generationId),
-        getExamTypes(),
-        getGenerationLobbies(),
-      ]);
+      // Fetch the exact session referenced by navigation. Bounded retry with
+      // the SAME id absorbs transient read races right after commit; it is not
+      // a polling loop and never guesses by "latest session".
+      let gen: GenerationSessionResponse | null = null;
+      let genErr: unknown = null;
+      for (let attempt = 0; attempt < 3 && !gen; attempt++) {
+        if (attempt > 0) await new Promise((r) => setTimeout(r, 700));
+        try {
+          gen = await getGeneration(generationId);
+        } catch (err) {
+          genErr = err;
+          // A genuine 404 will not heal; stop retrying immediately.
+          if (/not found/i.test(err instanceof Error ? err.message : '')) break;
+        }
+      }
+      if (!gen) {
+        const message = genErr instanceof Error ? genErr.message : '';
+        if (onNotFoundRef.current && /not found/i.test(message)) {
+          onNotFoundRef.current(generationId);
+          return;
+        }
+        throw genErr ?? new Error('Could not load the generation session');
+      }
+      const [et, lobbies] = await Promise.all([getExamTypes(), getGenerationLobbies()]);
       setGeneration(gen);
       setStatus(gen.status);
       setExamTypes(et);
@@ -1696,7 +2117,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
         setSaving(false);
         clearGenerationTimer();
         getGeneration(generationId).then(setGeneration).catch(() => {});
-        toast.error('Timetable generation failed â€” see the reason below');
+        toast.error('Timetable generation failed — see the reason below');
         break;
       case TIMETABLE_REALTIME_EVENTS.TIMETABLE_PUBLISHED:
         setStatus('PUBLISHED');
@@ -1757,6 +2178,18 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
       default:
         break;
     }
+  }, () => {
+    // Stream (re)connected: SSE has no replay, so re-read the authoritative
+    // status and schedules for THIS generation id. This recovers missed
+    // GENERATION_* / SCHEDULE_* events after a network drop without any
+    // manual refresh.
+    getGeneration(generationId)
+      .then((gen) => {
+        setGeneration(gen);
+        setStatus(gen.status);
+      })
+      .catch(() => {});
+    refreshSchedules().catch(() => {});
   });
 
   useEffect(() => {
@@ -1775,7 +2208,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
           if (!cancelled) setLock(res);
         }
       } catch {
-        // transient â€” the next poll retries
+        // transient — the next poll retries
       }
     };
     tick();
@@ -1871,7 +2304,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
           setSchedules((prev) => (res.schedules.length > 0 ? res.schedules : prev));
           toast.success('Schedule moved');
         } else if (res.conflicts.length > 0) {
-          setSaveError(`Move blocked â€” ${res.conflicts.join('; ')}`);
+          setSaveError(`Move blocked — ${res.conflicts.join('; ')}`);
         } else {
           toast.error('Could not move schedule');
         }
@@ -2225,7 +2658,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
               Timetable Management
             </h1>
             <div style={{ fontSize: 12.5, color: 'var(--text-light)', marginTop: 2 }}>
-              {generation ? `${generation.academicYear} Â· ${generation.generatedByStaffNo ?? ''}` : ''}
+              {generation ? `${generation.academicYear} · ${generation.generatedByStaffNo ?? ''}` : ''}
             </div>
           </div>
         </div>
@@ -2318,7 +2751,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
         >
           <Lock size={14} className="shrink-0" style={{ color: '#d97706' }} />
           <div style={{ fontSize: 12.5, color: '#b45309', fontWeight: 600 }}>
-            {lock.staffName ?? 'Another editor'} is currently editing this timetable. Drag and drop is disabled until the lock is released.
+            {lock.staffName ?? 'another editor'} is currently editing this timetable. Drag and drop is disabled until the lock is released.
           </div>
         </div>
       )}
@@ -2330,7 +2763,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
         >
           <Unlock size={14} style={{ color: 'var(--primary)' }} />
           <div style={{ fontSize: 12.5, color: 'var(--primary)', fontWeight: 600 }}>
-            You hold the editing lock â€” drag schedules to rearrange the draft.
+            You hold the editing lock — drag schedules to rearrange the draft.
           </div>
         </div>
       )}
@@ -2355,7 +2788,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
         >
           <Users size={14} style={{ color: 'var(--primary)' }} />
           <div style={{ fontSize: 12.5, color: 'var(--text)', fontWeight: 600 }}>
-            Lobby led by {activeLobby.leaderName} â€” {activeLobby.members.filter((m) => m.joined).length} of {activeLobby.members.length} members joined
+            Lobby led by {activeLobby.leaderName} — {activeLobby.members.filter((m) => m.joined).length} of {activeLobby.members.length} members joined
           </div>
           {isHod && (
             <button
@@ -2502,7 +2935,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                   {status === 'COMPLETED' ? 'Regenerate' : 'Generate Timetable'}
                 </button>
                 <div className="text-center mt-2" style={{ fontSize: 11, color: 'var(--text-lighter)' }}>
-                  {selectedSemesters.size} semester{selectedSemesters.size === 1 ? '' : 's'} Â· {selectedTotal} section{selectedTotal === 1 ? '' : 's'}
+                  {selectedSemesters.size} semester{selectedSemesters.size === 1 ? '' : 's'} · {selectedTotal} section{selectedTotal === 1 ? '' : 's'}
                 </div>
               </div>
             </div>
@@ -2513,7 +2946,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CalendarDays size={15} style={{ color: 'var(--primary)' }} />
                 <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>
-                  Weekly Grid {visibleSchedules ? `(${visibleSchedules.length} schedules${activeViewSemester !== 'all' ? ` Â· Semester ${activeViewSemester}` : ' Â· overview'}${activeViewSection !== 'all' ? ` Â· Section ${activeViewSection}` : ''})` : ''}
+                  Weekly Grid {visibleSchedules ? `(${visibleSchedules.length} schedules${activeViewSemester !== 'all' ? ` · Semester ${activeViewSemester}` : ' · overview'}${activeViewSection !== 'all' ? ` · Section ${activeViewSection}` : ''})` : ''}
                 </span>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -2532,7 +2965,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                       color: 'var(--text)',
                       outline: 'none',
                     }}
-                    title="Filter the grid by semester â€” 'All semesters' is an overview mode where each semester is drawn as its own table"
+                    title="Filter the grid by semester — 'All semesters' is an overview mode where each semester is drawn as its own table"
                   >
                     <option value="all">All semesters (overview)</option>
                     {semesterOptions.map((n) => (
@@ -2574,9 +3007,9 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                       color: '#b45309',
                       border: '1px dashed rgba(217,119,6,0.4)',
                     }}
-                    title="All cohorts are shown as separate tables here â€” one table per semester and section, so different cohorts never share a cell"
+                    title="All cohorts are shown as separate tables here — one table per semester and section, so different cohorts never share a cell"
                   >
-                    Overview â€” one table per semester &amp; section
+                    Overview — one table per semester &amp; section
                   </span>
                 )}
                 {isHod && !canEdit && status !== 'PUBLISHED' && lock?.locked && (
@@ -2591,7 +3024,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                 <div className="text-center py-16">
                   <CalendarCog size={32} className="mx-auto mb-3 opacity-30" />
                   <p style={{ fontSize: 12.5, color: 'var(--text-lighter)', margin: 0 }}>
-                    No schedules yet{isHod ? ' â€” configure the scope and generate a timetable' : ' â€” waiting for the HOD to generate'}
+                    No schedules yet{isHod ? ' — configure the scope and generate a timetable' : ' — waiting for the HOD to generate'}
                   </p>
                 </div>
               ) : (
@@ -2623,7 +3056,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
           <div style={{ padding: '12px 18px' }}>
             {history.length === 0 && (
               <div className="text-center py-10 text-xs" style={{ color: 'var(--text-lighter)' }}>
-                No activity yet â€” events from the shared workspace appear here
+                No activity yet — events from the shared workspace appear here
               </div>
             )}
             {history.map((evt) => (
@@ -2691,9 +3124,11 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                   style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
                 >
                   <Move size={13} />
-                  {((selectedMeeting.endPeriodNo ?? selectedMeeting.startPeriodNo) - selectedMeeting.startPeriodNo + 1) > 1
-                    ? 'Move this 2-period meeting'
-                    : 'Move this meeting'}
+                  {(((selectedMeeting.endPeriodNo - selectedMeeting.startPeriodNo) - selectedMeeting.startPeriodNo + 1) > 1) ? (
+                    'Move this 2-period meeting'
+                  ) : (
+                    'Move this meeting'
+                  )}
                 </button>
               )}
             </div>
@@ -2724,7 +3159,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                       {s.courseCode}
                     </div>
                     <div className="truncate" style={{ fontSize: 11.5, color: 'var(--text-light)' }}>
-                      {s.courseName} Â· {meetingLabelOf(s)} Â· {slotTextOf(s)}
+                      {s.courseName} · {meetingLabelOf(s)} · {slotTextOf(s)}
                     </div>
                   </div>
                   <button
@@ -2754,7 +3189,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
           <div className="bg-base-100 flex items-center gap-3 px-4 py-2.5" style={{ borderRadius: 'var(--radius-lg)', border: '1.5px solid var(--primary)', boxShadow: 'var(--shadow-lg)', pointerEvents: 'auto' }}>
             <Move size={14} style={{ color: 'var(--primary)' }} />
             <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>
-              Moving {moveTarget.courseCode} Â· {meetingLabelOf(moveTarget)} Â· {slotTextOf(moveTarget)} â€” click a target period (P1â€“P6)
+              Moving {moveTarget.courseCode} · {meetingLabelOf(moveTarget)} · {slotTextOf(moveTarget)} — click a target period (P1…P6)
             </span>
             <button onClick={() => setMoveTarget(null)} className="btn btn-ghost btn-xs cursor-pointer" style={{ color: 'var(--text-light)' }}>
               Cancel
@@ -2785,12 +3220,12 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                       <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: '2px 12px', fontSize: 12.5 }}>
                         <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Moving</span>
                         <span style={{ color: 'var(--text)' }}>
-                          <b style={{ color: 'var(--accent)' }}>{dragged.courseCode}</b> Â· {meetingLabelOf(dragged)} Â· {slotTextOf(dragged)}
+                          <b style={{ color: 'var(--accent)' }}>{dragged.courseCode}</b> · {meetingLabelOf(dragged)} · {slotTextOf(dragged)}
                         </span>
                         <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Exchange</span>
                         <span style={{ color: 'var(--text)' }}>
                           {occupant ? (
-                            <><b style={{ color: 'var(--accent)' }}>{occupant.courseCode}</b> Â· {meetingLabelOf(occupant)} Â· {slotTextOf(occupant)}</>
+                            <><b style={{ color: 'var(--accent)' }}>{occupant.courseCode}</b> · {meetingLabelOf(occupant)} · {slotTextOf(occupant)}</>
                           ) : (
                             '\u2014'
                           )}
@@ -2815,7 +3250,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                     ))}
                   </ul>
                   <p style={{ fontSize: 12.5, color: 'var(--text-light)', margin: '10px 0 0' }}>
-                    You can still force the swap â€” overlapping classes will be highlighted for manual review.
+                    You can still force the swap — overlapping classes will be highlighted for manual review.
                   </p>
                 </div>
               )}
@@ -2961,7 +3396,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                 >
                   <option value="">Select course...</option>
                   {(unitCourses ?? []).map((c) => (
-                    <option key={c.courseId} value={c.courseId}>{c.courseCode} â€” {c.courseName}</option>
+                    <option key={c.courseId} value={c.courseId}>{c.courseCode} — {c.courseName}</option>
                   ))}
                 </select>
                 <ChevronDown size={14} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-lighter)' }} />
@@ -2990,7 +3425,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                           }}
                           style={{ accentColor: 'var(--primary)', cursor: 'pointer' }}
                         />
-                        Section {a.sectionName} â€” {a.staffName}
+                        Section {a.sectionName} — {a.staffName}
                       </label>
                     ))}
                   </div>
@@ -3029,7 +3464,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                     </button>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-lighter)', marginBottom: 6 }}>
-                    {g.courseCode} Â· Semester {g.semesterNo} Â· {g.members.length} sections
+                    {g.courseCode} · Semester {g.semesterNo} · {g.members.length} sections
                   </div>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {g.members.map((m, i) => (
@@ -3043,7 +3478,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
                           fontWeight: 600,
                         }}
                       >
-                        Sec {m.sectionName} Â· {m.staffName}
+                        Sec {m.sectionName} · {m.staffName}
                       </span>
                     ))}
                   </div>
@@ -3079,7 +3514,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, staff }: Shared
 }
 
 // ============================================================================
-// Timetable generation â€” hub (create lobby, waiting room, past activity)
+// Timetable generation — hub (create lobby, waiting room, past activity)
 // ============================================================================
 
 function EmptyStateCard({ icon, title, message }: { icon: ReactNode; title: string; message: string }) {
@@ -3162,7 +3597,7 @@ function ActiveLobbyCard({
               {lobby.academicYear} Generation Lobby
             </h3>
             <p style={{ fontSize: 12, color: 'var(--text-light)', margin: '3px 0 0' }}>
-              Led by {lobby.leaderName} Â· {generating ? 'Generating...' : 'Open'}
+              Led by {lobby.leaderName} · {generating ? 'Generating...' : 'Open'}
             </p>
           </div>
         </div>
@@ -3181,7 +3616,7 @@ function ActiveLobbyCard({
       </div>
       <div style={{ padding: '18px 24px' }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-light)', textTransform: 'uppercase', letterSpacing: '0.4px', marginBottom: 10 }}>
-          Members â€” {joined.length}/{lobby.members.length} joined
+          Members — {joined.length}/{lobby.members.length} joined
         </div>
         <div style={{ display: 'grid', gap: 8 }}>
           {lobby.members.map((m, i) => (
@@ -3258,7 +3693,7 @@ function ActiveLobbyCard({
           )}
           {!isMember && pending.some((m) => m.staffId === staffId) && (
             <span style={{ fontSize: 12, color: 'var(--text-lighter)', alignSelf: 'center' }}>
-              You were invited â€” waiting for the leader to start
+              You were invited — waiting for the leader to start
             </span>
           )}
         </div>
@@ -3283,7 +3718,7 @@ function PastLobbiesCard({ lobbies }: { lobbies: TimetableLobbyResponse[] }) {
           <div key={l.lobbyId} className="flex items-center justify-between gap-3 py-2.5" style={{ borderBottom: '1px solid var(--divider)' }}>
             <div className="min-w-0">
               <div className="truncate" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{l.academicYear}</div>
-              <div className="truncate" style={{ fontSize: 11, color: 'var(--text-lighter)' }}>Led by {l.leaderName} Â· {l.members.length} members</div>
+              <div className="truncate" style={{ fontSize: 11, color: 'var(--text-lighter)' }}>Led by {l.leaderName} · {l.members.length} members</div>
             </div>
             <span
               className="badge badge-xs shrink-0"
@@ -3330,7 +3765,7 @@ function GeneratedTimetablesCard({
           <div key={g.generationId} className="flex items-center justify-between gap-3 py-2.5" style={{ borderBottom: '1px solid var(--divider)' }}>
             <div className="min-w-0">
               <div className="truncate" style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{g.academicYear}</div>
-              <div className="truncate" style={{ fontSize: 11, color: 'var(--text-lighter)' }}>by {g.generatedByStaffNo} Â· {timeLabel(new Date(g.createdAt).getTime())}</div>
+              <div className="truncate" style={{ fontSize: 11, color: 'var(--text-lighter)' }}>by {g.generatedByStaffNo} · {timeLabel(new Date(g.createdAt).getTime())}</div>
             </div>
             <GenerationStatusPill status={g.status} />
             {canManage && (g.status === 'COMPLETED' || g.status === 'PUBLISHED') && (
@@ -3381,6 +3816,12 @@ export function TimetableGenerationSection() {
   const isHod = staff ? staff.positions.includes('HOD') : false;
   const activeLobby = lobbies?.find((l) => l.status === 'OPEN' || l.status === 'GENERATING') ?? null;
   const pastLobbies = (lobbies ?? []).filter((l) => l.status === 'CANCELLED' || l.status === 'COMPLETED');
+  // Realtime bookkeeping: dedupe MANAGEMENT_STARTED navigation across repeated
+  // events, and remember generation ids that no longer exist so the draft
+  // auto-entry effect can never navigate into a deleted session (the source of
+  // the "Generation session not found" dead end).
+  const lastManagementStartRef = useRef<string | null>(null);
+  const deadGenerationIdsRef = useRef<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -3396,7 +3837,7 @@ export function TimetableGenerationSection() {
       ]);
       setStaff(staffRecord);
       setTerms(termList);
-      const active = termList.find((t) => t.status === 'ACTIVE') ?? termList[0] ?? null;
+      const active = termList.find((t) => t.status === 'ACTIVE') ?? termList[0];
       setActiveTermId((prev) => prev || active?.termId || '');
       setLoading(false);
     } catch (e) {
@@ -3408,10 +3849,10 @@ export function TimetableGenerationSection() {
     // (and via realtime events); their failure must not freeze the hub.
     getGenerationLobbies()
       .then(setLobbies)
-      .catch(() => setNotice('Generation lobby status could not be loaded â€” it will refresh automatically.'));
+      .catch(() => setNotice('Generation lobby status could not be loaded — it will refresh automatically.'));
     getGenerations()
       .then(setGenerations)
-      .catch(() => setNotice('Generation history could not be loaded â€” it will refresh automatically.'));
+      .catch(() => setNotice('Generation history could not be loaded — it will refresh automatically.'));
   }, []);
 
   useEffect(() => {
@@ -3427,10 +3868,11 @@ export function TimetableGenerationSection() {
   }, [activeTermId, workspaceGenerationId]);
 
   useEffect(() => {
-    if (manage?.generation && !workspaceGenerationId && !draftDismissed) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- re-enter an existing draft session
-      setWorkspaceGenerationId(manage.generation.generationId);
-    }
+    const draftId = manage?.generation?.generationId;
+    if (!draftId || workspaceGenerationId || draftDismissed) return;
+    // Never auto-enter a generation that is known to be gone.
+    if (deadGenerationIdsRef.current.has(draftId)) return;
+    setWorkspaceGenerationId(draftId);
   }, [manage, workspaceGenerationId, draftDismissed]);
 
   const refreshLobbies = useCallback(async () => {
@@ -3442,13 +3884,45 @@ export function TimetableGenerationSection() {
     }
   }, []);
 
+  // Discovery channel: SSE is lobby-scoped and membership-gated, so a HOD who
+  // has not joined any lobby has no stream and would never learn that a lobby
+  // was created or cancelled. Poll the authoritative list lightly — only while
+  // no active lobby exists, the tab is visible, and stop once subscribed.
+  useEffect(() => {
+    if (activeLobby) return;
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      refreshLobbies();
+    };
+    const interval = setInterval(tick, 8000);
+    return () => clearInterval(interval);
+  }, [activeLobby, refreshLobbies]);
+
+  // Re-authoritative on tab focus / visibility regain regardless of state.
+  useEffect(() => {
+    const onFocus = () => refreshLobbies();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [refreshLobbies]);
+
   useTimetableRealtime(activeLobby?.lobbyId ?? null, (event) => {
     switch (event.type) {
       case TIMETABLE_REALTIME_EVENTS.MANAGEMENT_STARTED:
+        if (event.generationId && deadGenerationIdsRef.current.has(event.generationId)) break;
+        // Duplicate delivery (e.g. after reconnect) must not re-navigate.
+        if (event.generationId && lastManagementStartRef.current === event.generationId) break;
         if (event.generationId) {
+          lastManagementStartRef.current = event.generationId;
           setDraftDismissed(false);
           setWorkspaceGenerationId(event.generationId);
-          toast.success('Timetable management started â€” opening the shared workspace');
+          toast.success('Timetable management started — opening the shared workspace');
+        } else {
+          // Payload without an id: fall back to the authoritative list.
+          refreshLobbies();
         }
         break;
       case TIMETABLE_REALTIME_EVENTS.LOBBY_MEMBER_JOINED:
@@ -3457,13 +3931,29 @@ export function TimetableGenerationSection() {
       case TIMETABLE_REALTIME_EVENTS.GENERATION_COMPLETED:
       case TIMETABLE_REALTIME_EVENTS.GENERATION_FAILED:
       case TIMETABLE_REALTIME_EVENTS.TIMETABLE_PUBLISHED:
-      case TIMETABLE_REALTIME_EVENTS.TIMETABLE_DELETED:
+      case TIMETABLE_REALTIME_EVENTS.TIMETABLE_DELETED: {
+        const removedId = event.type === TIMETABLE_REALTIME_EVENTS.TIMETABLE_DELETED
+          ? event.generationId : null;
+        if (removedId) deadGenerationIdsRef.current.add(removedId);
+        if (
+          removedId &&
+          (workspaceGenerationId === removedId || lastManagementStartRef.current === removedId)
+        ) {
+          lastManagementStartRef.current = null;
+        }
         refreshLobbies();
         getGenerations().then(setGenerations).catch(() => {});
         break;
+      }
       default:
         break;
     }
+  }, () => {
+    // Stream (re)connected: SSE has no replay, so merge the authoritative
+    // snapshot now. This recovers join/leave/start events missed while the
+    // connection was down without requiring any manual refresh.
+    refreshLobbies();
+    getGenerations().then(setGenerations).catch(() => {});
   });
 
   const handleCreateLobby = async () => {
@@ -3472,7 +3962,7 @@ export function TimetableGenerationSection() {
     try {
       const lobby = await createGenerationLobby({ termId: activeTermId });
       setLobbies((prev) => [lobby, ...(prev ?? [])]);
-      toast.success('Generation lobby created â€” invite your staff');
+      toast.success('Generation lobby created — invite your staff');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not create lobby');
     } finally {
@@ -3521,15 +4011,36 @@ export function TimetableGenerationSection() {
       // Open the shared workspace for the creator right away; the realtime
       // MANAGEMENT_STARTED event redirects the other joined HODs.
       if (updated?.generationId) {
+        lastManagementStartRef.current = updated.generationId;
         setDraftDismissed(false);
         setWorkspaceGenerationId(updated.generationId);
       }
     } catch (e) {
       // The dispatch may still succeed server-side on slow database days even
-      // after the client gives up waiting â€” refresh so any running/completed
-      // generation shows up in the list instead of dead-ending the user.
-      refreshLobbies().catch(() => {});
-      toast.error(e instanceof Error ? e.message : 'Could not start generation');
+      // after the client gives up waiting. Probe the authoritative lobby a few
+      // times with the exact identity; only surface an error when it truly
+      // never appeared. Never guess by "latest session".
+      let recovered: string | null = null;
+      for (let attempt = 0; attempt < 3 && !recovered; attempt++) {
+        await new Promise((r) => setTimeout(r, 1200));
+        try {
+          const list = await getGenerationLobbies();
+          setLobbies(list);
+          const genId = list.find((l) => l.lobbyId === activeLobby.lobbyId)?.generationId ?? null;
+          if (genId && !deadGenerationIdsRef.current.has(genId)) recovered = genId;
+        } catch {
+          // keep probing
+        }
+      }
+      if (recovered) {
+        lastManagementStartRef.current = recovered;
+        setDraftDismissed(false);
+        setWorkspaceGenerationId(recovered);
+        toast.success('Timetable management started — opening the shared workspace');
+      } else {
+        refreshLobbies().catch(() => {});
+        toast.error(e instanceof Error ? e.message : 'Could not start generation');
+      }
     } finally {
       setBusy(null);
     }
@@ -3591,6 +4102,16 @@ export function TimetableGenerationSection() {
           setWorkspaceGenerationId(null);
           load();
         }}
+        onNotFound={(goneId) => {
+          // The referenced session does not exist (e.g. a stale draft id).
+          // Record it so no effect navigates there again, then return to the
+          // hub — no reload required.
+          deadGenerationIdsRef.current.add(goneId);
+          if (lastManagementStartRef.current === goneId) lastManagementStartRef.current = null;
+          setDraftDismissed(true);
+          setWorkspaceGenerationId(null);
+          load();
+        }}
         staff={staff}
       />
     );
@@ -3626,7 +4147,7 @@ export function TimetableGenerationSection() {
             >
               {terms.map((t) => (
                 <option key={t.termId} value={t.termId}>
-                  {t.academicYear} {t.status === 'ACTIVE' ? 'Â· Active' : ''}
+                  {t.academicYear} {t.status === 'ACTIVE' ? '· Active' : ''}
                 </option>
               ))}
             </select>
@@ -3806,7 +4327,7 @@ export function TimetableGenerationSection() {
 }
 
 // ============================================================================
-// Timetable â€” published weekly view (all lecturers)
+// Timetable — published weekly view (all lecturers)
 // ============================================================================
 
 export function TimetableSection() {
@@ -3862,7 +4383,7 @@ export function TimetableSection() {
     <div>
       {(terms.error && !terms.data) || (schedules.error && !schedules.data) ? (
         <div style={{ fontSize: 12, color: 'var(--warning)', marginBottom: 12 }}>
-          University server unreachable â€” retryingâ€¦
+          University server unreachable — retrying—
         </div>
       ) : null}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4, flexWrap: 'wrap', gap: 10 }}>
@@ -3889,7 +4410,7 @@ export function TimetableSection() {
             >
               {terms.data.map((t) => (
                 <option key={t.termId} value={t.termId}>
-                  {t.academicYear} {t.status === 'ACTIVE' ? 'Â· Active' : ''}
+                  {t.academicYear} {t.status === 'ACTIVE' ? '· Active' : ''}
                 </option>
               ))}
             </select>
@@ -3902,7 +4423,7 @@ export function TimetableSection() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <CalendarDays size={15} style={{ color: 'var(--primary)' }} />
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--accent)' }}>
-              Weekly View {visiblePublished.length > 0 ? `(${visiblePublished.length} schedules${activePublishedSem !== 'all' ? ` Â· Semester ${activePublishedSem}` : ' Â· overview'}${activePublishedSection !== 'all' ? ` Â· Section ${activePublishedSection}` : ''})` : ''}
+              Weekly View {visiblePublished.length > 0 ? `(${visiblePublished.length} schedules${activePublishedSem !== 'all' ? ` · Semester ${activePublishedSem}` : ' · overview'}${activePublishedSection !== 'all' ? ` · Section ${activePublishedSection}` : ''})` : ''}
             </span>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -3921,7 +4442,7 @@ export function TimetableSection() {
                   color: 'var(--text)',
                   outline: 'none',
                 }}
-                title="Filter the timetable by semester â€” 'All semesters' is an overview mode where all cohorts are drawn together"
+                title="Filter the timetable by semester — 'All semesters' is an overview mode where all cohorts are drawn together"
               >
                 <option value="all">All semesters (overview)</option>
                 {publishedSemOptions.map((n) => (
@@ -3963,9 +4484,9 @@ export function TimetableSection() {
                   color: '#b45309',
                   border: '1px dashed rgba(217,119,6,0.4)',
                 }}
-                title="All cohorts are shown as separate tables here â€” one table per semester and section, so different cohorts never share a cell"
+                title="All cohorts are shown as separate tables here — one table per semester and section, so different cohorts never share a cell"
               >
-                Overview â€” one table per semester &amp; section
+                Overview — one table per semester &amp; section
               </span>
             )}
             <span className="badge badge-xs" style={{ background: 'rgba(40,114,161,0.15)', color: 'var(--primary)', border: 'none' }}>Lecture</span>

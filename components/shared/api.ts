@@ -338,8 +338,10 @@ export interface MarkAttendanceEntry {
   studentId: string;
   attendanceStatus: 'PRESENT' | 'ABSENT';
   remark?: string;
-  /** Slots the student actually attended (subset of the schedule span). */
-  periodSlotIds?: string[];
+  /** PRESENT: actual contiguous attended range (inside the schedule span).
+   *  ABSENT: omit both. Attended periods are derived server-side. */
+  attendanceStartSlotId?: string | null;
+  attendanceEndSlotId?: string | null;
 }
 
 export function markAttendance(sessionId: string, entries: MarkAttendanceEntry[]): Promise<AttendanceRecord[]> {
@@ -347,6 +349,103 @@ export function markAttendance(sessionId: string, entries: MarkAttendanceEntry[]
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ entries }),
+  });
+}
+
+/** Edit one existing attendance row (same session+student row is updated). */
+export function updateAttendance(
+  attendanceId: string,
+  body: {
+    attendanceStatus: 'PRESENT' | 'ABSENT';
+    remark?: string;
+    attendanceStartSlotId?: string | null;
+    attendanceEndSlotId?: string | null;
+  }
+): Promise<AttendanceRecord> {
+  return apiFetch(`/api/attendance/${attendanceId}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+// ============================================================================
+// Roll Call History (submitted attendance, dynamic calculation)
+// ============================================================================
+
+export interface RollCallHistorySlotTime {
+  slotId: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface RollCallHistorySchedule {
+  courseId: string | null;
+  courseCode: string | null;
+  courseName: string | null;
+  semesterNo: number | null;
+  sectionNames: string[];
+  sharedDelivery: boolean;
+  slots: RollCallHistorySlotTime[];
+}
+
+export interface RollCallHistorySession {
+  sessionId: string;
+  sessionDate: string;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  scheduledPeriods: number;
+  scheduleId: string;
+}
+
+export interface RollCallHistoryCell {
+  attendanceId: string | null;
+  sessionId: string;
+  status: 'PRESENT' | 'ABSENT' | null;
+  attendedPeriods: number;
+  scheduledPeriods: number;
+  attendanceStartSlotId: string | null;
+  attendanceEndSlotId: string | null;
+  remark: string | null;
+  markedByStaffName: string | null;
+}
+
+export interface RollCallHistoryStudent {
+  studentId: string;
+  rollNo: string;
+  studentName: string;
+  attendance: RollCallHistoryCell[]; // aligned with sessions[] order
+  totalScheduledPeriods: number;
+  totalAttendedPeriods: number;
+  attendancePercentage: number;
+}
+
+export interface RollCallHistoryResponse {
+  schedule: RollCallHistorySchedule;
+  sessions: RollCallHistorySession[];
+  students: RollCallHistoryStudent[];
+}
+
+export function getRollCallHistory(
+  courseCode: string,
+  semesterNo: number,
+  sectionName: string,
+  fromDate: string,
+  toDate: string
+): Promise<RollCallHistoryResponse> {
+  const qs = `courseCode=${encodeURIComponent(courseCode)}` +
+    `&semesterNo=${semesterNo}` +
+    `&sectionName=${encodeURIComponent(sectionName)}` +
+    `&fromDate=${encodeURIComponent(fromDate)}` +
+    `&toDate=${encodeURIComponent(toDate)}`;
+  return apiFetch(`/api/rollcall/history?${qs}`);
+}
+
+/** Delete a CLASS_SESSION and all attendance rows belonging to it. */
+export function deleteRollCallSession(sessionId: string): Promise<void> {
+  return apiFetch(`/api/rollcall/sessions/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
   });
 }
 
@@ -384,15 +483,22 @@ export interface RollCallStudent {
   attendanceId: string | null;
   attendanceStatus: string | null;
   remark: string | null;
+  /** Contiguous expansion of the stored actual range (UI checkbox state). */
   attendedSlotIds: string[];
   attendedPeriods: number;
 }
 
 export interface RollCallStudentsResponse {
   scheduleId: string;
+  courseId: string | null;
+  courseCode: string | null;
+  courseName: string | null;
+  semesterId: string | null;
+  semesterNo: number | null;
   sectionNames: string[];
   scheduledPeriods: number;
   slots: RollCallSlot[];
+  studentCount: number;
   students: RollCallStudent[];
 }
 
@@ -400,11 +506,11 @@ export function getRollCallMySchedule(): Promise<RollCallSchedule[]> {
   return apiFetch('/api/rollcall/my-schedule');
 }
 
-export function ensureRollCallSession(scheduleId: string): Promise<ClassSessionRecord> {
+export function ensureRollCallSession(scheduleId: string, sessionDate?: string): Promise<ClassSessionRecord> {
   return apiFetch('/api/rollcall/sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ scheduleId }),
+    body: JSON.stringify(sessionDate ? { scheduleId, sessionDate } : { scheduleId }),
   });
 }
 
@@ -412,7 +518,7 @@ export function getRollCallStudents(
   scheduleId: string,
   sessionId?: string
 ): Promise<RollCallStudentsResponse> {
-  const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : '';
+  const q = sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : '';
   return apiFetch(`/api/rollcall/students?scheduleId=${encodeURIComponent(scheduleId)}${q}`);
 }
 
@@ -449,8 +555,10 @@ export interface ScheduleResponse {
   dayOfWeek: number;
   startSlotId: string;
   startPeriodNo: number;
+  startTime: string;
   endSlotId: string;
   endPeriodNo: number;
+  endTime: string;
   scheduleStatus: ScheduleStatus;
   scheduleType: ScheduleType;
   sections: string[];

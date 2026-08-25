@@ -64,15 +64,24 @@ function streamUrl(lobbyId: string): string {
  * The backend relays events only to verified lobby members, so the stream
  * itself doubles as a membership check: a non-member gets a non-2xx response
  * and the hook stops retrying until the lobby changes.
+ *
+ * `onConnected` fires after the stream is (re-)established. Because SSE has no
+ * replay, every reconnect is a signal that events may have been missed —
+ * consumers MUST re-fetch authoritative state there to stay correct.
  */
 export function useTimetableRealtime(
   lobbyId: string | null | undefined,
   onEvent: (event: TimetableRealtimeEvent) => void,
+  onConnected?: () => void,
 ): void {
   const onEventRef = useRef(onEvent);
   useEffect(() => {
     onEventRef.current = onEvent;
   }, [onEvent]);
+  const onConnectedRef = useRef(onConnected);
+  useEffect(() => {
+    onConnectedRef.current = onConnected;
+  }, [onConnected]);
 
   useEffect(() => {
     if (!lobbyId) return;
@@ -88,6 +97,9 @@ export function useTimetableRealtime(
 
       source.onopen = () => {
         attempt = 0;
+        // Fires on first connect and after every reconnect: SSE has no replay,
+        // so consumers must merge the authoritative server snapshot here.
+        onConnectedRef.current?.();
       };
 
       source.onmessage = (msg) => {

@@ -35,6 +35,8 @@ const iconMap: Record<string, React.ComponentType<any>> = {
   User: Icons.User,
   UserCog: Icons.UserCog,
   Landmark: Icons.Landmark,
+  History: Icons.History,
+  ClipboardList: Icons.ClipboardList,
 };
 
 interface SidebarProps {
