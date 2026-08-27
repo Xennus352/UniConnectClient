@@ -1,7 +1,8 @@
 'use client';
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { DragEvent as DragEvt, ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { useSupabase } from '@/utils/supabase/client';
 import { RollCallHistorySection } from '@/components/lecturer/RollCallHistory';
 import { useFeedPosts, useConversations } from '@/lib/supabase/hooks';
@@ -28,6 +29,7 @@ import {
   XCircle, Blocks, Layers, ShieldCheck, Send, Move,
   ClipboardCheck,
   History,
+  Pencil,
 } from 'lucide-react';
 import Link from 'next/link';
 import { fmt12h, fmtRange12 } from '@/components/shared/time';
@@ -55,6 +57,7 @@ import {
   deleteTeachingGroup,
   getTeachingAssignments,
   getPublishedSchedules,
+  getSchedules,
   getTimetableLock,
   acquireTimetableLock,
   heartbeatTimetableLock,
@@ -1073,9 +1076,6 @@ const DOW_NAMES: Record<number, string> = {
 };
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
 const GRID_DAY_NAMES = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const;
-const GRID_COLUMN_HEADERS = ['P1', 'P2', 'P3', 'LUNCH', 'P4', 'P5', 'P6'] as const;
-const LUNCH_HEADER_COL = 3;
-const GRID_COLUMNS = '96px repeat(7, minmax(122px, 1fr))';
 const GRID_CELL_MIN_HEIGHT = 112;
 const GENERATION_FALLBACK_MS = 45000;
 // Multi-section scopes solve asynchronously and can legitimately run for
@@ -1107,22 +1107,45 @@ interface TimeSlotLabels {
   lunchLabel: string;
 }
 
-function useTimeSlotLabels(): TimeSlotLabels {
+interface GridConfig {
+  periodCount: number;
+  lunchCol: number;
+  gridTemplateColumns: string;
+}
+
+function buildGridHeaders(periodCount: number, lunchColIdx: number): string[] {
+  const headers: string[] = [];
+  for (let p = 1; p <= periodCount; p++) {
+    if (p === lunchColIdx + 1) headers.push('LUNCH');
+    headers.push(`P${p}`);
+  }
+  if (lunchColIdx >= periodCount) headers.push('LUNCH');
+  return headers;
+}
+
+function useTimeSlotLabels(): TimeSlotLabels & { gridConfig: GridConfig } {
+  const fallbackGrid: GridConfig = { periodCount: PERSISTED_PERIOD_LABELS.length, lunchCol: 3, gridTemplateColumns: '96px repeat(7, minmax(122px, 1fr))' };
   const [labels, setLabels] = useState<TimeSlotLabels>({
     periodLabels: [...PERSISTED_PERIOD_LABELS],
     lunchLabel: PERSISTED_LUNCH_LABEL,
   });
+  const [gridConfig, setGridConfig] = useState<GridConfig>(fallbackGrid);
   useEffect(() => {
     let on = true;
     getTimetableTimeGrid().then((grid) => {
       if (!on) return;
+      const pc = grid.periodCount;
+      const lunchColIdx = grid.lunchGapAfter > 0 ? grid.lunchGapAfter : Math.floor(pc / 2);
+      const headers = buildGridHeaders(pc, lunchColIdx);
+      const cols = `96px repeat(${headers.length}, minmax(122px, 1fr))`;
       setLabels({ periodLabels: grid.periodLabels, lunchLabel: grid.lunchLabel });
+      setGridConfig({ periodCount: pc, lunchCol: lunchColIdx, gridTemplateColumns: cols });
     });
     return () => {
       on = false;
     };
   }, []);
-  return labels;
+  return { ...labels, gridConfig };
 }
 
 function generationEventLabel(type: string): string {
@@ -1209,6 +1232,13 @@ interface RemoteDragState {
   staffName: string;
   day: number | null;
   period: number | null;
+  scheduleCode: string;
+  courseName: string;
+  scheduleType: string;
+  startPeriodNo: number;
+  endPeriodNo: number;
+  sourceWidth: number;
+  sourceHeight: number;
 }
 
 interface PendingSwapState {
@@ -1217,6 +1247,22 @@ interface PendingSwapState {
   targetDay: number;
   targetPeriod: number;
   conflicts: string[] | null;
+}
+
+interface LocalDragState {
+  scheduleId: string;
+  schedule: ScheduleResponse;
+  currentPointerX: number;
+  currentPointerY: number;
+  sourceDay: number;
+  sourcePeriod: number;
+  sourceSpan: number;
+  targetDay: number | null;
+  targetPeriod: number | null;
+  sourceWidth: number;
+  sourceHeight: number;
+  grabOffsetX: number;
+  grabOffsetY: number;
 }
 
 function eventId(): string {
@@ -1271,6 +1317,9 @@ const SCHEDULE_TYPE_META: Record<string, { label: string; fg: string; bg: string
   },
 };
 
+const miniThStyle: React.CSSProperties = { padding: '4px 6px', textAlign: 'center', fontWeight: 700, fontSize: 10, color: 'var(--text-lighter)', borderBottom: '1.5px solid var(--surface-border)' };
+const miniTdStyle: React.CSSProperties = { padding: '3px 4px', border: '1px solid var(--surface-border)', fontSize: 10, color: 'var(--text)', verticalAlign: 'top' };
+
 function ScheduleTypeBadge({ type }: { type: string }) {
   const meta = SCHEDULE_TYPE_META[type] ?? SCHEDULE_TYPE_META.COURSE;
   return (
@@ -1291,33 +1340,36 @@ function ScheduleTypeBadge({ type }: { type: string }) {
 function ScheduleCard({
   schedule,
   editable,
-  onDragStart,
-  onDragEnd,
+  onPointerDown,
+  isDragging,
   onClick,
 }: {
   schedule: ScheduleResponse;
   editable: boolean;
-  onDragStart?: (e: DragEvt<HTMLDivElement>) => void;
-  onDragEnd?: () => void;
+  onPointerDown?: (e: React.PointerEvent) => void;
+  isDragging?: boolean;
   onClick?: () => void;
 }) {
   const cancelled = schedule.scheduleStatus === 'CANCELLED';
   const meta = SCHEDULE_TYPE_META[schedule.scheduleType] ?? SCHEDULE_TYPE_META.COURSE;
   const isSpecial = schedule.scheduleType !== 'COURSE';
-  const cardBg = cancelled ? 'var(--divider)' : meta.cardBg;
+  const cardBg = cancelled ? 'var(--divider)' : isDragging ? 'var(--secondary-lighter)' : meta.cardBg;
   return (
     <div
-      draggable={editable && !isSpecial}
-      onDragStart={onDragStart}
-      onDragEnd={onDragEnd}
+      data-schedule-id={schedule.scheduleId}
+      onPointerDown={onPointerDown}
       onClick={onClick ? (e) => { e.stopPropagation(); onClick(); } : undefined}
       title={isSpecial
         ? meta.label
         : `${schedule.courseCode} \u00b7 ${schedule.courseName}${schedule.staffNames.length > 0 ? ' \u00b7 ' + schedule.staffNames.join(', ') : schedule.staffName ? ' \u00b7 ' + schedule.staffName : ''}`}
-      className={editable && !isSpecial ? 'cursor-grab active:cursor-grabbing' : ''}
+      className={editable ? (isDragging ? 'cursor-grabbing' : 'cursor-grab active:cursor-grabbing') : ''}
       style={{
         background: cardBg,
-        border: cancelled ? '1.5px solid var(--surface-border)' : meta.cardBorder,
+        border: cancelled
+          ? '1.5px solid var(--surface-border)'
+          : isDragging
+            ? '2px dashed var(--primary)'
+            : meta.cardBorder,
         borderRadius: 'var(--radius-md)',
         padding: '6px 10px',
         width: '100%',
@@ -1329,11 +1381,13 @@ function ScheduleCard({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 5,
-        opacity: cancelled ? 0.55 : 1,
+        opacity: cancelled ? 0.55 : isDragging ? 0.4 : 1,
         position: 'relative',
         overflow: 'hidden',
-        pointerEvents: 'auto',
+        pointerEvents: isDragging ? 'none' : 'auto',
         boxSizing: 'border-box',
+        touchAction: 'none',
+        userSelect: 'none',
       }}
     >
       <span
@@ -1341,7 +1395,7 @@ function ScheduleCard({
         style={{
           fontSize: isSpecial ? 11 : 13.5,
           fontWeight: 800,
-          color: cancelled ? 'var(--text-lighter)' : 'var(--accent)',
+          color: cancelled ? 'var(--text-lighter)' : isDragging ? 'var(--primary)' : 'var(--accent)',
           letterSpacing: '0.2px',
           maxWidth: '100%',
           overflow: 'hidden',
@@ -1352,8 +1406,11 @@ function ScheduleCard({
       >
         {isSpecial ? meta.label.toUpperCase() : schedule.courseCode}
       </span>
-      {editable && !isSpecial && (
+      {editable && !isDragging && (
         <GripVertical size={12} style={{ color: 'var(--text-lighter)', position: 'absolute', top: 6, right: 6 }} />
+      )}
+      {isDragging && (
+        <Move size={12} style={{ color: 'var(--primary)', position: 'absolute', top: 6, right: 6 }} />
       )}
       {cancelled && (
         <span className="badge badge-xs" style={{ background: 'rgba(239,68,68,0.15)', color: '#dc2626', border: 'none', fontWeight: 700 }}>
@@ -1372,6 +1429,82 @@ const meetingLabelOf = (s: ScheduleResponse) => {
   const span = s.endPeriodNo - s.startPeriodNo + 1;
   return `${meta.label} \u2014 ${span} period${span === 1 ? '' : 's'}`;
 };
+
+// ---------------------------------------------------------------------------
+// Lecturer conflict detection (global across the active term).
+//
+// A lecturer's teaching load spans every semester + section assigned to that
+// lecturer in the active term. Two sessions conflict when the SAME lecturer is
+// booked by two schedules whose day + period windows overlap — even if they
+// belong to different semesters or sections (multi-semester conflict). We never
+// report a schedule against itself, and we validate the FINAL post-swap state.
+// ---------------------------------------------------------------------------
+
+/** Every lecturer (display) name covered by a schedule's assignment(s). */
+const staffNamesOf = (s: ScheduleResponse): string[] =>
+  s.staffNames && s.staffNames.length > 0 ? s.staffNames : s.staffName ? [s.staffName] : [];
+
+const dayNameShort = (day: number) =>
+  (['MON', 'TUE', 'WED', 'THU', 'FRI'][day - 1] ?? `DAY${day}`);
+
+function windowOverlaps(aDay: number, aStart: number, aEnd: number, bDay: number, bStart: number, bEnd: number): boolean {
+  return aDay === bDay && aStart <= bEnd && bStart <= aEnd;
+}
+
+interface LecturerConflictHit {
+  lecturer: string;
+  courseCode: string;
+  courseName: string;
+  semNo: number;
+  section: string;
+  day: number;
+  startPeriodNo: number;
+  endPeriodNo: number;
+  scheduleType: string;
+}
+
+/**
+ * Compute lecturer conflicts for a proposed schedule at (proposedDay,
+ * proposedStart, proposedEnd) AFTER applying a swap (other schedules may move
+ * away). `moved` is the schedule being dragged (excluded). `others` is the set
+ * of schedules that REMAIN in the timetable after the proposed swap. Only
+ * schedules that remain in the final state are compared, so a swapped-away
+ * partner is never reported as a conflict.
+ */
+function detectLecturerConflicts(
+  moved: ScheduleResponse,
+  proposedDay: number,
+  proposedStart: number,
+  proposedEnd: number,
+  activeTermSchedules: ScheduleResponse[],
+  excludeScheduleIds: Set<string>,
+): LecturerConflictHit[] {
+  const movedNames = staffNamesOf(moved);
+  if (movedNames.length === 0) return [];
+  const hits: LecturerConflictHit[] = [];
+  for (const other of activeTermSchedules) {
+    if (other.scheduleId === moved.scheduleId) continue;
+    if (excludeScheduleIds.has(other.scheduleId)) continue; // moved away by swap
+    if (!windowOverlaps(proposedDay, proposedStart, proposedEnd, other.dayOfWeek, other.startPeriodNo, other.endPeriodNo)) continue;
+    const otherNames = staffNamesOf(other);
+    for (const lecturer of movedNames) {
+      if (otherNames.some((n) => n && lecturer && n.toLowerCase() === lecturer.toLowerCase())) {
+        hits.push({
+          lecturer,
+          courseCode: other.courseCode,
+          courseName: other.courseName,
+          semNo: other.semesterNo,
+          section: (other.sections?.length > 0 ? other.sections[0] : other.sectionName) ?? '',
+          day: other.dayOfWeek,
+          startPeriodNo: other.startPeriodNo,
+          endPeriodNo: other.endPeriodNo,
+          scheduleType: other.scheduleType,
+        });
+      }
+    }
+  }
+  return hits;
+}
 
 /**
  * One visual frame for legitimately co-located elective courses that share the
@@ -1439,19 +1572,19 @@ interface WeeklyTimetableGridProps {
   editable: boolean;
   periodLabels: string[];
   lunchLabel: string;
+  gridConfig: GridConfig;
   todayIdx?: number;
+  onEditTimetable?: (semesterNo: number, section: string) => void;
   dragTarget?: { day: number; period: number } | null;
   remoteDrag?: RemoteDragState | null;
-  onDragOver?: (e: DragEvt<HTMLDivElement>, day: number, period: number) => void;
-  onDrop?: (e: DragEvt<HTMLDivElement>, day: number, period: number) => void;
-  onDragStart?: (e: DragEvt<HTMLDivElement>, schedule: ScheduleResponse) => void;
-  onDragEnd?: () => void;
+  activeDragId?: string | null;
+  activeDragSourceDay?: number | null;
+  activeDragSourcePeriod?: number | null;
+  onPointerDownSchedule?: (e: React.PointerEvent, schedule: ScheduleResponse) => void;
   onSelectSchedule?: (schedule: ScheduleResponse) => void;
   onSelectElectives?: (items: ScheduleResponse[]) => void;
   onCellClick?: (day: number, period: number) => void;
 }
-
-const periodOfColumn = (ci: number) => (ci < LUNCH_HEADER_COL ? ci + 1 : ci);
 
 const windowKeyOf = (s: ScheduleResponse) => `${s.startPeriodNo}|${s.endPeriodNo}`;
 
@@ -1496,25 +1629,140 @@ const groupSchedulesByCohort = (schedules: ScheduleResponse[]): { semesterNo: nu
   );
 };
 
+/**
+ * Readable lecturer weekly timetable across the whole active term (all
+ * semesters + sections). Larger than a "tiny" table so day / period / course
+ * code / semester / section are legible. Highlighted ids get a warning tint.
+ */
+function LecturerMiniTimetable({
+  schedules,
+  periodCount,
+  lunchAfter,
+  highlightIds = [],
+}: {
+  lecturerName: string;
+  schedules: ScheduleResponse[];
+  periodCount: number;
+  lunchAfter: number;
+  highlightIds?: string[];
+}) {
+  const occ = schedules.filter((s) => s.scheduleType === 'COURSE');
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+  const periodLabels = Array.from({ length: Math.max(6, periodCount) }, (_, i) => `P${i + 1}`);
+  const highlight = new Set(highlightIds);
+  const periods = Math.max(6, periodCount);
+
+  const cellFor = (day: number, periodNo: number) => {
+    const cell = occ.find((s) => s.dayOfWeek === day && s.startPeriodNo <= periodNo && s.endPeriodNo >= periodNo);
+    if (!cell) return null;
+    if (cell.startPeriodNo < periodNo) return null; // continuation row handled by rowSpan
+    const span = cell.endPeriodNo - cell.startPeriodNo + 1;
+    const sem = cell.semesterNo;
+    const sec = (cell.sections?.length > 0 ? cell.sections[0] : cell.sectionName) ?? '';
+    const isConflict = highlight.has(cell.scheduleId);
+    const bg = SCHEDULE_TYPE_META[cell.scheduleType]?.cardBg ?? SCHEDULE_TYPE_META.COURSE.cardBg;
+    return (
+      <td
+        key={day}
+        rowSpan={span}
+        style={{
+          border: isConflict ? '2px solid var(--danger)' : '1px solid var(--surface-border)',
+          background: isConflict ? 'rgba(239,68,68,0.18)' : bg,
+          padding: '5px 6px',
+          textAlign: 'center',
+          verticalAlign: 'middle',
+          borderRadius: 'var(--radius-sm)',
+          minWidth: 96,
+        }}
+        title={`${cell.courseCode} \u00b7 ${cell.courseName}\nSem ${sem} \u00b7 Section ${sec}`}
+      >
+        <div style={{ fontSize: 12, fontWeight: 800, color: 'var(--accent)', lineHeight: 1.15 }}>
+          {cell.courseCode}
+        </div>
+        <div style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-light)', marginTop: 2 }}>
+          Sem {sem} / {sec}
+        </div>
+        {isConflict && (
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#dc2626', marginTop: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
+            <AlertTriangle size={10} /> conflict
+          </div>
+        )}
+      </td>
+    );
+  };
+
+  return (
+    <div style={{ overflowX: 'auto', marginTop: 6 }}>
+      <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 720 }}>
+        <thead>
+          <tr>
+            <th style={{ ...miniThStyle, width: 52 }} />
+            {periodLabels.slice(0, periods).map((l, pi) => {
+              const pNo = pi + 1;
+              if (lunchAfter === pNo) {
+                return <th key={`lunch-${pNo}`} colSpan={1} style={{ ...miniThStyle, color: 'var(--text-lighter)', fontWeight: 600 }}>LUNCH</th>;
+              }
+              return <th key={pNo} style={miniThStyle}>{l}</th>;
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {dayNames.map((dName, di) => {
+            const dayNo = di + 1;
+            const rowCells: React.ReactNode[] = [];
+            let col = 1;
+            while (col <= periods) {
+              if (lunchAfter === col) {
+                rowCells.push(<td key={`lunch-${col}`} style={miniTdStyle} />);
+                col += 1;
+                continue;
+              }
+              const cell = occ.find((s) => s.dayOfWeek === dayNo && s.startPeriodNo === col);
+              if (cell) {
+                rowCells.push(cellFor(dayNo, col));
+                col = cell.endPeriodNo + 1;
+                continue;
+              }
+              rowCells.push(<td key={col} style={miniTdStyle} />);
+              col += 1;
+            }
+            return (
+              <tr key={dayNo}>
+                <td style={{ ...miniTdStyle, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap' }}>{dName}</td>
+                {rowCells}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function WeeklyTimetableGrid({
   schedules,
   editable,
   periodLabels,
+  lunchLabel: _lunchLabel,
+  gridConfig,
   todayIdx = -1,
+  onEditTimetable,
   dragTarget = null,
   remoteDrag = null,
-  onDragOver,
-  onDrop,
-  onDragStart,
-  onDragEnd,
+  activeDragId = null,
+  activeDragSourceDay = null,
+  activeDragSourcePeriod = null,
+  onPointerDownSchedule,
   onSelectSchedule,
   onSelectElectives,
   onCellClick,
 }: WeeklyTimetableGridProps) {
   const groups = useMemo(() => groupSchedulesByCohort(schedules), [schedules]);
+  const gridHeaders = useMemo(() => buildGridHeaders(gridConfig.periodCount, gridConfig.lunchCol), [gridConfig.periodCount, gridConfig.lunchCol]);
+  const periodOfCol = useCallback((ci: number) => (ci < gridConfig.lunchCol ? ci + 1 : ci), [gridConfig.lunchCol]);
 
   const renderCohortGrid = (items: ScheduleResponse[]) => (
-    <div style={{ display: 'grid', gap: 1, minWidth: 940, gridTemplateColumns: GRID_COLUMNS }}>
+    <div style={{ display: 'grid', gap: 1, minWidth: 940, gridTemplateColumns: gridConfig.gridTemplateColumns }}>
       <div
         style={{
           padding: '9px 10px',
@@ -1529,9 +1777,9 @@ function WeeklyTimetableGrid({
       >
         Day
       </div>
-      {GRID_COLUMN_HEADERS.map((h, ci) => {
-        const isLunch = ci === LUNCH_HEADER_COL;
-        const headerPeriod = periodOfColumn(ci);
+      {gridHeaders.map((h, ci) => {
+        const isLunch = h === 'LUNCH';
+        const headerPeriod = periodOfCol(ci);
         return (
           <div
             key={h}
@@ -1594,27 +1842,33 @@ function WeeklyTimetableGrid({
               )}
             </div>
 
-            {GRID_COLUMN_HEADERS.map((h, ci) => {
-              const period = periodOfColumn(ci);
+            {gridHeaders.map((h, ci) => {
+              const period = periodOfCol(ci);
               if (h === 'LUNCH') return null;
+              const lunchAfterPeriod = gridConfig.lunchCol + 1;
+              const crossesLunch = (s: ScheduleResponse) => s.startPeriodNo <= gridConfig.lunchCol && s.endPeriodNo >= lunchAfterPeriod;
               const cellSchedules = items.filter(
                 (s) =>
                   s.dayOfWeek === day &&
                   (s.startPeriodNo === period ||
-                    (period === 4 && s.startPeriodNo <= 3 && s.endPeriodNo >= 4))
+                    (period === lunchAfterPeriod && crossesLunch(s)))
               );
               const spannedInto = items.some((s) => {
                 if (s.dayOfWeek !== day) return false;
-                const segEnd = s.startPeriodNo <= 3 && s.endPeriodNo >= 4 ? 3 : s.endPeriodNo;
-                return s.startPeriodNo < period && segEnd >= period;
+                if (crossesLunch(s)) {
+                  return s.startPeriodNo < period && period <= gridConfig.lunchCol;
+                }
+                return s.startPeriodNo < period && s.endPeriodNo >= period;
               });
               const isTarget = dragTarget?.day === day && dragTarget.period === period;
               const remoteHere = remoteDrag?.day === day && remoteDrag.period === period;
+              const isSource = activeDragId != null && day === activeDragSourceDay && period === activeDragSourcePeriod;
+              const remoteSource = remoteDrag?.scheduleId != null && items.some(s => s.scheduleId === remoteDrag.scheduleId) && !isSource;
               return (
                 <div
                   key={`${day}-${period}`}
-                  onDragOver={onDragOver ? (e) => onDragOver(e, day, period) : undefined}
-                  onDrop={onDrop ? (e) => onDrop(e, day, period) : undefined}
+                  data-day={day}
+                  data-period={period}
                   onClick={onCellClick ? () => onCellClick(day, period) : undefined}
                   style={{
                     gridColumn: ci + 2,
@@ -1622,18 +1876,24 @@ function WeeklyTimetableGrid({
                     minHeight: GRID_CELL_MIN_HEIGHT,
                     minWidth: 0,
                     borderRadius: 6,
-                    borderStyle: 'solid',
+                    borderStyle: (isSource || remoteSource) ? 'dashed' : 'solid',
                     borderWidth: '1.5px',
                     borderColor: spannedInto
                       ? 'transparent'
-                      : isTarget
+                      : isSource
                         ? 'var(--primary)'
-                        : 'var(--surface-border)',
-                    background: spannedInto ? 'transparent' : isTarget ? 'rgba(40,114,161,0.12)' : 'var(--secondary-lighter)',
+                        : remoteSource
+                          ? '#8b5cf6'
+                          : isTarget
+                            ? 'var(--primary)'
+                            : 'var(--surface-border)',
+                    background: spannedInto ? 'transparent' : isSource ? 'rgba(40,114,161,0.06)' : remoteSource ? 'rgba(139,92,246,0.06)' : isTarget ? 'rgba(40,114,161,0.12)' : 'var(--secondary-lighter)',
                     padding: 5,
                     position: 'relative',
                     zIndex: spannedInto ? 3 : 1,
                     overflow: 'visible',
+                    pointerEvents: spannedInto ? 'none' : 'auto',
+                    transition: isTarget ? 'border-color 0.15s, background 0.15s' : undefined,
                   }}
                 >
                   {remoteHere && (
@@ -1653,12 +1913,13 @@ function WeeklyTimetableGrid({
                     .map((grp, gi) => {
                       const s = grp[0];
                       const combined = grp.length > 1 && new Set(grp.map((x) => x.courseCode)).size === grp.length;
-                      const crossesLunch = s.startPeriodNo <= 3 && s.endPeriodNo >= 4;
-                      const isContinuation = period === 4 && s.startPeriodNo <= 3 && crossesLunch;
+                      const lunchAfterPeriod = gridConfig.lunchCol + 1;
+                      const crossesLunch = s.startPeriodNo <= gridConfig.lunchCol && s.endPeriodNo >= lunchAfterPeriod;
+                      const isContinuation = period === lunchAfterPeriod && crossesLunch;
                       const span = isContinuation
-                        ? s.endPeriodNo - 4 + 1
+                        ? s.endPeriodNo - lunchAfterPeriod + 1
                         : crossesLunch
-                          ? 3 - s.startPeriodNo + 1
+                          ? gridConfig.lunchCol - s.startPeriodNo + 1
                           : s.endPeriodNo - s.startPeriodNo + 1;
                       return (
                         <div
@@ -1682,8 +1943,8 @@ function WeeklyTimetableGrid({
                             <ScheduleCard
                               schedule={s}
                               editable={editable}
-                              onDragStart={onDragStart ? (e) => onDragStart(e, s) : undefined}
-                              onDragEnd={onDragEnd}
+                              isDragging={activeDragId === s.scheduleId || remoteDrag?.scheduleId === s.scheduleId}
+                              onPointerDown={onPointerDownSchedule ? (e) => onPointerDownSchedule(e, s) : undefined}
                               onClick={onSelectSchedule ? () => onSelectSchedule(s) : undefined}
                             />
                           )}
@@ -1700,7 +1961,7 @@ function WeeklyTimetableGrid({
       {/* Lunch strip */}
       <div
         style={{
-          gridColumn: 5,
+          gridColumn: gridConfig.lunchCol + 2,
           gridRow: `2 / ${GRID_DAY_NAMES.length + 2}`,
           alignSelf: 'stretch',
           width: '100%',
@@ -1734,8 +1995,27 @@ function WeeklyTimetableGrid({
   );
 
   if (groups.length <= 1) {
+    const singleGroup = groups.length === 1 ? groups[0] : null;
     return (
       <>
+        {onEditTimetable && (singleGroup || schedules.length > 0) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent)' }}>
+              {singleGroup ? `Semester ${singleGroup.semesterNo} — Section ${singleGroup.section}` : `Semester ${schedules[0].semesterNo}`}
+            </span>
+            <button
+              onClick={() => {
+                const sem = singleGroup?.semesterNo ?? schedules[0].semesterNo;
+                const sec = singleGroup?.section ?? (schedules[0].sections?.length > 0 ? schedules[0].sections[0] : schedules[0].sectionName) ?? '';
+                onEditTimetable(sem, sec);
+              }}
+              className="btn btn-ghost btn-xs gap-1 cursor-pointer"
+              style={{ color: '#059669', fontWeight: 600, marginLeft: 'auto' }}
+            >
+              <Pencil size={12} /> Edit Timetable
+            </button>
+          </div>
+        )}
         {renderCohortGrid(schedules)}
         <CourseInfoPanel schedules={schedules} />
       </>
@@ -1746,13 +2026,22 @@ function WeeklyTimetableGrid({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       {groups.map((g) => (
         <div key={`${g.semesterNo}|${g.section}`}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 14, fontWeight: 800, color: 'var(--accent)' }}>
               Semester {g.semesterNo} — Section {g.section}
             </span>
             <span style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--text-lighter)' }}>
               {g.items.length} {g.items.length === 1 ? 'session' : 'sessions'}
             </span>
+            {onEditTimetable && (
+              <button
+                onClick={() => onEditTimetable(g.semesterNo, g.section)}
+                className="btn btn-ghost btn-xs gap-1 cursor-pointer"
+                style={{ color: '#059669', fontWeight: 600, marginLeft: 'auto' }}
+              >
+                <Pencil size={12} /> Edit Timetable
+              </button>
+            )}
           </div>
           <div style={{ overflowX: 'auto', paddingBottom: 2 }}>
             {renderCohortGrid(g.items)}
@@ -1941,6 +2230,7 @@ export function RollCallWorkspace() {
 }
 
 export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, staff }: SharedTimetableWorkspaceProps) {
+  const router = useRouter();
   const [generation, setGeneration] = useState<GenerationSessionResponse | null>(null);
   const [lobby, setLobby] = useState<TimetableLobbyResponse | null>(null);
   const [manage, setManage] = useState<GenerationManageResponse | null>(null);
@@ -1960,7 +2250,14 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
   const [remoteDrag, setRemoteDrag] = useState<RemoteDragState | null>(null);
   const [dragTarget, setDragTarget] = useState<{ day: number; period: number } | null>(null);
   const [pendingSwap, setPendingSwap] = useState<PendingSwapState | null>(null);
+  const [localDrag, setLocalDrag] = useState<LocalDragState | null>(null);
+  const localDragRef = useRef<LocalDragState | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number; schedule: ScheduleResponse } | null>(null);
+  const [previewPos, setPreviewPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const cancelDragRef = useRef<(() => void) | null>(null);
   const [selectedMeeting, setSelectedMeeting] = useState<ScheduleResponse | null>(null);
+  const [lecturerMiniTimetable, setLecturerMiniTimetable] = useState<string | null>(null);
   const [electivePick, setElectivePick] = useState<ScheduleResponse[] | null>(null);
   const [moveTarget, setMoveTarget] = useState<ScheduleResponse | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
@@ -2150,19 +2447,93 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
             : prev
         );
         break;
-      case TIMETABLE_REALTIME_EVENTS.DRAG_STARTED:
-      case TIMETABLE_REALTIME_EVENTS.DRAG_MOVED:
+      case TIMETABLE_REALTIME_EVENTS.DRAG_STARTED: {
         if (event.staffId && event.staffId !== staff.staffId) {
+          console.log('[remote-drag] DRAG_STARTED from', event.staffName, 'schedule', event.scheduleId, 'day', event.day, 'period', event.period);
+          const sched = (schedules ?? []).find(sc => sc.scheduleId === event.scheduleId);
+          const srcStartPeriod = sched?.startPeriodNo ?? 1;
+          const srcEndPeriod = sched?.endPeriodNo ?? srcStartPeriod;
+          let srcWidth = 200;
+          let srcHeight = 112;
+          const srcCell = document.querySelector(`[data-day="${event.day}"][data-period="${srcStartPeriod}"]`);
+          const srcRect = srcCell?.getBoundingClientRect();
+          if (srcRect) {
+            srcWidth = srcRect.width;
+            srcHeight = srcRect.height;
+            if (srcEndPeriod > srcStartPeriod) {
+              const endCell = document.querySelector(`[data-day="${event.day}"][data-period="${srcEndPeriod}"]`);
+              const endRect = endCell?.getBoundingClientRect();
+              if (endRect) {
+                srcWidth = endRect.right - srcRect.left;
+                srcHeight = endRect.bottom - srcRect.top;
+              }
+            }
+          }
           setRemoteDrag({
             scheduleId: event.scheduleId ?? '',
             staffName: event.staffName ?? 'Another editor',
             day: event.day ?? null,
             period: event.period ?? null,
+            scheduleCode: sched?.courseCode ?? '',
+            courseName: sched?.courseName ?? '',
+            scheduleType: sched?.scheduleType ?? 'COURSE',
+            startPeriodNo: srcStartPeriod,
+            endPeriodNo: srcEndPeriod,
+            sourceWidth: srcWidth,
+            sourceHeight: srcHeight,
           });
+          if (remoteDragStaleRef.current) clearTimeout(remoteDragStaleRef.current);
+          remoteDragStaleRef.current = setTimeout(() => setRemoteDrag(null), 5000);
         }
         break;
+      }
+      case TIMETABLE_REALTIME_EVENTS.DRAG_MOVED: {
+        if (event.staffId && event.staffId !== staff.staffId) {
+          setRemoteDrag(prev => {
+            if (prev) return { ...prev, day: event.day ?? prev.day, period: event.period ?? prev.period };
+            const sched = (schedules ?? []).find(sc => sc.scheduleId === event.scheduleId);
+            const srcStartPeriod = sched?.startPeriodNo ?? 1;
+            const srcEndPeriod = sched?.endPeriodNo ?? srcStartPeriod;
+            let srcWidth = 200;
+            let srcHeight = 112;
+            const srcCell = document.querySelector(`[data-day="${event.day}"][data-period="${srcStartPeriod}"]`);
+            const srcRect = srcCell?.getBoundingClientRect();
+            if (srcRect) {
+              srcWidth = srcRect.width;
+              srcHeight = srcRect.height;
+              if (srcEndPeriod > srcStartPeriod) {
+                const endCell = document.querySelector(`[data-day="${event.day}"][data-period="${srcEndPeriod}"]`);
+                const endRect = endCell?.getBoundingClientRect();
+                if (endRect) {
+                  srcWidth = endRect.right - srcRect.left;
+                  srcHeight = endRect.bottom - srcRect.top;
+                }
+              }
+            }
+            return {
+              scheduleId: event.scheduleId ?? '',
+              staffName: event.staffName ?? 'Another editor',
+              day: event.day ?? null,
+              period: event.period ?? null,
+              scheduleCode: sched?.courseCode ?? '',
+              courseName: sched?.courseName ?? '',
+              scheduleType: sched?.scheduleType ?? 'COURSE',
+              startPeriodNo: srcStartPeriod,
+              endPeriodNo: srcEndPeriod,
+              sourceWidth: srcWidth,
+              sourceHeight: srcHeight,
+            };
+          });
+          if (remoteDragStaleRef.current) clearTimeout(remoteDragStaleRef.current);
+          remoteDragStaleRef.current = setTimeout(() => setRemoteDrag(null), 5000);
+        }
+        break;
+      }
       case TIMETABLE_REALTIME_EVENTS.DRAG_ENDED:
-        if (event.staffId !== staff.staffId) setRemoteDrag(null);
+        if (event.staffId !== staff.staffId) {
+          if (remoteDragStaleRef.current) { clearTimeout(remoteDragStaleRef.current); remoteDragStaleRef.current = null; }
+          setRemoteDrag(null);
+        }
         break;
       case TIMETABLE_REALTIME_EVENTS.LOBBY_CANCELLED:
         setLobby((prev) => (prev ? { ...prev, status: 'CANCELLED' } : prev));
@@ -2232,59 +2603,49 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
     };
   }, [generationId]);
 
-  const lastDragRef = useRef<{ day: number; period: number; at: number } | null>(null);
+  useEffect(() => {
+    return () => { cancelDragRef.current?.(); };
+  }, []);
+
+  const remoteDragStaleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (remoteDragStaleRef.current) clearTimeout(remoteDragStaleRef.current);
+  }, []);
+
+  const lastDragRef = useRef<{ day: number; period: number; scheduleId: string; at: number } | null>(null);
   const dragMoveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => {
     if (dragMoveTimerRef.current) clearTimeout(dragMoveTimerRef.current);
   }, []);
 
-  const sendDragMove = useCallback((day: number, period: number) => {
+  const sendDragMove = useCallback((day: number, period: number, scheduleId: string) => {
     const last = lastDragRef.current;
     const now = Date.now();
     if (last && last.day === day && last.period === period && now - last.at < DRAG_BROADCAST_MS) return;
-    lastDragRef.current = { day, period, at: now };
+    lastDragRef.current = { day, period, scheduleId, at: now };
     if (dragMoveTimerRef.current) return;
     dragMoveTimerRef.current = setTimeout(() => {
       dragMoveTimerRef.current = null;
       const cur = lastDragRef.current;
       if (cur) {
-        publishDragStatus(generationId, { action: 'move', scheduleId: null, day: cur.day, period: cur.period }).catch(() => {});
+        publishDragStatus(generationId, { action: 'move', scheduleId: cur.scheduleId, day: cur.day, period: cur.period }).catch((e) => console.warn('[drag] publish move failed', e));
       }
     }, DRAG_BROADCAST_MS);
   }, [generationId]);
-
-  const handleDragStart = (e: DragEvt<HTMLDivElement>, s: ScheduleResponse) => {
-    if (!canEdit) {
-      e.preventDefault();
-      return;
-    }
-    e.dataTransfer.setData('text/plain', s.scheduleId);
-    e.dataTransfer.effectAllowed = 'move';
-    setRemoteDrag({ scheduleId: s.scheduleId, staffName: staff.staffName, day: s.dayOfWeek, period: s.startPeriodNo });
-    publishDragStatus(generationId, { action: 'start', scheduleId: s.scheduleId, day: s.dayOfWeek, period: s.startPeriodNo }).catch(() => {});
-  };
-
-  const handleDragOver = (e: DragEvt<HTMLDivElement>, day: number, period: number) => {
-    if (!canEdit) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    const cur = dragTarget;
-    if (cur && cur.day === day && cur.period === period) return;
-    setDragTarget({ day, period });
-    sendDragMove(day, period);
-  };
 
   const moveScheduleTo = useCallback(
     async (scheduleId: string, day: number, period: number) => {
       if (!canEdit || saving) return;
       const dragged = (schedules ?? []).find((s) => s.scheduleId === scheduleId);
       if (!dragged) return;
+      if (dragged.dayOfWeek === day && dragged.startPeriodNo === period) return;
       const occupant = (schedules ?? []).find(
         (s) =>
+          s.scheduleId !== scheduleId &&
           s.dayOfWeek === day &&
-          s.startPeriodNo === period &&
           s.scheduleStatus !== 'CANCELLED' &&
-          s.scheduleId !== scheduleId
+          s.startPeriodNo <= period &&
+          s.endPeriodNo >= period
       );
       if (occupant) {
         setPendingSwap({
@@ -2301,7 +2662,12 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
       try {
         const res = await swapSchedules(generationId, { scheduleId, targetDay: day, targetPeriod: period, force: false });
         if (res.swapped) {
-          setSchedules((prev) => (res.schedules.length > 0 ? res.schedules : prev));
+          setSchedules((prev) => {
+            if (res.schedules.length === 0) return prev;
+            const updated = new Map(res.schedules.map((s) => [s.scheduleId, s]));
+            return prev?.map((s) => updated.get(s.scheduleId) ?? s) ?? prev;
+          });
+          setSaving(false);
           toast.success('Schedule moved');
         } else if (res.conflicts.length > 0) {
           setSaveError(`Move blocked — ${res.conflicts.join('; ')}`);
@@ -2317,16 +2683,142 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
     [canEdit, saving, schedules, generationId]
   );
 
-  const handleDrop = async (e: DragEvt<HTMLDivElement>, day: number, period: number) => {
-    if (!canEdit) return;
-    e.preventDefault();
-    const scheduleId = e.dataTransfer.getData('text/plain');
-    setDragTarget(null);
-    publishDragStatus(generationId, { action: 'end', scheduleId, day: null, period: null }).catch(() => {});
-    setRemoteDrag(null);
-    if (!scheduleId) return;
-    await moveScheduleTo(scheduleId, day, period);
-  };
+  const DRAG_THRESHOLD = 6;
+
+  const handlePointerDownSchedule = useCallback((e: React.PointerEvent, s: ScheduleResponse) => {
+    if (!canEdit || e.button !== 0) return;
+    pointerStartRef.current = { x: e.clientX, y: e.clientY, schedule: s };
+
+    const cleanup = () => {
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup', onUp);
+      document.removeEventListener('keydown', onKeyDown);
+      cancelDragRef.current = null;
+      pointerStartRef.current = null;
+      localDragRef.current = null;
+      setLocalDrag(null);
+      setDragTarget(null);
+      setRemoteDrag(null);
+      if (remoteDragStaleRef.current) { clearTimeout(remoteDragStaleRef.current); remoteDragStaleRef.current = null; }
+    };
+
+    const onKeyDown = (ke: KeyboardEvent) => {
+      if (ke.key === 'Escape') {
+        const drag = localDragRef.current;
+        cleanup();
+        if (drag) {
+          publishDragStatus(generationId, { action: 'end', scheduleId: null, day: null, period: null }).catch((e) => console.warn('[drag] publish end failed', e));
+        }
+      }
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      const start = pointerStartRef.current;
+      if (!start) {
+        const drag = localDragRef.current;
+        if (drag) {
+          if (previewRef.current) {
+            previewRef.current.style.left = `${ev.clientX - drag.grabOffsetX}px`;
+            previewRef.current.style.top = `${ev.clientY - drag.grabOffsetY}px`;
+          }
+          const cell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('[data-day]') as HTMLElement | null;
+          let newDay: number | null = null;
+          let newPeriod: number | null = null;
+          if (cell) {
+            newDay = Number(cell.dataset.day);
+            newPeriod = Number(cell.dataset.period);
+            if (isNaN(newDay) || isNaN(newPeriod)) { newDay = null; newPeriod = null; }
+          }
+          const updated = { ...drag, currentPointerX: ev.clientX, currentPointerY: ev.clientY, targetDay: newDay, targetPeriod: newPeriod };
+          localDragRef.current = updated;
+          if (newDay !== drag.targetDay || newPeriod !== drag.targetPeriod) {
+            setLocalDrag(updated);
+            setPreviewPos({ x: ev.clientX, y: ev.clientY });
+            if (newDay !== null && newPeriod !== null) {
+              setDragTarget({ day: newDay, period: newPeriod });
+            } else {
+              setDragTarget(null);
+            }
+          }
+          if (newDay !== null && newPeriod !== null) {
+            sendDragMove(newDay, newPeriod, drag.scheduleId);
+          }
+        }
+        return;
+      }
+      const dx = ev.clientX - start.x;
+      const dy = ev.clientY - start.y;
+      if (Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD) return;
+
+      pointerStartRef.current = null;
+
+      let sourceWidth = 200;
+      let sourceHeight = GRID_CELL_MIN_HEIGHT;
+      let grabOffsetX = sourceWidth / 2;
+      let grabOffsetY = sourceHeight / 2;
+
+      const srcCell = document.querySelector(`[data-day="${start.schedule.dayOfWeek}"][data-period="${start.schedule.startPeriodNo}"]`) as HTMLElement | null;
+      const srcCellRect = srcCell?.getBoundingClientRect();
+
+      const cardEl = document.querySelector(`[data-schedule-id="${start.schedule.scheduleId}"]`) as HTMLElement | null;
+      const cardRect = cardEl?.getBoundingClientRect();
+
+      const endCell = document.querySelector(`[data-day="${start.schedule.dayOfWeek}"][data-period="${start.schedule.endPeriodNo}"]`) as HTMLElement | null;
+      const endCellRect = endCell?.getBoundingClientRect();
+
+      if (srcCellRect) {
+        if (endCellRect && start.schedule.endPeriodNo > start.schedule.startPeriodNo) {
+          sourceWidth = endCellRect.right - srcCellRect.left;
+          sourceHeight = endCellRect.bottom - srcCellRect.top;
+        } else {
+          sourceWidth = srcCellRect.width;
+          sourceHeight = srcCellRect.height;
+        }
+        if (cardRect) {
+          grabOffsetX = start.x - cardRect.left;
+          grabOffsetY = start.y - cardRect.top;
+        } else {
+          grabOffsetX = start.x - srcCellRect.left;
+          grabOffsetY = start.y - srcCellRect.top;
+        }
+      }
+
+      const drag: LocalDragState = {
+        scheduleId: start.schedule.scheduleId,
+        schedule: start.schedule,
+        currentPointerX: ev.clientX,
+        currentPointerY: ev.clientY,
+        sourceDay: start.schedule.dayOfWeek,
+        sourcePeriod: start.schedule.startPeriodNo,
+        sourceSpan: start.schedule.endPeriodNo - start.schedule.startPeriodNo,
+        targetDay: null,
+        targetPeriod: null,
+        sourceWidth,
+        sourceHeight,
+        grabOffsetX,
+        grabOffsetY,
+      };
+      localDragRef.current = drag;
+      setPreviewPos({ x: ev.clientX, y: ev.clientY });
+      setLocalDrag(drag);
+      setRemoteDrag({ scheduleId: start.schedule.scheduleId, staffName: staff.staffName, day: start.schedule.dayOfWeek, period: start.schedule.startPeriodNo, scheduleCode: start.schedule.courseCode, courseName: start.schedule.courseName, scheduleType: start.schedule.scheduleType, startPeriodNo: start.schedule.startPeriodNo, endPeriodNo: start.schedule.endPeriodNo, sourceWidth, sourceHeight });
+      publishDragStatus(generationId, { action: 'start', scheduleId: start.schedule.scheduleId, day: start.schedule.dayOfWeek, period: start.schedule.startPeriodNo }).catch((e) => console.warn('[drag] publish start failed', e));
+    };
+
+    const onUp = () => {
+      const drag = localDragRef.current;
+      cleanup();
+      if (drag && drag.targetDay !== null && drag.targetPeriod !== null) {
+        moveScheduleTo(drag.scheduleId, drag.targetDay, drag.targetPeriod);
+      }
+      publishDragStatus(generationId, { action: 'end', scheduleId: null, day: null, period: null }).catch((e) => console.warn('[drag] publish end failed', e));
+    };
+
+    cancelDragRef.current = () => { cleanup(); publishDragStatus(generationId, { action: 'end', scheduleId: null, day: null, period: null }).catch((e) => console.warn('[drag] publish end failed', e)); };
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup', onUp);
+    document.addEventListener('keydown', onKeyDown);
+  }, [canEdit, generationId, staff.staffName, sendDragMove, moveScheduleTo]);
 
   const handleGridCellClick = (day: number, period: number) => {
     if (!moveTarget) return;
@@ -2343,12 +2835,6 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
     setElectivePick(items);
   };
 
-  const handleDragEnd = () => {
-    setDragTarget(null);
-    setRemoteDrag(null);
-    publishDragStatus(generationId, { action: 'end', scheduleId: null, day: null, period: null }).catch(() => {});
-  };
-
   const handleSwapConfirm = async (force: boolean) => {
     if (!pendingSwap || saving) return;
     setSaving(true);
@@ -2361,16 +2847,24 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
         force,
       });
       if (res.swapped) {
-        setSchedules((prev) => (res.schedules.length > 0 ? res.schedules : prev));
+        setSchedules((prev) => {
+          if (res.schedules.length === 0) return prev;
+          const updated = new Map(res.schedules.map((s) => [s.scheduleId, s]));
+          return prev?.map((s) => updated.get(s.scheduleId) ?? s) ?? prev;
+        });
         setPendingSwap(null);
         toast.success('Schedules swapped');
       } else if (!force && res.conflicts.length > 0) {
         setPendingSwap({ ...pendingSwap, conflicts: res.conflicts });
       } else {
-        toast.error('Could not swap schedules');
+        const msg = 'Could not swap schedules';
+        setSaveError(msg);
+        toast.error(msg);
       }
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Could not swap schedules');
+      const msg = err instanceof Error ? err.message : 'Could not swap schedules';
+      setSaveError(msg);
+      toast.error(msg);
     } finally {
       setSaving(false);
     }
@@ -2612,12 +3106,13 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
     () =>
       (schedules ?? []).filter(
         (s) =>
-          (activeViewSemester === 'all' || s.semesterNo === activeViewSemester) &&
-          (activeViewSection === 'all' || (s.sections ?? []).includes(activeViewSection))
+          s.scheduleType !== 'COURSE' ||
+          ((activeViewSemester === 'all' || s.semesterNo === activeViewSemester) &&
+           (activeViewSection === 'all' || (s.sections ?? []).includes(activeViewSection)))
       ),
     [schedules, activeViewSemester, activeViewSection]
   );
-  const { periodLabels, lunchLabel } = useTimeSlotLabels();
+  const { periodLabels, lunchLabel, gridConfig } = useTimeSlotLabels();
 
   if (loading) {
     return (
@@ -3033,12 +3528,14 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
                   editable={canEdit}
                   periodLabels={periodLabels}
                   lunchLabel={lunchLabel}
+                  gridConfig={gridConfig}
+                  onEditTimetable={(sem, sec) => router.push(`/lecturer/timetable-editor/${generationId}?semester=${sem}&section=${encodeURIComponent(sec)}`)}
                   dragTarget={dragTarget}
                   remoteDrag={remoteDrag}
-                  onDragOver={handleDragOver}
-                  onDrop={handleDrop}
-                  onDragStart={handleDragStart}
-                  onDragEnd={handleDragEnd}
+                  activeDragId={localDrag?.scheduleId ?? null}
+                  activeDragSourceDay={localDrag?.sourceDay ?? null}
+                  activeDragSourcePeriod={localDrag?.sourcePeriod ?? null}
+                  onPointerDownSchedule={handlePointerDownSchedule}
                   onSelectSchedule={handleSelectSchedule}
                   onSelectElectives={handleSelectElectives}
                   onCellClick={handleGridCellClick}
@@ -3075,45 +3572,260 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
         </div>
       )}
 
+      {localDrag && createPortal(
+        <div
+          ref={previewRef}
+          style={{
+            position: 'fixed',
+            left: previewPos.x - localDrag.grabOffsetX,
+            top: previewPos.y - localDrag.grabOffsetY,
+            width: localDrag.sourceWidth,
+            height: localDrag.sourceHeight,
+            zIndex: 99999,
+            pointerEvents: 'none',
+            opacity: 0.93,
+            transform: 'rotate(1.5deg)',
+            filter: 'drop-shadow(0 8px 20px rgba(0,0,0,0.25))',
+            transition: 'none',
+            boxSizing: 'border-box',
+          }}
+        >
+          <div
+            style={{
+              background: (SCHEDULE_TYPE_META[localDrag.schedule.scheduleType] ?? SCHEDULE_TYPE_META.COURSE).cardBg,
+              border: (SCHEDULE_TYPE_META[localDrag.schedule.scheduleType] ?? SCHEDULE_TYPE_META.COURSE).cardBorder,
+              borderRadius: 'var(--radius-md)',
+              padding: '6px 10px',
+              width: '100%',
+              height: '100%',
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 5,
+            }}
+          >
+            <span
+              style={{
+                fontSize: localDrag.schedule.scheduleType !== 'COURSE' ? 11 : 13.5,
+                fontWeight: 800,
+                color: 'var(--accent)',
+                letterSpacing: '0.2px',
+                textAlign: 'center',
+              }}
+            >
+              {localDrag.schedule.scheduleType !== 'COURSE'
+                ? (SCHEDULE_TYPE_META[localDrag.schedule.scheduleType] ?? SCHEDULE_TYPE_META.COURSE).label.toUpperCase()
+                : localDrag.schedule.courseCode}
+            </span>
+            {localDrag.schedule.scheduleType === 'COURSE' && (
+              <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-light)', textAlign: 'center', lineHeight: 1.2 }}>
+                {localDrag.schedule.courseName}
+              </span>
+            )}
+            <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-light)', textAlign: 'center' }}>
+              {dayNameOf(localDrag.schedule.dayOfWeek)} P{localDrag.schedule.startPeriodNo}
+              {localDrag.schedule.endPeriodNo > localDrag.schedule.startPeriodNo ? `–P${localDrag.schedule.endPeriodNo}` : ''}
+            </span>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {remoteDrag && remoteDrag.day != null && remoteDrag.period != null && (() => {
+        const _cell = document.querySelector(`[data-day="${remoteDrag.day}"][data-period="${remoteDrag.period}"]`);
+        const _rect = _cell?.getBoundingClientRect();
+        if (!_rect) return null;
+        const _pad = 5;
+        const _w = remoteDrag.sourceWidth - _pad * 2;
+        const _h = Math.max(remoteDrag.sourceHeight - _pad * 2, 60);
+        return createPortal(
+          <div
+            style={{
+              position: 'fixed',
+              left: _rect.left + _pad,
+              top: _rect.top + _pad,
+              width: _w,
+              height: _h,
+              zIndex: 99998,
+              pointerEvents: 'none',
+              opacity: 0.88,
+              transform: 'rotate(1.5deg)',
+              filter: 'drop-shadow(0 8px 20px rgba(139,92,246,0.3))',
+              transition: 'left 0.12s ease-out, top 0.12s ease-out',
+              boxSizing: 'border-box',
+            }}
+          >
+            <div
+              style={{
+                background: (SCHEDULE_TYPE_META[remoteDrag.scheduleType] ?? SCHEDULE_TYPE_META.COURSE).cardBg,
+                border: '2px solid rgba(139,92,246,0.5)',
+                borderRadius: 'var(--radius-md)',
+                padding: '6px 10px',
+                width: '100%',
+                height: '100%',
+                boxSizing: 'border-box',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 4,
+              }}
+            >
+              <span
+                style={{
+                  fontSize: remoteDrag.scheduleType !== 'COURSE' ? 11 : 13.5,
+                  fontWeight: 800,
+                  color: '#7c3aed',
+                  letterSpacing: '0.2px',
+                  textAlign: 'center',
+                }}
+              >
+                {remoteDrag.scheduleType !== 'COURSE'
+                  ? (SCHEDULE_TYPE_META[remoteDrag.scheduleType] ?? SCHEDULE_TYPE_META.COURSE).label.toUpperCase()
+                  : remoteDrag.scheduleCode}
+              </span>
+              {remoteDrag.scheduleType === 'COURSE' && remoteDrag.courseName && (
+                <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-light)', textAlign: 'center', lineHeight: 1.2 }}>
+                  {remoteDrag.courseName}
+                </span>
+              )}
+              <span style={{ fontSize: 9.5, fontWeight: 700, color: '#8b5cf6', textAlign: 'center' }}>
+                {remoteDrag.staffName} is dragging
+              </span>
+            </div>
+          </div>,
+          document.body
+        );
+      })()}
+
       {selectedMeeting && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--modal-bg)' }}>
-          <div className="bg-base-100 w-full max-w-md" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--surface)' }}>
+          <div className="bg-base-100 w-full max-w-md" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--surface)', flexShrink: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
                 <CalendarCog size={15} style={{ color: 'var(--primary)' }} />
-                Meeting details
+                {lecturerMiniTimetable ? 'Lecturer Timetable' : 'Meeting details'}
               </div>
-              <button onClick={() => setSelectedMeeting(null)} className="btn btn-ghost btn-sm btn-circle cursor-pointer" style={{ color: 'var(--text-light)' }}>
+              <button onClick={() => { setSelectedMeeting(null); setLecturerMiniTimetable(null); }} className="btn btn-ghost btn-sm btn-circle cursor-pointer" style={{ color: 'var(--text-light)' }}>
                 <X size={15} />
               </button>
             </div>
-            <div style={{ padding: '16px 20px', display: 'grid', gap: 10 }}>
-              <div>
-                <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-mono, monospace)' }}>
-                  {selectedMeeting.courseCode}
-                </div>
-                <div style={{ fontSize: 12.5, color: 'var(--text-light)' }}>{selectedMeeting.courseName}</div>
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: '6px 12px', fontSize: 12.5 }}>
-                <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Meeting</span>
-                <span style={{ color: 'var(--text)' }}>{meetingLabelOf(selectedMeeting)}</span>
-                <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Current</span>
-                <span style={{ color: 'var(--text)' }}>{slotTextOf(selectedMeeting)}</span>
-                <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Staff</span>
-                <span style={{ color: 'var(--text)', overflowWrap: 'anywhere' }}>
-                  {selectedMeeting.staffNames.length > 0 ? selectedMeeting.staffNames.join(', ') : selectedMeeting.staffName || '\u2014'}
-                </span>
-                <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Sections</span>
-                <span style={{ color: 'var(--text)' }}>
-                  {(selectedMeeting.sections?.length ? selectedMeeting.sections : selectedMeeting.sectionName ? [selectedMeeting.sectionName] : []).join(' + ') || '\u2014'}
-                </span>
-              </div>
+            <div style={{ padding: '16px 20px', display: 'grid', gap: 10, overflowY: 'auto', flex: 1, minHeight: 0 }}>
+              {lecturerMiniTimetable ? (() => {
+                const lecturerName = lecturerMiniTimetable;
+                const lecturerSchedules = (schedules ?? []).filter((s) => {
+                  const names = s.staffNames.length > 0 ? s.staffNames : [s.staffName];
+                  return names.some((n) => n && n.toLowerCase() === lecturerName.toLowerCase());
+                });
+                const dayNames = ['MON', 'TUE', 'WED', 'THU', 'FRI'];
+                const lunchAfter = gridConfig.lunchCol + 1;
+                const allDays = new Set(lecturerSchedules.map((s) => s.dayOfWeek));
+                const displayDays = allDays.size > 0 ? [...allDays].sort((a, b) => a - b) : [1, 2, 3, 4, 5];
+                const periodLabels = gridConfig.periodCount > 0 ? Array.from({ length: gridConfig.periodCount }, (_, i) => `P${i + 1}`) : PERSISTED_PERIOD_LABELS;
+                return (
+                  <div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', marginBottom: 8 }}>
+                      {lecturerName} — {lecturerSchedules.length} session{lecturerSchedules.length !== 1 ? 's' : ''} this term
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11 }}>
+                        <thead>
+                          <tr>
+                            <th style={{ ...miniThStyle, width: 44 }} />
+                            {displayDays.map((d) => (
+                              <th key={d} style={miniThStyle}>{dayNames[d - 1]}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {periodLabels.map((label: string, pi: number) => {
+                            const periodNo = pi + 1;
+                            if (lunchAfter === periodNo) {
+                              return (
+                                <tr key={`lunch-${periodNo}`}>
+                                  <td colSpan={displayDays.length + 1} style={{ ...miniTdStyle, background: 'var(--divider)', fontWeight: 600, color: 'var(--text-lighter)', textAlign: 'center', padding: '2px 0' }}>
+                                    Lunch
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            return (
+                              <tr key={periodNo}>
+                                <td style={{ ...miniTdStyle, fontWeight: 600, color: 'var(--text-lighter)', whiteSpace: 'nowrap' }}>{label}</td>
+                                {displayDays.map((d) => {
+                                  const cell = lecturerSchedules.find((s) => s.dayOfWeek === d && s.startPeriodNo <= periodNo && s.endPeriodNo >= periodNo);
+                                  if (cell && cell.startPeriodNo === periodNo) {
+                                    const span = cell.endPeriodNo - cell.startPeriodNo + 1;
+                                    const bg = SCHEDULE_TYPE_META[cell.scheduleType]?.cardBg ?? SCHEDULE_TYPE_META.COURSE.cardBg;
+                                    return (
+                                      <td key={d} style={{ ...miniTdStyle, background: bg, fontWeight: 700, textAlign: 'center', verticalAlign: 'middle' }} rowSpan={span}>
+                                        <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--accent)' }}>{cell.courseCode}</div>
+                                        {span > 1 && <div style={{ fontSize: 9, color: 'var(--text-lighter)' }}>({span}p)</div>}
+                                      </td>
+                                    );
+                                  }
+                                  if (cell && cell.startPeriodNo < periodNo) return null;
+                                  return <td key={d} style={miniTdStyle} />;
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <button
+                      onClick={() => setLecturerMiniTimetable(null)}
+                      className="btn btn-sm btn-ghost cursor-pointer mt-2"
+                      style={{ color: 'var(--primary)', fontWeight: 600 }}
+                    >
+                      <ArrowLeft size={13} /> Back to details
+                    </button>
+                  </div>
+                );
+              })() : (
+                <>
+                  <div>
+                    <div style={{ fontSize: 17, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-mono, monospace)' }}>
+                      {selectedMeeting.courseCode}
+                    </div>
+                    <div style={{ fontSize: 12.5, color: 'var(--text-light)' }}>{selectedMeeting.courseName}</div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: '6px 12px', fontSize: 12.5 }}>
+                    <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Meeting</span>
+                    <span style={{ color: 'var(--text)' }}>{meetingLabelOf(selectedMeeting)}</span>
+                    <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Current</span>
+                    <span style={{ color: 'var(--text)' }}>{slotTextOf(selectedMeeting)}</span>
+                    <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Staff</span>
+                    <span style={{ color: 'var(--text)', overflowWrap: 'anywhere' }}>
+                      {selectedMeeting.staffNames.length > 0 ? selectedMeeting.staffNames.join(', ') : selectedMeeting.staffName || '\u2014'}
+                    </span>
+                    <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Sections</span>
+                    <span style={{ color: 'var(--text)' }}>
+                      {(selectedMeeting.sections?.length ? selectedMeeting.sections : selectedMeeting.sectionName ? [selectedMeeting.sectionName] : []).join(' + ') || '\u2014'}
+                    </span>
+                  </div>
+                  {selectedMeeting.scheduleType === 'COURSE' && (selectedMeeting.staffNames.length > 0 || selectedMeeting.staffName) && (
+                    <button
+                      onClick={() => {
+                        const name = selectedMeeting.staffNames.length > 0 ? selectedMeeting.staffNames[0] : selectedMeeting.staffName;
+                        if (name) setLecturerMiniTimetable(name);
+                      }}
+                      className="btn btn-sm btn-ghost cursor-pointer gap-1"
+                      style={{ color: 'var(--primary)', fontWeight: 600, justifyContent: 'flex-start' }}
+                    >
+                      <Users size={13} /> View lecturer timetable
+                    </button>
+                  )}
+                </>
+              )}
             </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 20px', borderTop: '1px solid var(--surface)' }}>
-              <button onClick={() => setSelectedMeeting(null)} className="btn btn-ghost btn-sm cursor-pointer" style={{ color: 'var(--text-light)' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 20px', borderTop: '1px solid var(--surface)', flexShrink: 0 }}>
+              <button onClick={() => { setSelectedMeeting(null); setLecturerMiniTimetable(null); }} className="btn btn-ghost btn-sm cursor-pointer" style={{ color: 'var(--text-light)' }}>
                 Close
               </button>
-              {canEdit && (
+              {!lecturerMiniTimetable && canEdit && (
                 <button
                   onClick={() => {
                     setMoveTarget(selectedMeeting);
@@ -3254,6 +3966,15 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
                   </p>
                 </div>
               )}
+              {saveError && (
+                <div className="flex items-center gap-2 px-3 py-2 mt-2" style={{ borderRadius: 'var(--radius-md)', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: 'var(--danger)', fontSize: 12 }}>
+                  <AlertTriangle size={13} className="shrink-0" />
+                  <span className="flex-1">{saveError}</span>
+                  <button onClick={() => setSaveError(null)} className="btn btn-ghost btn-xs btn-circle cursor-pointer">
+                    <X size={11} />
+                  </button>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 18 }}>
                 <button
                   onClick={() => setPendingSwap(null)}
@@ -3263,7 +3984,7 @@ export function SharedTimetableWorkspace({ generationId, onBack, onNotFound, sta
                   Cancel
                 </button>
                 <button
-                  onClick={() => handleSwapConfirm(false)}
+                  onClick={() => handleSwapConfirm(!!pendingSwap.conflicts)}
                   disabled={saving}
                   className="btn btn-sm gap-1.5 border-none text-white cursor-pointer disabled:opacity-50"
                   style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
@@ -3742,11 +4463,13 @@ function GeneratedTimetablesCard({
   generations,
   canManage,
   onView,
+  onEdit,
   onDelete,
 }: {
   generations: GenerationSessionResponse[];
   canManage: boolean;
   onView: (generationId: string) => void;
+  onEdit: (generationId: string) => void;
   onDelete: (generation: GenerationSessionResponse) => void;
 }) {
   const sorted = [...generations].sort((a, b) => (b.createdAt > a.createdAt ? 1 : -1));
@@ -3777,6 +4500,16 @@ function GeneratedTimetablesCard({
                 <Eye size={12} /> View
               </button>
             )}
+            {canManage && g.status === 'COMPLETED' && (
+              <button
+                onClick={() => onEdit(g.generationId)}
+                className="btn btn-ghost btn-xs gap-1 cursor-pointer shrink-0"
+                style={{ color: '#059669' }}
+                title="Edit timetable"
+              >
+                <Pencil size={12} /> Edit
+              </button>
+            )}
             {canManage && (g.status === 'PENDING' || g.status === 'FAILED') && (
               <button
                 onClick={() => onDelete(g)}
@@ -3794,7 +4527,714 @@ function GeneratedTimetablesCard({
   );
 }
 
+// ============================================================================
+// Dedicated Timetable EDIT page: load one exact semester+section timetable,
+// drag-and-drop courses, inspect lecturer info + the lecturer's WHOLE
+// active-term timetable, and validate lecturer conflicts (multi-semester).
+// ============================================================================
+
+function MoveConfirmModal({
+  proposal,
+  saving,
+  saveError,
+  onCancel,
+  onSave,
+}: {
+  proposal: ProposeResult;
+  saving: boolean;
+  saveError: string | null;
+  onCancel: () => void;
+  onSave: (force: boolean) => void;
+}) {
+  const s = proposal.schedule;
+  const span = s.endPeriodNo - s.startPeriodNo + 1;
+  const hasSection = proposal.sectionConflicts.length > 0;
+  const hasLecturer = proposal.lecturerConflicts.length > 0;
+  const isSwap = !!proposal.occupant;
+  const moveText = isSwap
+    ? 'swap'
+    : `${span > 1 ? `This ${span}-period session` : 'This session'} will be moved`;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--modal-bg)' }}>
+      <div className="bg-base-100 w-full max-w-lg" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--surface)', flexShrink: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Move size={15} style={{ color: 'var(--primary)' }} />
+            Confirm change
+          </div>
+          <button onClick={onCancel} className="btn btn-ghost btn-sm btn-circle cursor-pointer" style={{ color: 'var(--text-light)' }}>
+            <X size={15} />
+          </button>
+        </div>
+        <div style={{ padding: '16px 20px', overflowY: 'auto', flex: 1, display: 'grid', gap: 12, minHeight: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)' }}>
+            You are about to {moveText}:
+            <div style={{ marginTop: 8, fontSize: 15, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-mono, monospace)' }}>
+              {s.courseCode}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-light)' }}>{s.courseName} · {meetingLabelOf(s)}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-light)', marginTop: 4 }}>
+              {slotTextOf(s)}
+              {isSwap && (
+                <span> → <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                  {dayNameOf(proposal.targetDay)} P{proposal.targetStart}-{proposal.targetEnd}
+                </span> (swapping with {proposal.occupant?.courseCode})
+                </span>
+              )}
+              {!isSwap && (
+                <span> → <span style={{ fontWeight: 700, color: 'var(--primary)' }}>
+                  {dayNameOf(proposal.targetDay)} P{proposal.targetStart}-{proposal.targetEnd}
+                </span></span>
+              )}
+            </div>
+          </div>
+
+          {(hasSection || hasLecturer) && (
+            <div style={{ border: '1.5px solid rgba(220,38,38,0.4)', borderRadius: 'var(--radius-md)', background: 'rgba(239,68,68,0.08)', padding: '12px 14px', display: 'grid', gap: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#dc2626', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <AlertTriangle size={14} /> Conflicts detected
+              </div>
+
+              {hasLecturer && (
+                <div style={{ background: 'rgba(239,68,68,0.1)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', display: 'grid', gap: 6 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#b91c1c' }}>Lecturer Conflict</div>
+                  {proposal.lecturerConflicts.map((c, i) => (
+                    <div key={i} style={{ fontSize: 12, color: 'var(--text)' }}>
+                      <span style={{ fontWeight: 700, color: 'var(--text)' }}>{c.lecturer}</span>
+                      {' is already teaching '}
+                      <span style={{ fontWeight: 700 }}>{c.courseCode}</span>
+                      {' (Semester '}{c.semNo}{c.section ? ` / Section ${c.section}` : ''}
+                      {`) on ${dayNameOf(c.day)} P${c.startPeriodNo}-${c.endPeriodNo}`}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {hasSection && (
+                <div style={{ background: 'rgba(217,119,6,0.12)', borderRadius: 'var(--radius-sm)', padding: '10px 12px', display: 'grid', gap: 6 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: '#b45309' }}>Cohort / Section conflict</div>
+                  {proposal.sectionConflicts.map((m, i) => (
+                    <div key={i} style={{ fontSize: 12, color: 'var(--text)' }}>
+                      Another schedule remains here: {m}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div style={{ fontSize: 11.5, color: 'var(--text-light)' }}>
+                The backend will re-validate the final timetable; saving with conflicts forces the move and records the conflict explicitly.
+              </div>
+            </div>
+          )}
+
+          {!hasSection && !hasLecturer && (
+            <div style={{ border: '1.5px solid rgba(16,185,129,0.4)', borderRadius: 'var(--radius-md)', background: 'rgba(16,185,129,0.08)', padding: '12px 14px', fontSize: 12.5, color: 'var(--text)' }}>
+              <span style={{ fontWeight: 700, color: '#059669' }}>No conflicts detected</span> — the lecturer is free at the proposed time and the slot is open.
+            </div>
+          )}
+
+          {saveError && <div style={{ fontSize: 12.5, color: 'var(--danger)', fontWeight: 600 }}>{saveError}</div>}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, padding: '14px 20px', borderTop: '1px solid var(--surface)', flexShrink: 0 }}>
+          <button onClick={onCancel} disabled={saving} className="btn btn-ghost btn-sm cursor-pointer disabled:opacity-50" style={{ color: 'var(--text-light)' }}>
+            Cancel
+          </button>
+          {hasSection || hasLecturer ? (
+            <button
+              onClick={() => onSave(true)}
+              disabled={saving}
+              className="btn btn-sm gap-1.5 border-none text-white cursor-pointer disabled:opacity-50"
+              style={{ background: 'linear-gradient(rgb(220,38,38), rgb(185,28,28))' }}
+            >
+              <AlertTriangle size={13} /> Save with conflicts
+            </button>
+          ) : (
+            <button
+              onClick={() => onSave(false)}
+              disabled={saving}
+              className="btn btn-sm gap-1.5 border-none text-white cursor-pointer disabled:opacity-50"
+              style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+            >
+              {saving ? <span className="loading loading-spinner loading-xs" /> : <Check size={13} />} Save Changes
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CourseDetailModal({
+  meeting,
+  activeTermLabel,
+  activeTermSchedules,
+  periodCount,
+  lunchAfter,
+  onClose,
+  onMove,
+}: {
+  meeting: ScheduleResponse;
+  activeTermLabel: string;
+  activeTermSchedules: ScheduleResponse[];
+  periodCount: number;
+  lunchAfter: number;
+  onClose: () => void;
+  onMove?: () => void;
+}) {
+  const lecturers = staffNamesOf(meeting);
+  const lecturer = lecturers[0] ?? meeting.staffName ?? '—';
+  const lecturerSchedules = lecturer !== '—'
+    ? activeTermSchedules.filter((s) => {
+        const names = staffNamesOf(s);
+        return names.some((n) => n && n.toLowerCase() === lecturer.toLowerCase());
+      })
+    : [];
+  const secLabel = (meeting.sections?.length > 0 ? meeting.sections[0] : meeting.sectionName) ?? '—';
+  const meta = SCHEDULE_TYPE_META[meeting.scheduleType] ?? SCHEDULE_TYPE_META.COURSE;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'var(--modal-bg)' }}>
+      <div className="bg-base-100 w-full max-w-2xl" style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-lg)', overflow: 'hidden', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--surface)', flexShrink: 0 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <BookOpen size={15} style={{ color: 'var(--primary)' }} /> Course Details
+          </div>
+          <button onClick={onClose} className="btn btn-ghost btn-sm btn-circle cursor-pointer" style={{ color: 'var(--text-light)' }}>
+            <X size={15} />
+          </button>
+        </div>
+        <div style={{ padding: '18px 20px', overflowY: 'auto', flex: 1 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--accent)', fontFamily: 'var(--font-mono, monospace)' }}>
+                {meeting.courseCode}
+              </div>
+              <div style={{ fontSize: 13.5, color: 'var(--text-light)' }}>{meeting.courseName}</div>
+            </div>
+            <span className="badge badge-sm" style={{ background: meta.bg, color: meta.fg, border: 'none', fontWeight: 700 }}>
+              {meta.label}
+            </span>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr', gap: '8px 14px', fontSize: 13, marginTop: 14 }}>
+            <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Semester</span>
+            <span style={{ color: 'var(--text)' }}>{meeting.semesterNo}</span>
+            <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Section</span>
+            <span style={{ color: 'var(--text)' }}>{secLabel}</span>
+            <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Current</span>
+            <span style={{ color: 'var(--text)' }}>{slotTextOf(meeting)}</span>
+            <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Period span</span>
+            <span style={{ color: 'var(--text)' }}>P{meeting.startPeriodNo}–P{meeting.endPeriodNo} ({meeting.endPeriodNo - meeting.startPeriodNo + 1} period{meeting.endPeriodNo - meeting.startPeriodNo + 1 > 1 ? 's' : ''})</span>
+            <span style={{ color: 'var(--text-lighter)', fontWeight: 600 }}>Lecturer</span>
+            <span style={{ color: 'var(--text)', fontWeight: 700 }}>{lecturers.length > 0 ? lecturers.join(', ') : meeting.staffName || '—'}</span>
+          </div>
+
+          {lecturer !== '—' && (
+            <div style={{ marginTop: 20, border: '1px solid var(--surface-border)', borderRadius: 'var(--radius-md)', background: 'var(--surface-soft)', padding: '14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                <Users size={14} style={{ color: 'var(--primary)' }} />
+                <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>
+                  {lecturer}&apos;s Timetable — {activeTermLabel}
+                </span>
+                <span style={{ fontSize: 11.5, color: 'var(--text-lighter)' }}>
+                  {lecturerSchedules.length} session{lecturerSchedules.length === 1 ? '' : 's'} across all semesters
+                </span>
+              </div>
+              {lecturerSchedules.length === 0 ? (
+                <div style={{ fontSize: 12, color: 'var(--text-lighter)', marginTop: 10 }}>
+                  No scheduled sessions found for this lecturer in the active term.
+                </div>
+              ) : (
+                <LecturerMiniTimetable
+                  lecturerName={lecturer}
+                  schedules={lecturerSchedules}
+                  periodCount={periodCount}
+                  lunchAfter={lunchAfter}
+                  highlightIds={[meeting.scheduleId]}
+                />
+              )}
+            </div>
+          )}
+
+          {onMove && (
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button onClick={onClose} className="btn btn-ghost btn-sm cursor-pointer" style={{ color: 'var(--text-light)' }}>
+                Close
+              </button>
+              <button
+                onClick={onMove}
+                className="btn btn-sm gap-1.5 border-none text-white cursor-pointer"
+                style={{ background: 'linear-gradient(var(--primary), var(--primary-dark))' }}
+              >
+                <Move size={13} /> Move this session
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface ProposeResult {
+  scheduleId: string;
+  schedule: ScheduleResponse;
+  targetDay: number;
+  targetPeriod: number;
+  targetStart: number;
+  targetEnd: number;
+  occupant: ScheduleResponse | null;
+  sectionConflicts: string[];
+  lecturerConflicts: LecturerConflictHit[];
+}
+
+export function TimetableEditSection({
+  generationId,
+  semesterNo,
+  section,
+  onBack,
+}: {
+  generationId: string;
+  semesterNo: number;
+  section: string;
+  onBack: () => void;
+}) {
+  const { periodLabels, lunchLabel, gridConfig } = useTimeSlotLabels();
+  const [schedules, setSchedules] = useState<ScheduleResponse[] | null>(null);
+  const [activeTermId, setActiveTermId] = useState<string | null>(null);
+  const [activeTermLabel, setActiveTermLabel] = useState<string>('Active Term');
+  const [termSchedules, setTermSchedules] = useState<ScheduleResponse[]>([]);
+  const [selectedMeeting, setSelectedMeeting] = useState<ScheduleResponse | null>(null);
+  const [proposal, setProposal] = useState<ProposeResult | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  // Drag state (self-contained single-editor drag, no realtime collaboration).
+  const [localDrag, setLocalDrag] = useState<LocalDragState | null>(null);
+  const localDragRef = useRef<LocalDragState | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
+  const pointerStartRef = useRef<{ x: number; y: number; schedule: ScheduleResponse } | null>(null);
+  const [dragTarget, setDragTarget] = useState<{ day: number; period: number } | null>(null);
+  const cancelDragRef = useRef<(() => void) | null>(null);
+
+  // The timetable shown in the main grid = this generation filtered to the
+  // selected semester + section cohort.
+  const cohortSchedules = useMemo(
+    () =>
+      (schedules ?? []).filter((s) => {
+        const secs = s.sections?.length > 0 ? s.sections : s.sectionName ? [s.sectionName] : [];
+        return (s.semesterNo === semesterNo) && (secs.includes(section));
+      }),
+    [schedules, semesterNo, section]
+  );
+
+  // Determine the active term (real data, never hardcoded) and load ALL of
+  // that term's schedules so lecturer conflicts are global across semesters.
+  const load = useCallback(async () => {
+    try {
+      const [genSchedules, terms] = await Promise.all([
+        getGenerationSchedules(generationId),
+        apiFetch<AcademicTermRecord[]>('/api/terms').catch(() => [] as AcademicTermRecord[]),
+      ]);
+      setSchedules(genSchedules);
+      const active = (terms ?? []).find((t) => t.status === 'ACTIVE') ?? (terms ?? [])[0];
+      const termId = active?.termId ?? null;
+      setActiveTermId(termId);
+      if (active) setActiveTermLabel(`${active.academicYear}${active.status === 'ACTIVE' ? ' (Active)' : ''}`);
+      if (termId) {
+        const termSched = await getSchedules({ termId }).catch(() => [] as ScheduleResponse[]);
+        setTermSchedules(termSched);
+      } else {
+        setTermSchedules(genSchedules);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load timetable');
+    } finally {
+      setLoading(false);
+    }
+  }, [generationId]);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial load
+    load();
+  }, [load]);
+
+  // ------------------------------------------------------------------
+  // Drop: build a proposed change (plain move OR swap), validate the FINAL
+  // state (section + lecturer conflicts across the whole active term),
+  // then show a confirmation modal. Nothing is persisted on drop.
+  // ------------------------------------------------------------------
+  const proposeDrop = useCallback(
+    (scheduleId: string, day: number, period: number) => {
+      const dragged = (cohortSchedules ?? []).find((s) => s.scheduleId === scheduleId);
+      if (!dragged) return;
+      if (dragged.dayOfWeek === day && dragged.startPeriodNo === period) return; // no-op same position
+      const span = dragged.endPeriodNo - dragged.startPeriodNo + 1;
+      const targetStart = period;
+      const targetEnd = period + span - 1;
+
+      // Occupant is another schedule in this cohort currently occupying the
+      // target window — it would be swapped out (moved to the source window).
+      const occupant = (cohortSchedules ?? []).find(
+        (s) =>
+          s.scheduleId !== scheduleId &&
+          s.scheduleStatus !== 'CANCELLED' &&
+          s.dayOfWeek === day &&
+          s.startPeriodNo <= targetEnd &&
+          s.endPeriodNo >= targetStart
+      );
+
+      // Final state: the set of schedules that remain after the swap.
+      const remain = (schedules ?? []).filter(
+        (s) => s.scheduleId !== scheduleId && (occupant ? s.scheduleId !== occupant.scheduleId : true)
+      );
+      const excludeIds = new Set([scheduleId, ...(occupant ? [occupant.scheduleId] : [])]);
+      const movedAway = occupant ? [occupant.scheduleId] : [];
+
+      // Section conflicts within the final cohort (same semester+section).
+      const sectionConflicts: string[] = [];
+      for (const other of remain) {
+        if (other.scheduleId === scheduleId) continue;
+        if (movedAway.includes(other.scheduleId)) continue;
+        if (windowOverlaps(day, targetStart, targetEnd, other.dayOfWeek, other.startPeriodNo, other.endPeriodNo)) {
+          if (other.scheduleType === 'COURSE') {
+            sectionConflicts.push(
+              `${other.courseCode} in ${dayNameShort(other.dayOfWeek)} P${other.startPeriodNo}-${other.endPeriodNo}`
+            );
+          } else {
+            sectionConflicts.push(
+              `${other.courseCode} (${other.scheduleType}) in ${dayNameShort(other.dayOfWeek)} P${other.startPeriodNo}-${other.endPeriodNo}`
+            );
+          }
+        }
+      }
+
+      // Lecturer conflicts globally (across ALL active-term semesters).
+      const lecturerConflicts = detectLecturerConflicts(
+        dragged,
+        day,
+        targetStart,
+        targetEnd,
+        termSchedules,
+        excludeIds
+      );
+
+      setProposal({
+        scheduleId,
+        schedule: dragged,
+        targetDay: day,
+        targetPeriod: period,
+        targetStart,
+        targetEnd,
+        occupant: occupant ?? null,
+        sectionConflicts,
+        lecturerConflicts,
+      });
+    },
+    [cohortSchedules, schedules, termSchedules]
+  );
+
+  const proposeDropRef = useRef(proposeDrop);
+  useEffect(() => {
+    proposeDropRef.current = proposeDrop;
+  }, [proposeDrop]);
+
+  // ------------------------------------------------------------------
+  // Pointer-based drag (mirrors the existing workspace drag, minus realtime).
+  // ------------------------------------------------------------------
+  const DRAG_THRESHOLD = 6;
+  const handlePointerDownSchedule = useCallback(
+    (e: React.PointerEvent, s: ScheduleResponse) => {
+      if (e.button !== 0) return;
+      pointerStartRef.current = { x: e.clientX, y: e.clientY, schedule: s };
+      const cleanup = () => {
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup', onUp);
+        document.removeEventListener('keydown', onKeyDown);
+        cancelDragRef.current = null;
+        pointerStartRef.current = null;
+        localDragRef.current = null;
+        setLocalDrag(null);
+        setDragTarget(null);
+      };
+      const onKeyDown = (ke: KeyboardEvent) => {
+        if (ke.key === 'Escape') cleanup();
+      };
+      const onMove = (ev: PointerEvent) => {
+        const start = pointerStartRef.current;
+        if (!start) {
+          const drag = localDragRef.current;
+          if (drag) {
+            if (previewRef.current) {
+              previewRef.current.style.left = `${ev.clientX - drag.grabOffsetX}px`;
+              previewRef.current.style.top = `${ev.clientY - drag.grabOffsetY}px`;
+            }
+            const cell = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('[data-day]') as HTMLElement | null;
+            let newDay: number | null = null;
+            let newPeriod: number | null = null;
+            if (cell) {
+              newDay = Number(cell.dataset.day);
+              newPeriod = Number(cell.dataset.period);
+            }
+            const updated = { ...drag, targetDay: !isNaN(newDay!) ? newDay : null, targetPeriod: !isNaN(newPeriod!) ? newPeriod : null };
+            localDragRef.current = updated;
+            if (newDay !== drag.targetDay || newPeriod !== drag.targetPeriod) {
+              setLocalDrag(updated);
+              setDragTarget(newDay !== null && newPeriod !== null ? { day: newDay, period: newPeriod } : null);
+            }
+          }
+          return;
+        }
+        const dx = ev.clientX - start.x;
+        const dy = ev.clientY - start.y;
+        if (Math.sqrt(dx * dx + dy * dy) < DRAG_THRESHOLD) return;
+        pointerStartRef.current = null;
+
+        let sourceWidth = 200;
+        let sourceHeight = GRID_CELL_MIN_HEIGHT;
+        let grabOffsetX = sourceWidth / 2;
+        let grabOffsetY = sourceHeight / 2;
+        const srcCell = document.querySelector(`[data-day="${start.schedule.dayOfWeek}"][data-period="${start.schedule.startPeriodNo}"]`) as HTMLElement | null;
+        const srcRect = srcCell?.getBoundingClientRect();
+        const cardEl = document.querySelector(`[data-schedule-id="${start.schedule.scheduleId}"]`) as HTMLElement | null;
+        const cardRect = cardEl?.getBoundingClientRect();
+        const endCell = document.querySelector(`[data-day="${start.schedule.dayOfWeek}"][data-period="${start.schedule.endPeriodNo}"]`) as HTMLElement | null;
+        const endRect = endCell?.getBoundingClientRect();
+        if (srcRect) {
+          if (endRect && start.schedule.endPeriodNo > start.schedule.startPeriodNo) {
+            sourceWidth = endRect.right - srcRect.left;
+            sourceHeight = endRect.bottom - srcRect.top;
+          } else {
+            sourceWidth = srcRect.width;
+            sourceHeight = srcRect.height;
+          }
+          grabOffsetX = cardRect ? start.x - cardRect.left : start.x - srcRect.left;
+          grabOffsetY = cardRect ? start.y - cardRect.top : start.y - srcRect.top;
+        }
+        const dragState: LocalDragState = {
+          scheduleId: start.schedule.scheduleId,
+          schedule: start.schedule,
+          currentPointerX: ev.clientX,
+          currentPointerY: ev.clientY,
+          sourceDay: start.schedule.dayOfWeek,
+          sourcePeriod: start.schedule.startPeriodNo,
+          sourceSpan: start.schedule.endPeriodNo - start.schedule.startPeriodNo + 1,
+          targetDay: null,
+          targetPeriod: null,
+          sourceWidth,
+          sourceHeight,
+          grabOffsetX,
+          grabOffsetY,
+        };
+        localDragRef.current = dragState;
+        setLocalDrag(dragState);
+      };
+      const onUp = () => {
+        const drag = localDragRef.current;
+        cleanup();
+        if (drag && drag.targetDay !== null && drag.targetPeriod !== null) {
+          proposeDropRef.current(drag.scheduleId, drag.targetDay, drag.targetPeriod);
+        }
+      };
+      cancelDragRef.current = cleanup;
+      document.addEventListener('pointermove', onMove);
+      document.addEventListener('pointerup', onUp);
+      document.addEventListener('keydown', onKeyDown);
+    },
+    []
+  );
+
+  // ------------------------------------------------------------------
+  // Save: backend is authoritative — POST swap (force when we reported
+  // conflicts). On success update schedules + the active-term aggregate.
+  // ------------------------------------------------------------------
+  const handleSave = async (force: boolean) => {
+    if (!proposal || saving) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const res = await swapSchedules(generationId, {
+        scheduleId: proposal.scheduleId,
+        targetDay: proposal.targetDay,
+        targetPeriod: proposal.targetPeriod,
+        force,
+      });
+      if (res.swapped) {
+        setSchedules((prev) => {
+          if (res.schedules.length === 0) return prev;
+          const updated = new Map(res.schedules.map((s) => [s.scheduleId, s]));
+          return prev?.map((s) => updated.get(s.scheduleId) ?? s) ?? prev;
+        });
+        if (activeTermId) {
+          const termSched = await getSchedules({ termId: activeTermId }).catch(() => [] as ScheduleResponse[]);
+          setTermSchedules(termSched);
+        }
+        setProposal(null);
+        toast.success(res.conflicts.length > 0 ? 'Timetable saved (with conflicts)' : 'Timetable saved');
+      } else if (res.conflicts.length > 0) {
+        setProposal({ ...proposal, sectionConflicts: res.conflicts });
+        setSaveError(null);
+      } else {
+        setSaveError('Could not save the change');
+        toast.error('Could not save the change');
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save the change');
+      toast.error(err instanceof Error ? err.message : 'Could not save the change');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSelectSchedule = (s: ScheduleResponse) => setSelectedMeeting(s);
+
+  const activeDragId = localDrag?.scheduleId ?? null;
+  const activeDragSourceDay = localDrag ? localDrag.sourceDay : null;
+  const activeDragSourcePeriod = localDrag ? localDrag.sourcePeriod : null;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
+        <div className="flex items-center gap-3" style={{ color: 'var(--text-light)', fontSize: 13 }}>
+          <span className="loading loading-spinner loading-sm" /> Loading timetable...
+        </div>
+      </div>
+    );
+  }
+
+  if (error || schedules == null) {
+    return (
+      <div className="flex items-center justify-center" style={{ minHeight: 300 }}>
+        <div className="text-center">
+          <p style={{ fontSize: 14, color: 'var(--danger)', fontWeight: 600, marginBottom: 8 }}>
+            {error ?? 'Timetable could not be loaded'}
+          </p>
+          <button onClick={onBack} className="btn btn-sm cursor-pointer" style={{ color: 'var(--primary)' }}>
+            <ArrowLeft size={13} /> Back to Generation
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div
+        className="bg-base-100 backdrop-blur-xl"
+        style={{ borderRadius: 'var(--radius-lg)', border: '1px solid var(--surface-border)', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 18px', borderBottom: '1px solid var(--surface)', flexWrap: 'wrap' }}>
+          <button onClick={onBack} className="btn btn-ghost btn-sm btn-circle cursor-pointer" style={{ color: 'var(--text-light)' }} title="Back">
+            <ArrowLeft size={16} />
+          </button>
+          <div style={{ fontSize: 15, fontWeight: 800, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <CalendarCog size={15} style={{ color: 'var(--primary)' }} />
+            Edit Timetable
+          </div>
+          <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-light)' }}>
+            Semester {semesterNo} • Section {section}
+          </span>
+          <span style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(16,185,129,0.14)', color: '#059669', border: '1px solid rgba(16,185,129,0.3)' }}>
+            {cohortSchedules.length} sessions
+          </span>
+          <span style={{ fontSize: 10.5, fontWeight: 600, padding: '3px 8px', borderRadius: 'var(--radius-sm)', background: 'var(--secondary-lighter)', color: 'var(--text-lighter)' }}>
+            Term: {activeTermLabel}
+          </span>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button
+              onClick={onBack}
+              className="btn btn-sm btn-ghost cursor-pointer"
+              style={{ color: 'var(--text-light)' }}
+            >
+              Back
+            </button>
+          </div>
+        </div>
+        <div style={{ padding: '16px 18px', overflowX: 'auto' }}>
+          {cohortSchedules.length === 0 ? (
+            <div className="flex items-center justify-center" style={{ minHeight: 200, color: 'var(--text-lighter)', fontSize: 13 }}>
+              No sessions in this semester/section.
+            </div>
+          ) : (
+            <WeeklyTimetableGrid
+              schedules={cohortSchedules}
+              editable
+              periodLabels={periodLabels}
+              lunchLabel={lunchLabel}
+              gridConfig={gridConfig}
+              dragTarget={dragTarget}
+              activeDragId={activeDragId}
+              activeDragSourceDay={activeDragSourceDay}
+              activeDragSourcePeriod={activeDragSourcePeriod}
+              onPointerDownSchedule={handlePointerDownSchedule}
+              onSelectSchedule={handleSelectSchedule}
+            />
+          )}
+        </div>
+      </div>
+
+      <p style={{ fontSize: 11, color: 'var(--text-lighter)', margin: '10px 2px 0' }}>
+        Tip: click a course to inspect its lecturer and the lecturer&apos;s full active-term timetable. Drag a course to move it — this lets you manually verify lecturer conflicts before saving.
+      </p>
+
+      {/* Drag preview, rendered outside the layout flow */}
+      {localDrag && createPortal(
+        <div
+          ref={previewRef}
+          style={{
+            position: 'fixed',
+            left: localDrag.currentPointerX - localDrag.grabOffsetX,
+            top: localDrag.currentPointerY - localDrag.grabOffsetY,
+            width: localDrag.sourceWidth,
+            height: localDrag.sourceHeight,
+            zIndex: 99999,
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: (SCHEDULE_TYPE_META[localDrag.schedule.scheduleType] ?? SCHEDULE_TYPE_META.COURSE).cardBg,
+            border: (SCHEDULE_TYPE_META[localDrag.schedule.scheduleType] ?? SCHEDULE_TYPE_META.COURSE).cardBorder,
+            borderRadius: 'var(--radius-md)',
+            opacity: 0.85,
+            boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+          }}
+        >
+          <span style={{ fontSize: 13, fontWeight: 800, color: 'var(--accent)' }}>{localDrag.schedule.courseCode}</span>
+        </div>,
+        document.body
+      )}
+
+      {/* Confirmation / conflict modal */}
+      {proposal && (
+        <MoveConfirmModal
+          proposal={proposal}
+          saving={saving}
+          saveError={saveError}
+          onCancel={() => setProposal(null)}
+          onSave={handleSave}
+        />
+      )}
+
+      {/* Course detail modal with lecturer + active-term timetable */}
+      {selectedMeeting && (
+        <CourseDetailModal
+          meeting={selectedMeeting}
+          activeTermLabel={activeTermLabel}
+          activeTermSchedules={termSchedules}
+          periodCount={gridConfig.periodCount}
+          lunchAfter={gridConfig.lunchCol + 1}
+          onClose={() => setSelectedMeeting(null)}
+        />
+      )}
+    </div>
+  );
+}
+
 export function TimetableGenerationSection() {
+  const router = useRouter();
   const [staff, setStaff] = useState<StaffRecord | null>(null);
   const [terms, setTerms] = useState<AcademicTermRecord[]>([]);
   const [lobbies, setLobbies] = useState<TimetableLobbyResponse[] | null>(null);
@@ -4075,6 +5515,10 @@ export function TimetableGenerationSection() {
     setWorkspaceGenerationId(generationId);
   };
 
+  const handleEditGeneration = (generationId: string) => {
+    router.push(`/lecturer/timetable-editor/${generationId}`);
+  };
+
   const handleDeleteGeneration = (g: GenerationSessionResponse) => {
     setConfirmDialog({
       title: 'Delete this generation?',
@@ -4232,6 +5676,7 @@ export function TimetableGenerationSection() {
             generations={generations ?? []}
             canManage={manage?.canManage === true}
             onView={handleViewGeneration}
+            onEdit={handleEditGeneration}
             onDelete={handleDeleteGeneration}
           />
           <PastLobbiesCard lobbies={pastLobbies} />
@@ -4377,7 +5822,7 @@ export function TimetableSection() {
       ),
     [published, activePublishedSem, activePublishedSection]
   );
-  const { periodLabels, lunchLabel } = useTimeSlotLabels();
+  const { periodLabels, lunchLabel, gridConfig } = useTimeSlotLabels();
 
   return (
     <div>
@@ -4511,6 +5956,7 @@ export function TimetableSection() {
                   editable={false}
                   periodLabels={periodLabels}
                   lunchLabel={lunchLabel}
+                  gridConfig={gridConfig}
                   todayIdx={todayIdx}
                 />
           )}

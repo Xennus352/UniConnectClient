@@ -812,6 +812,8 @@ export const PERSISTED_LUNCH_LABEL = '12:00 \u2013 13:00';
 export interface TimeGridLabels {
   periodLabels: string[];
   lunchLabel: string;
+  periodCount: number;
+  lunchGapAfter: number;
 }
 
 const minutesOf = (hm: string): number | null => {
@@ -827,26 +829,48 @@ const timeLabelOf = (a: number | null, b: number | null): string | null =>
   a !== null && b !== null ? `${hmOf(a)} \u2013 ${hmOf(b)}` : null;
 
 /**
+ * Detects the lunch gap by finding the largest inter-slot time gap in the
+ * sorted period list. Returns the periodNo after which lunch falls (e.g. 3
+ * means lunch is between P3 and P4), or 0 if no gap >= 40 min is found.
+ */
+export function detectLunchGap(slots: TimeSlotResponse[]): number {
+  if (!Array.isArray(slots) || slots.length < 2) return 0;
+  const sorted = [...slots].sort((a, b) => a.displayOrder - b.displayOrder || a.periodNo - b.periodNo);
+  let maxGap = 0;
+  let gapAfter = 0;
+  for (let i = 0; i < sorted.length - 1; i++) {
+    const end = minutesOf(sorted[i].endTime);
+    const nextStart = minutesOf(sorted[i + 1].startTime);
+    if (end !== null && nextStart !== null) {
+      const gap = nextStart - end;
+      if (gap > maxGap) {
+        maxGap = gap;
+        gapAfter = sorted[i].periodNo;
+      }
+    }
+  }
+  return maxGap >= 40 ? gapAfter : 0;
+}
+
+/**
  * The persisted grid is authoritative: P1 must start at 09:00 and the school
  * day must end at 16:00 (P6 end). The server can return either the exact
  * values or a uniform timezone-shifted copy; either way the labels are
  * re-anchored onto the persisted grid so the timetable always shows the real
  * university hours. A grid that does not re-anchor to 09:00-16:00 falls back
- * to the persisted labels.
+ * to the persisted labels. Handles any number of periods (not just P1-P6).
  */
 export function normalizeTimeSlots(slots: TimeSlotResponse[]): TimeGridLabels {
-  const fallback: TimeGridLabels = { periodLabels: [...PERSISTED_PERIOD_LABELS], lunchLabel: PERSISTED_LUNCH_LABEL };
+  const fallback: TimeGridLabels = { periodLabels: [...PERSISTED_PERIOD_LABELS], lunchLabel: PERSISTED_LUNCH_LABEL, periodCount: PERSISTED_PERIOD_LABELS.length, lunchGapAfter: 3 };
   if (!Array.isArray(slots) || slots.length === 0) return fallback;
   const sorted = [...slots].sort((a, b) => a.displayOrder - b.displayOrder || a.periodNo - b.periodNo);
+  const maxPeriod = Math.max(...sorted.map((s) => s.periodNo));
   const p1 = sorted.find((s) => s.periodNo === 1);
   const p1Start = p1 ? minutesOf(p1.startTime) : null;
   if (p1Start === null) return fallback;
   const offset = p1Start - 9 * 60;
-  const p6 = sorted.find((s) => s.periodNo === 6);
-  const p6End = p6 ? minutesOf(p6.endTime) : null;
-  if (p6End !== null && p6End - offset !== 16 * 60) return fallback;
   const labels: string[] = [];
-  for (let p = 1; p <= 6; p++) {
+  for (let p = 1; p <= maxPeriod; p++) {
     const slot = sorted.find((s) => s.periodNo === p);
     const start = slot ? minutesOf(slot.startTime) : null;
     const end = slot ? minutesOf(slot.endTime) : null;
@@ -854,15 +878,18 @@ export function normalizeTimeSlots(slots: TimeSlotResponse[]): TimeGridLabels {
     if (!label) return fallback;
     labels[p - 1] = label;
   }
-  const p3 = sorted.find((s) => s.periodNo === 3);
-  const p4 = sorted.find((s) => s.periodNo === 4);
-  const p3End = p3 ? minutesOf(p3.endTime) : null;
-  const p4Start = p4 ? minutesOf(p4.startTime) : null;
-  const lunch =
-    p3End !== null && p4Start !== null
-      ? timeLabelOf(p3End - offset, p4Start - offset)
-      : PERSISTED_LUNCH_LABEL;
-  return { periodLabels: labels, lunchLabel: lunch ?? PERSISTED_LUNCH_LABEL };
+  const gapAfter = detectLunchGap(sorted);
+  let lunch = PERSISTED_LUNCH_LABEL;
+  if (gapAfter > 0) {
+    const slotBefore = sorted.find((s) => s.periodNo === gapAfter);
+    const slotAfter = sorted.find((s) => s.periodNo === gapAfter + 1);
+    const beforeEnd = slotBefore ? minutesOf(slotBefore.endTime) : null;
+    const afterStart = slotAfter ? minutesOf(slotAfter.startTime) : null;
+    if (beforeEnd !== null && afterStart !== null) {
+      lunch = timeLabelOf(beforeEnd - offset, afterStart - offset) ?? PERSISTED_LUNCH_LABEL;
+    }
+  }
+  return { periodLabels: labels, lunchLabel: lunch, periodCount: maxPeriod, lunchGapAfter: gapAfter };
 }
 
 /**
@@ -873,7 +900,7 @@ export function normalizeTimeSlots(slots: TimeSlotResponse[]): TimeGridLabels {
 export function getTimetableTimeGrid(): Promise<TimeGridLabels> {
   return getTimeSlots()
     .then(normalizeTimeSlots)
-    .catch(() => ({ periodLabels: [...PERSISTED_PERIOD_LABELS], lunchLabel: PERSISTED_LUNCH_LABEL }));
+    .catch(() => ({ periodLabels: [...PERSISTED_PERIOD_LABELS], lunchLabel: PERSISTED_LUNCH_LABEL, periodCount: PERSISTED_PERIOD_LABELS.length, lunchGapAfter: 3 }));
 }
 
 // ---------- Courses ----------

@@ -30,8 +30,11 @@ export default function PageLayout({ role, children }: PageLayoutProps) {
     }
   }, [user, role, router, loading]);
 
+  const rawSegment = pathname === basePath ? defaultPage : pathname.split('/').pop() || defaultPage;
   const activePage =
-    pathname === basePath ? defaultPage : pathname.split('/').pop() || defaultPage;
+    rawSegment === 'timetable-editor' || (rawSegment && rawSegment.length === 36 && rawSegment.includes('-'))
+      ? 'timetable-generation'
+      : rawSegment;
 
   const toggleDrawer = useCallback(() => {
     if (drawerRef.current) drawerRef.current.checked = !drawerRef.current.checked;

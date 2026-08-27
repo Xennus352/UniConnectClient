@@ -54,6 +54,9 @@ function destinationFor(n: ToastNotification, role: string): { path: string } | 
   }
 }
 
+const REALTIME_CONNECT_TIMEOUT_MS = 10000;
+const POLL_INTERVAL_MS = 30000;
+
 export default function RealtimeAlerts() {
   const supabase = useSupabase();
   const { user: session } = useSession();
@@ -65,28 +68,78 @@ export default function RealtimeAlerts() {
 
   useEffect(() => {
     if (!me) return;
+
+    let disposed = false;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let connectTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const isMine = (n: ToastNotification) =>
+      n.recipient_email === me || (myRole && n.recipient_role === myRole);
+
+    const toastNotification = (n: ToastNotification) => {
+      if (!isMine(n) || n.read || seenRef.current.has(n.id)) return;
+      seenRef.current.add(n.id);
+      const dest = destinationFor(n, myRole);
+      if (dest && pathname === dest.path) return;
+      const meta = TYPE_META[n.type] ?? TYPE_META.event;
+      toast(n.message, {
+        icon: meta.icon,
+        action: dest
+          ? { label: 'View', onClick: () => { window.location.href = dest.path; } }
+          : undefined,
+      });
+    };
+
+    // Fallback for networks that block wss:// (or while Supabase is
+    // unreachable): poll the REST endpoint so alerts still arrive.
+    const startPolling = () => {
+      if (disposed || pollTimer) return;
+      let baselined = false;
+      const tick = async () => {
+        try {
+          const res = await fetch('/api/notifications');
+          if (!res.ok) return;
+          const list = (await res.json()) as ToastNotification[];
+          for (const n of list ?? []) {
+            if (!baselined) { seenRef.current.add(n.id); continue; }
+            toastNotification(n);
+          }
+        } catch {
+          // Supabase unreachable — retry on next tick
+        } finally {
+          baselined = true;
+        }
+      };
+      void tick();
+      pollTimer = setInterval(() => void tick(), POLL_INTERVAL_MS);
+    };
+
+    const stopPolling = () => {
+      if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+    };
+
     const channel = supabase
       .channel(uniqueChannelName('public:notifications:alerts'))
-       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
-        const n = payload.new as ToastNotification;
-        const isMine = n.recipient_email === me || (myRole && n.recipient_role === myRole);
-        if (!isMine) return;
-        if (n.read) return;
-        const key = n.id;
-        if (seenRef.current.has(key)) return;
-        seenRef.current.add(key);
-        const dest = destinationFor(n, myRole);
-        if (dest && pathname === dest.path) return;
-        const meta = TYPE_META[n.type] ?? TYPE_META.event;
-        toast(n.message, {
-          icon: meta.icon,
-          action: dest
-            ? { label: 'View', onClick: () => { window.location.href = dest.path; } }
-            : undefined,
-        });
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, (payload) => {
+        toastNotification(payload.new as ToastNotification);
       })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          if (connectTimer) { clearTimeout(connectTimer); connectTimer = null; }
+          stopPolling();
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+          startPolling();
+        }
+      });
+
+    connectTimer = setTimeout(() => startPolling(), REALTIME_CONNECT_TIMEOUT_MS);
+
+    return () => {
+      disposed = true;
+      if (connectTimer) clearTimeout(connectTimer);
+      stopPolling();
+      supabase.removeChannel(channel);
+    };
   }, [supabase, me, myRole, pathname]);
 
   return null;
